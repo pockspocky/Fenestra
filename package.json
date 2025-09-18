@@ -1,0 +1,15 @@
+{
+  "name": "electron-window-puzzle-mvp",
+  "version": "0.1.0",
+  "main": "main.js",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "clean": "node -e \"console.log('ok')\""
+  },
+  "devDependencies": {
+    "electron": "^30.0.0"
+  }
+}
