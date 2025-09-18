@@ -19,21 +19,124 @@
   </div>
   <div class="row"><small>Close the <code>video</code> window to spawn <code>door</code> & <code>key</code>. Drag them to overlap (≥60%).</small></div>
   <script type="module">
+    console.log('[RENDERER] 渲染进程脚本开始执行');
+    console.log('[RENDERER] 当前URL:', location.href);
+    
     const params = new URLSearchParams(location.search);
+    console.log('[RENDERER] URL参数:', Object.fromEntries(params.entries()));
+    
     const id = params.get('id') || 'unknown';
-    document.getElementById('id').textContent = id;
+    console.log(`[RENDERER] 窗口ID: ${id}`);
+    
+    // 设置窗口ID显示
+    const idElement = document.getElementById('id');
+    if (idElement) {
+      idElement.textContent = id;
+      console.log('[RENDERER] 窗口ID已显示在页面上');
+    } else {
+      console.error('[RENDERER] 无法找到ID显示元素');
+    }
 
-    document.getElementById('btn-create').onclick = async () => {
-      await window.api.invoke('game/window/create', {
-        id: 'temp-' + Math.random().toString(36).slice(2, 8),
-        bounds: { width: 300, height: 200 }
-      });
-    };
-    document.getElementById('btn-bounds').onclick = async () => {
-      const res = await window.api.invoke('game/window/get-bounds', { id });
-      console.log('bounds', id, res);
-      alert(JSON.stringify(res, null, 2));
-    };
+    // 页面加载完成事件
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('[RENDERER] DOM内容已加载完成');
+    });
+
+    // 窗口加载完成事件
+    window.addEventListener('load', () => {
+      console.log('[RENDERER] 窗口已完全加载');
+    });
+
+    // 创建窗口按钮
+    const createBtn = document.getElementById('btn-create');
+    if (createBtn) {
+      console.log('[RENDERER] 绑定创建窗口按钮事件');
+      createBtn.onclick = async () => {
+        console.log('[RENDERER] 用户点击创建窗口按钮');
+        
+        const newId = 'temp-' + Math.random().toString(36).slice(2, 8);
+        const payload = {
+          id: newId,
+          bounds: { width: 300, height: 200 }
+        };
+        
+        console.log('[RENDERER] 准备创建新窗口:', payload);
+        
+        try {
+          const result = await window.api.invoke('game/window/create', payload);
+          console.log('[RENDERER] 创建窗口响应:', result);
+          
+          if (result.ok) {
+            console.log(`[RENDERER] 窗口创建成功, ID: ${result.id}, webContentsId: ${result.webContentsId}`);
+          } else {
+            console.error('[RENDERER] 窗口创建失败:', result.error);
+          }
+        } catch (error) {
+          console.error('[RENDERER] 创建窗口时发生错误:', error);
+        }
+      };
+    } else {
+      console.error('[RENDERER] 无法找到创建窗口按钮');
+    }
+
+    // 获取边界按钮
+    const boundsBtn = document.getElementById('btn-bounds');
+    if (boundsBtn) {
+      console.log('[RENDERER] 绑定获取边界按钮事件');
+      boundsBtn.onclick = async () => {
+        console.log('[RENDERER] 用户点击获取边界按钮');
+        console.log(`[RENDERER] 请求获取窗口边界, ID: ${id}`);
+        
+        try {
+          const res = await window.api.invoke('game/window/get-bounds', { id });
+          console.log(`[RENDERER] 获取边界响应 (${id}):`, res);
+          
+          if (res.ok) {
+            console.log(`[RENDERER] 窗口边界 (${id}):`, res.bounds);
+          } else {
+            console.error(`[RENDERER] 获取边界失败 (${id}):`, res.error);
+          }
+          
+          // 显示结果对话框
+          const resultText = JSON.stringify(res, null, 2);
+          console.log('[RENDERER] 显示边界信息对话框');
+          alert(resultText);
+          console.log('[RENDERER] 边界信息对话框已关闭');
+          
+        } catch (error) {
+          console.error('[RENDERER] 获取边界时发生错误:', error);
+          alert(`错误: ${error.message}`);
+        }
+      };
+    } else {
+      console.error('[RENDERER] 无法找到获取边界按钮');
+    }
+
+    // 窗口焦点事件
+    window.addEventListener('focus', () => {
+      console.log(`[RENDERER] 窗口获得焦点 (${id})`);
+    });
+
+    window.addEventListener('blur', () => {
+      console.log(`[RENDERER] 窗口失去焦点 (${id})`);
+    });
+
+    // 窗口关闭前事件
+    window.addEventListener('beforeunload', (event) => {
+      console.log(`[RENDERER] 窗口即将关闭 (${id})`);
+    });
+
+    // 页面可见性变化事件
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        console.log(`[RENDERER] 页面变为可见 (${id})`);
+      } else {
+        console.log(`[RENDERER] 页面变为隐藏 (${id})`);
+      }
+    });
+
+    console.log('[RENDERER] 所有事件监听器已设置完成');
+    console.log('[RENDERER] 渲染进程脚本执行完成');
   </script>
 </body>
 </html>
