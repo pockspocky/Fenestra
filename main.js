@@ -1,6 +1,6 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
-import path from 'node:path';
-import url from 'node:url';
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const path = require('path');
+const { URL } = require('url');
 
 const isMac = process.platform === 'darwin';
 const windows = new Map(); // id -> BrowserWindow
@@ -8,24 +8,33 @@ let overlapTimer = null;
 let level1Completed = false;
 
 function createWindow(id, opts = {}) {
-  const win = new BrowserWindow({
+  const winOptions = {
     width: opts.width ?? 800,
     height: opts.height ?? 500,
     x: opts.x,
     y: opts.y,
     title: opts.title ?? id,
     show: true,
-    frame: true,
+    frame: false,
     transparent: false,
     resizable: true,
+    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
     webPreferences: {
       preload: path.join(process.cwd(), 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true
     }
-  });
-  const q = new url.URLSearchParams({ id });
+  };
+  
+  // macOS specific settings
+  if (isMac) {
+    winOptions.trafficLightPosition = { x: 12, y: 12 };
+  }
+
+  const win = new BrowserWindow(winOptions);
+  const q = new URLSearchParams();
+  q.set('id', id);
   win.loadFile(path.join(process.cwd(), 'renderer', 'index.html'), { query: q.toString() });
   win.on('closed', () => {
     windows.delete(id);
@@ -112,7 +121,34 @@ app.on('window-all-closed', () => {
   if (!isMac) app.quit();
 });
 
-// IPC: 最小集合
+// IPC: 窗口控制
+ipcMain.handle('win/minimize', (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (win) win.minimize();
+});
+
+ipcMain.handle('win/maximizeToggle', (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (win) {
+    if (win.isMaximized()) {
+      win.unmaximize();
+    } else {
+      win.maximize();
+    }
+  }
+});
+
+ipcMain.handle('win/close', (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (win) win.close();
+});
+
+ipcMain.handle('win/getTitle', (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  return win ? win.getTitle() : '';
+});
+
+// IPC: 游戏相关功能
 ipcMain.handle('game/window/create', (_e, payload) => {
   const { id, bounds = {}, title } = payload ?? {};
   if (!id) return { error: 'id required' };
@@ -128,3 +164,4 @@ ipcMain.handle('game/window/get-bounds', (_e, { id }) => {
   const b = getBounds(id);
   return b ? { ok: true, bounds: b } : { error: 'not found' };
 });
+
