@@ -2,8 +2,8 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'">
-  <style>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; worker-src 'self'">
+    <style>
     body { font-family: sans-serif; margin: 20px; }
     .id { font-weight: bold; }
     .row { margin: 10px 0; }
@@ -138,5 +138,6 @@
     console.log('[RENDERER] 所有事件监听器已设置完成');
     console.log('[RENDERER] 渲染进程脚本执行完成');
   </script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { Worker } from 'worker_threads';
 import path from 'node:path';
 import url from 'node:url';
 
@@ -10,6 +11,18 @@ console.log('[MAIN] 窗口映射已初始化');
 let overlapTimer = null;
 let level1Completed = false;
 console.log('[MAIN] 游戏状态已初始化: level1Completed =', level1Completed);
+
+const worker = new Worker(new URL('./node-worker.mjs', import.meta.url));
+
+function generateRandomAlphanumericString(length) {
+  let result = '';
+  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const charactersLength = characters.length;
+  for (let i = 0; i < length; i++) {
+    result += characters.charAt(Math.floor(Math.random() * charactersLength));
+  }
+  return result;
+}
 
 function createWindow(id, opts = {}) {
   console.log(`[WINDOW] 开始创建窗口 ID: ${id}`);
@@ -115,25 +128,25 @@ function createKey() {
 }
 
 function getBounds(id) {
-  console.log(`[BOUNDS] 获取窗口边界, ID: ${id}`);
+  // console.log('[OVERLAP] 获取窗口边界, ID: ${id}`);
   const w = windows.get(id);
   if (w) {
     const bounds = w.getBounds();
-    console.log(`[BOUNDS] 获取成功, ID: ${id}, 边界:`, bounds);
+    // console.log('[OVERLAP] 获取成功, ID: ${id}, 边界:`, bounds);
     return bounds;
   } else {
-    console.log(`[BOUNDS] 获取失败, 窗口不存在, ID: ${id}`);
+    // console.log('[OVERLAP] 获取失败, 窗口不存在, ID: ${id}`);
     return null;
   }
 }
 function setBounds(id, b) {
-  console.log(`[BOUNDS] 设置窗口边界, ID: ${id}, 新边界:`, b);
+  // console.log('[OVERLAP] 设置窗口边界, ID: ${id}, 新边界:`, b);
   const w = windows.get(id);
   if (w) {
     w.setBounds(b);
-    console.log(`[BOUNDS] 设置成功, ID: ${id}`);
+    // console.log('[OVERLAP] 设置成功, ID: ${id}`);
   } else {
-    console.log(`[BOUNDS] 设置失败, 窗口不存在, ID: ${id}`);
+    // console.log('[OVERLAP] 设置失败, 窗口不存在, ID: ${id}`);
   }
 }
 
@@ -166,61 +179,83 @@ function rectOverlapRatio(a, b) {
 }
 
 function startOverlapLoop() {
-  console.log('[OVERLAP] 启动重叠检测循环');
-  if (overlapTimer) {
-    console.log('[OVERLAP] 重叠检测循环已在运行，跳过启动');
-    return;
-  }
-  
-  console.log('[OVERLAP] 设置定时器，每100ms检测一次');
-  overlapTimer = setInterval(() => {
-    if (level1Completed) {
-      console.log('[OVERLAP] 关卡1已完成，跳过检测');
-      return;
-    }
-    
-    console.log('[OVERLAP] 开始检测门和钥匙的重叠');
-    const door = getBounds('door');
-    const key = getBounds('key');
-    
-    if (!door || !key) {
-      console.log('[OVERLAP] 门或钥匙窗口不存在，跳过检测');
-      return;
-    }
-    
-    const ratio = rectOverlapRatio(door, key);
-    console.log(`[OVERLAP] 当前重叠比例: ${ratio.toFixed(4)}, 需要: 0.6`);
-    
-    if (ratio >= 0.6) {
-      console.log('[LEVEL1] 重叠比例达到要求！开始解锁门...');
-      level1Completed = true;
+  // console.log('[OVERLAP] 启动重叠检测循环');
+
+  function Level1Completion() {
+    if (level1Completed == true) {
       console.log('[GAME] 关卡1状态更新: level1Completed = true');
-      
+
       const doorWin = windows.get('door');
       if (doorWin) {
         doorWin.setTitle('Door (opened)');
         console.log('[LEVEL1] 门窗口标题已更新为 "Door (opened)"');
       }
-      
+
       console.log('[LEVEL1] door.open (overlap >= 0.6)');
-      
+
+
       const anyWin = windows.values().next().value;
       console.log('[LEVEL1] 显示成功对话框');
-      dialog.showMessageBox(anyWin ?? null, { 
-        type: 'info', 
-        message: 'LEVEL 1 PASSED: Door opened!' 
+      dialog.showMessageBox(anyWin ?? null, {
+        type: 'info',
+        message: 'LEVEL 1 PASSED: Door opened!'
       }).then(() => {
         console.log('[LEVEL1] 成功对话框已关闭');
       });
+      clearInterval(overlapTimer);
+      overlapTimer = null;
     }
-  }, 100);
+
+  }
   
-  console.log('[OVERLAP] 重叠检测循环已启动');
+  if (overlapTimer) {
+    // console.log('[OVERLAP] 重叠检测循环已在运行，跳过启动');
+    return;
+  }
+
+
+  // console.log('[OVERLAP] 设置定时器，每100ms检测一次');
+  overlapTimer = setInterval(() => {
+
+    
+    // worker.postMessage('Ping: Hello from main thread!');
+
+    // if (level1Completed) {
+    //   // console.log('[OVERLAP] 关卡1已完成，跳过检测');
+    //   return;
+    // }
+    
+    // console.log('[OVERLAP] 开始检测门和钥匙的重叠');
+    const door = getBounds('door');
+    const key = getBounds('key');
+    
+    if (!door || !key) {
+      // console.log('[OVERLAP] 门或钥匙窗口不存在，跳过检测');
+      return;
+    }
+    worker.postMessage({ win1: door, win2: key, ratio: 0.6 });
+
+    Level1Completion();
+  }, 200); // 200ms
+  
+
+
+
+  // console.log('[OVERLAP] 重叠检测循环已启动');
 }
 
 app.whenReady().then(() => {
   console.log('[APP] Electron应用程序准备就绪');
   console.log('[APP] 开始创建初始窗口...');
+
+  worker.on('message', (msg) => {
+    if (msg == true) {
+      console.log('[LEVEL1] 重叠比例达到要求！开始解锁门...');
+      level1Completed = true;
+      worker.terminate();
+    }
+    else console.log(`[OVERLAP] 重叠比例: ${msg}, 需要: 0.6`);
+  });
   
   createDesktop();
   createVideo();
