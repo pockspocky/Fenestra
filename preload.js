@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+const { contextBridge, ipcRenderer } = require('electron');
 
 console.log('[PRELOAD] 预加载脚本开始执行');
 console.log('[PRELOAD] 导入Electron模块完成');
@@ -12,6 +12,13 @@ const whitelist = [
 console.log('[PRELOAD] IPC白名单:', whitelist);
 
 contextBridge.exposeInMainWorld('api', {
+  // 窗口控制API
+  minimize: () => ipcRenderer.invoke('win/minimize'),
+  maximizeToggle: () => ipcRenderer.invoke('win/maximizeToggle'),
+  close: () => ipcRenderer.invoke('win/close'),
+  getTitle: () => ipcRenderer.invoke('win/getTitle'),
+  
+  // 游戏相关API
   invoke: (channel, payload) => {
     console.log(`[PRELOAD] IPC调用请求 - 频道: ${channel}`);
     console.log(`[PRELOAD] IPC调用载荷:`, payload);

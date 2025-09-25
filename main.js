@@ -1,7 +1,9 @@
+
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import { Worker } from 'worker_threads';
 import path from 'node:path';
 import url from 'node:url';
+
 
 console.log('[MAIN] 初始化应用程序...');
 const isMac = process.platform === 'darwin';
@@ -25,6 +27,7 @@ function generateRandomAlphanumericString(length) {
 }
 
 function createWindow(id, opts = {}) {
+
   console.log(`[WINDOW] 开始创建窗口 ID: ${id}`);
   console.log(`[WINDOW] 窗口配置:`, { 
     width: opts.width ?? 800, 
@@ -35,21 +38,24 @@ function createWindow(id, opts = {}) {
   });
   
   const win = new BrowserWindow({
+
     width: opts.width ?? 800,
     height: opts.height ?? 500,
     x: opts.x,
     y: opts.y,
     title: opts.title ?? id,
     show: true,
-    frame: true,
+    frame: false,
     transparent: false,
     resizable: true,
+    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
     webPreferences: {
       preload: path.join(process.cwd(), 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true
     }
+
   });
   
   console.log(`[WINDOW] BrowserWindow已创建，ID: ${id}, webContentsId: ${win.webContents.id}`);
@@ -289,6 +295,7 @@ app.on('window-all-closed', () => {
     console.log('[APP] macOS平台，应用程序保持运行');
   }
 });
+
 
 // IPC: 最小集合
 console.log('[IPC] 设置IPC处理程序...');
