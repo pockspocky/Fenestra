@@ -2,6 +2,7 @@
   "name": "electron-window-puzzle-mvp",
   "version": "0.1.0",
   "main": "main.js",
+  "type": "module",
   "scripts": {
     "start": "electron .",
     "dev": "electron ."
