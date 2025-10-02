@@ -1,9 +1,13 @@
 import { Worker, workerData, parentPort } from 'worker_threads';
+import './logger.js'; // 导入日志系统
+
+// 设置日志级别
+// global.logLevel = "info"; // 可以改为 "log", "warn", "error", "none"
 
 // 重叠计算函数
 function rectOverlapRatio(a, b) {
   // a,b: {x,y,width,height}
-  console.log(`[WORKER] 计算重叠比例`);
+  console.debug(`[WORKER] 计算重叠比例`);
   
   const x1 = Math.max(a.x, b.x);
   const y1 = Math.max(a.y, b.y);
@@ -24,17 +28,17 @@ function rectOverlapRatio(a, b) {
 }
 
 parentPort.on('message', (msg) => {
-  console.log('Received message from main thread:', msg);
+  console.debug('Received message from main thread:', msg);
   
   if (msg.type === 'calculateOverlap') {
-    console.log('[WORKER] 开始计算重叠...');
-    console.log('[WORKER] 门边界:', msg.doorBounds);
-    console.log('[WORKER] 钥匙边界:', msg.keyBounds);
+    console.debug('[WORKER] 开始计算重叠...');
+    console.debug('[WORKER] 门边界:', msg.doorBounds);
+    console.debug('[WORKER] 钥匙边界:', msg.keyBounds);
     
     // 计算重叠比例
     const ratio = rectOverlapRatio(msg.doorBounds, msg.keyBounds);
     
-    console.log(`[WORKER] 计算完成，重叠比例: ${ratio.toFixed(4)}`);
+    console.debug(`[WORKER] 计算完成，重叠比例: ${ratio.toFixed(4)}`);
     
     // 返回计算结果
     parentPort.postMessage({
@@ -42,10 +46,12 @@ parentPort.on('message', (msg) => {
       ratio: ratio,
       threshold: msg.threshold,
       doorBounds: msg.doorBounds,
-      keyBounds: msg.keyBounds
+      keyBounds: msg.keyBounds,
+      doorId: msg.doorId,
+      keyId: msg.keyId
     });
   } else {
-    console.log('[WORKER] 收到其他消息:', msg);
+    console.debug('[WORKER] 收到其他消息:', msg);
     parentPort.postMessage('Hello from worker thread!');
   }
 });
