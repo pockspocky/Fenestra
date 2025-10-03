@@ -1,11 +1,16 @@
 import { app, BrowserWindow } from 'electron';
 import './logger.js'; // 导入日志系统
+import { setLogLevel, getLogLevel } from './src/core/loggerConfig.js'; // 导入日志配置
 
 // 导入核心模块
 import { 
   setWindowCloseCallback, 
   createDesktop, 
-  createVideo 
+  createVideo,
+  setWindowOffset,
+  getWindowOffset,
+  setKeyDoorMaxOverlap,
+  getKeyDoorMaxOverlap
 } from './src/core/windowManager.js';
 
 import { 
@@ -30,6 +35,10 @@ import {
   getRelationsDebugInfo 
 } from './src/core/doorKeySystem.js';
 
+// 设置日志级别
+setLogLevel("log"); // 可以根据需要调整
+console.log(`[MAIN] 当前日志级别: ${getLogLevel()}`);
+
 // 全局变量
 console.debug('[MAIN] 初始化应用程序...');
 const isMac = process.platform === 'darwin';
@@ -41,6 +50,14 @@ setWindowCloseCallback(handleVideoWindowClosed);
 // 初始化所有核心系统
 function initializeApp() {
   console.debug('[MAIN] 初始化应用程序核心系统...');
+  
+  // 设置窗口偏移量（每个新窗口向右下偏移30像素）
+  setWindowOffset(30, 30);
+  console.log(`[MAIN] 窗口偏移量设置:`, getWindowOffset());
+  
+  // 设置钥匙与门重叠的最大允许比例（40%）
+  setKeyDoorMaxOverlap(0.4);
+  console.log(`[MAIN] 钥匙与门最大重叠比例设置: ${(getKeyDoorMaxOverlap() * 100).toFixed(1)}%`);
   
   // 初始化游戏逻辑
   initializeGameLogic();

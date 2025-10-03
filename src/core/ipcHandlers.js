@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 import { createWindow, setBounds, getBounds } from './windowManager.js';
+import '../../logger.js'; // 导入日志系统
 
 /**
  * 初始化 IPC 处理程序

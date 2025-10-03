@@ -1,5 +1,6 @@
 import { createDoor, createKey, getAllWindows } from './windowManager.js';
 import { initializeDoorRelation, initializeKeyRelation, addEncryptedItem } from './doorKeySystem.js';
+import '../../logger.js'; // 导入日志系统
 
 // 游戏状态
 let level1Completed = false;

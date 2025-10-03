@@ -2,6 +2,7 @@ import { Worker } from 'worker_threads';
 import { getBounds, getAllWindows } from './windowManager.js';
 import { canOpenDoor, handleFailedOpen, handleDoorToggle } from './doorKeySystem.js';
 import { isLevel1Completed } from './gameLogic.js';
+import '../../logger.js'; // 导入日志系统
 
 let worker = null;
 let overlapTimer = null;

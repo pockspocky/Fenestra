@@ -1,5 +1,6 @@
 import { dialog } from 'electron';
 import { getWindow } from './windowManager.js';
+import '../../logger.js'; // 导入日志系统
 
 // 门钥匙关系管理系统
 const doorKeyRelations = new Map(); // doorId -> Set of keyIds
@@ -121,8 +122,8 @@ function animateKeyMovement(keyWin, targetX, targetY) {
   const startY = startBounds.y;
   
   const distance = Math.sqrt(Math.pow(targetX - startX, 2) + Math.pow(targetY - startY, 2));
-  const duration = Math.min(distance / 5, 300); // 最大300ms
-  const steps = Math.ceil(duration / 16); // 60fps
+  const duration = Math.min(distance / 5, 1000); // 最大300ms
+  const steps = Math.ceil(duration / 4); // 60fps
   
   let currentStep = 0;
   

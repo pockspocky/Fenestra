@@ -4,4 +4,5 @@ export * from './doorKeySystem.js';
 export * from './gameLogic.js';
 export * from './workerManager.js';
 export * from './ipcHandlers.js';
+export * from './loggerConfig.js';
 
