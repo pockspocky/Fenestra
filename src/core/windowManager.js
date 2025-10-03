@@ -153,6 +153,7 @@ export function createWindow(id, opts = {}) {
     title: opts.title ?? id,
     resizable: opts.resizable ?? true,
     transparent: opts.transparent ?? false,
+    otherContents: opts.otherContents ?? "index.html",
   });
   
   const win = new BrowserWindow({
@@ -163,8 +164,8 @@ export function createWindow(id, opts = {}) {
     title: opts.title ?? id,
     show: true,
     frame: true,
-    transparent: false,
-    resizable: true,
+    transparent: opts.transparent ?? false,
+    resizable: opts.resizable ?? true,
     webPreferences: {
       preload: path.join(process.cwd(), 'preload.js'),
       nodeIntegration: false,
@@ -176,7 +177,7 @@ export function createWindow(id, opts = {}) {
   console.debug(`[WINDOW] BrowserWindow已创建，ID: ${id}, webContentsId: ${win.webContents.id}`);
   
   const q = new url.URLSearchParams({ id });
-  const htmlPath = path.join(process.cwd(), 'renderer', 'index.html');
+  const htmlPath = path.join(process.cwd(), 'renderer', opts.otherContents ?? "index.html");
   console.debug(`[WINDOW] 加载HTML文件: ${htmlPath}?${q.toString()}`);
   win.loadFile(htmlPath, { query: q.toString() });
   
@@ -344,12 +345,14 @@ export function createDoor(doorId = 'door', title = null, encrypt = false) {
   
   // 使用自动偏移，不指定固定位置
   const win = createWindow(doorId, { 
-    width: 320, 
-    height: 420, 
-    title: doorTitle 
+    width: 220, 
+    height: 320, 
+    title: doorTitle,
+    resizable: true,
+    otherContents: "doorPicture.html",
   });
   
-  console.log('[WINDOW] 门窗口创建完成');
+  console.log('[WINDOW] 门窗口创建完成 ' + win.getContentSize());
   return win;
 }
 
@@ -359,6 +362,8 @@ export function createDoor(doorId = 'door', title = null, encrypt = false) {
  * @param {string} title - 钥匙标题
  * @param {boolean} encrypt - 是否加密
  * @param {Array} relatedDoors - 关联的门ID数组
+ * @param {boolean} resizable - 是否可调整大小
+ * @param {string} otherContents - 其他内容
  * @returns {BrowserWindow} 钥匙窗口
  */
 export function createKey(keyId = 'key', title = null, encrypt = false, relatedDoors = []) {
@@ -368,6 +373,7 @@ export function createKey(keyId = 'key', title = null, encrypt = false, relatedD
   // 为钥匙寻找合适的位置，避免与门重叠超过配置的阈值
   const keyWidth = 200;
   const keyHeight = 200;
+
   const suitablePosition = findSuitablePositionForKey(keyId, keyWidth, keyHeight, keyDoorMaxOverlap);
   
   const win = createWindow(keyId, { 

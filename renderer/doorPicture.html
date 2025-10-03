@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        
+        .image-container {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .door-image {
+            width: 100%;
+            height: 100%;
+            object-fit: fill;
+            display: block;
+        }
+        
+        /* Fallback styling if image fails to load */
+        .error-message {
+            color: #666;
+            text-align: center;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="image-container">
+        <img 
+            src="../doors/Door.png" 
+            alt="Door Picture" 
+            class="door-image"
+            onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"
+        />
+        <div class="error-message" style="display: none;">
+            <p>Image not found: IMG_6125.PNG</p>
+            <p>Please check if the file exists in the doors/ directory.</p>
+        </div>
+    </div>
+</body>
+</html>
