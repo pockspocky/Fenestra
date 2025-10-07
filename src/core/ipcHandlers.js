@@ -5,6 +5,7 @@ import {
   getBounds, 
   getWindowsInfo, 
   getWindowInfo,
+  getWindowTitle,
   updateWindowProperty,
   reloadWindowHtml,
   createPicture,
@@ -135,6 +136,25 @@ function executeTerminalCommand(command, args) {
         success: true, 
         message: `窗口 ${windowId} 的信息:`,
         data: info 
+      };
+    }
+    
+    case 'get-title': {
+      if (args.length < 1) {
+        return { success: false, message: '用法: get-title [窗口ID]' };
+      }
+      
+      const windowId = args[0];
+      const title = getWindowTitle(windowId);
+      
+      if (title === null) {
+        return { success: false, message: `窗口 ${windowId} 不存在` };
+      }
+      
+      return { 
+        success: true, 
+        message: `窗口 ${windowId} 的标题: ${title}`,
+        data: { title }
       };
     }
     

@@ -625,6 +625,25 @@ export function getWindowInfo(id) {
 }
 
 /**
+ * 获取窗口标题
+ * @param {string} id - 窗口ID
+ * @returns {string|null} 窗口标题或null
+ */
+export function getWindowTitle(id) {
+  console.debug(`[WINDOW] 获取窗口标题, ID: ${id}`);
+  
+  const win = windows.get(id);
+  if (!win || win.isDestroyed()) {
+    console.warn(`[WINDOW] 窗口 ${id} 不存在或已销毁`);
+    return null;
+  }
+  
+  const title = win.getTitle();
+  console.debug(`[WINDOW] 窗口 ${id} 的标题: ${title}`);
+  return title;
+}
+
+/**
  * 更新窗口属性
  * @param {string} id - 窗口ID
  * @param {string} property - 属性名

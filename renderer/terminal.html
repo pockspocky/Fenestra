@@ -130,7 +130,7 @@
     // 可用命令列表
     const commands = [
       'help', 'clear', 'list', 'ls', 'getWindows', 'info',
-      'set-title', 'set-size', 'set-position', 'set-resizable', 'set-visibility',
+      'get-title', 'set-title', 'set-size', 'set-position', 'set-resizable', 'set-visibility',
       'show', 'hide', 'reload-html',
       'create-picture', 'set-picture', 'set-fit-mode'
     ];
@@ -240,6 +240,7 @@
       print('  info [窗口ID]                     - 查看窗口详细信息', 'info');
       print('', 'info');
       print('窗口操作命令:', 'info');
+      print('  get-title [ID]                    - 获取窗口标题', 'info');
       print('  set-title [ID] "标题"             - 设置窗口标题', 'info');
       print('  set-size [ID] [宽度] [高度]       - 设置窗口大小', 'info');
       print('  set-position [ID] [x] [y]         - 设置窗口位置', 'info');
