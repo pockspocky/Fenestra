@@ -96,10 +96,11 @@
     const urlParams = new URLSearchParams(window.location.search);
     const contentType = urlParams.get('type') || 'text'; // 'text' 或 'image'
     const contentPath = urlParams.get('path') || '';
+    const surfaceContent = urlParams.get('surfaceContent') || ''; // 表面内容（模糊显示）
     const blurAmount = parseFloat(urlParams.get('blur')) || 10;
     const isBlurred = urlParams.get('blurred') === 'true';
 
-    console.log('[CONTENT] 参数:', { contentType, contentPath, blurAmount, isBlurred });
+    console.log('[CONTENT] 参数:', { contentType, contentPath, surfaceContent: surfaceContent.substring(0, 50), blurAmount, isBlurred });
 
     const loadingEl = document.getElementById('loading');
     const errorEl = document.getElementById('error');
@@ -157,18 +158,22 @@
       containerEl.appendChild(imgDiv);
     }
 
-    // 加载文字（从文本文件或直接显示）
+    // 加载文字（显示表面内容）
     async function loadText(textPath) {
-      console.log('[CONTENT] 加载文字:', textPath);
+      console.log('[CONTENT] 加载文字 - 表面内容');
 
       let textContent = '';
 
-      if (textPath && textPath.startsWith('file://')) {
-        // 从文件加载
+      // 优先使用 surfaceContent（表面内容）
+      if (surfaceContent) {
+        textContent = surfaceContent;
+        console.log('[CONTENT] 使用表面内容（长度: ' + textContent.length + '）');
+      } else if (textPath && textPath.startsWith('file://')) {
+        // 从文件加载（向后兼容）
         const response = await fetch(textPath);
         textContent = await response.text();
       } else if (textPath) {
-        // 直接使用传入的文字
+        // 直接使用传入的文字（向后兼容）
         textContent = decodeURIComponent(textPath);
       } else {
         textContent = '这是一段秘密文字。\n\n只有通过镜头窗口才能看清楚这些内容。\n\n您可以尝试创建一个镜头窗口来查看清晰的文字。';

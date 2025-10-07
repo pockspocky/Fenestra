@@ -112,8 +112,9 @@
     const targetWindowId = urlParams.get('targetId') || '';
     const contentType = urlParams.get('type') || 'text';
     const contentPath = urlParams.get('path') || '';
+    const hiddenContent = urlParams.get('hiddenContent') || ''; // 隐藏内容（镜头显示）
 
-    console.log('[LENS] 参数:', { lensId, targetWindowId, contentType, contentPath });
+    console.log('[LENS] 参数:', { lensId, targetWindowId, contentType, contentPath, hiddenContent: hiddenContent.substring(0, 50) });
 
     const loadingEl = document.getElementById('loading');
     const contentEl = document.getElementById('lens-content');
@@ -176,16 +177,22 @@
       contentEl.appendChild(imgDiv);
     }
 
-    // 加载文字
+    // 加载文字（显示隐藏内容）
     async function loadText(textPath) {
-      console.log('[LENS] 加载文字:', textPath);
+      console.log('[LENS] 加载文字 - 隐藏内容');
 
       let textContent = '';
 
-      if (textPath && textPath.startsWith('file://')) {
+      // 优先使用 hiddenContent（隐藏内容）
+      if (hiddenContent) {
+        textContent = hiddenContent;
+        console.log('[LENS] 使用隐藏内容（长度: ' + textContent.length + '）');
+      } else if (textPath && textPath.startsWith('file://')) {
+        // 从文件加载（向后兼容）
         const response = await fetch(textPath);
         textContent = await response.text();
       } else if (textPath) {
+        // 直接使用传入的文字（向后兼容）
         textContent = decodeURIComponent(textPath);
       } else {
         // 使用与contentViewer相同的默认文字
