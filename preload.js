@@ -8,7 +8,9 @@ const whitelist = [
   'game/window/set-bounds',
   'game/window/get-bounds',
   'terminal/execute-command',
-  'picture/load'
+  'picture/load',
+  'lens/get-position',
+  'window/get-info'
 ];
 
 console.log('[PRELOAD] IPC白名单:', whitelist);
@@ -77,6 +79,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('fit-mode-change', (_e, fitMode) => {
       console.log(`[PRELOAD] 收到缩放模式更改事件: ${fitMode}`);
       callback(fitMode);
+    });
+  },
+  // 镜头系统 API
+  invoke: (channel, ...args) => {
+    console.log(`[PRELOAD] IPC调用: ${channel}, 参数:`, args);
+    return ipcRenderer.invoke(channel, ...args);
+  },
+  onUpdateBlur: (callback) => {
+    ipcRenderer.on('update-blur', (_e, blurValue) => {
+      console.log(`[PRELOAD] 收到模糊度更新事件: ${blurValue}`);
+      callback(blurValue);
+    });
+  },
+  onContentChange: (callback) => {
+    ipcRenderer.on('content-change', (_e, data) => {
+      console.log(`[PRELOAD] 收到内容更改事件:`, data);
+      callback(data);
+    });
+  },
+  onTargetWindowMove: (callback) => {
+    ipcRenderer.on('target-window-move', (_e, data) => {
+      console.log(`[PRELOAD] 收到目标窗口移动事件:`, data);
+      callback(data);
+    });
+  },
+  onLensPositionUpdate: (callback) => {
+    ipcRenderer.on('lens-position-update', (_e, data) => {
+      console.log(`[PRELOAD] 收到镜头位置更新事件:`, data);
+      callback(data);
     });
   }
 });

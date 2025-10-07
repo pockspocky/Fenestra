@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lens Viewer</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: transparent;
+      cursor: move;
+    }
+
+    /* 镜头边框 */
+    #lens-frame {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      border: 3px solid rgba(0, 150, 255, 0.8);
+      box-shadow: 0 0 20px rgba(0, 150, 255, 0.5);
+      background: rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(1px);
+    }
+
+    /* 内容容器 */
+    #lens-content {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      position: relative;
+      background: #fff;
+    }
+
+    /* 文字内容 */
+    .text-content {
+      position: absolute;
+      top: 0;
+      left: 0;
+      padding: 40px;
+      font-size: 18px;
+      line-height: 1.8;
+      color: #333;
+      background: #fff;
+      min-width: 800px;
+      min-height: 600px;
+      transform-origin: top left;
+    }
+
+    /* 图片内容 */
+    .image-content {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+    }
+
+    .image-content img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    /* 加载状态 */
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 16px;
+      color: #0096ff;
+      text-align: center;
+    }
+
+    /* 镜头标识 */
+    #lens-label {
+      position: absolute;
+      top: 5px;
+      left: 5px;
+      background: rgba(0, 150, 255, 0.8);
+      color: white;
+      padding: 2px 8px;
+      font-size: 12px;
+      border-radius: 3px;
+      pointer-events: none;
+      z-index: 1000;
+    }
+  </style>
+</head>
+<body>
+  <div id="lens-frame">
+    <div id="lens-label"></div>
+    <div id="loading">🔍 镜头加载中...</div>
+    <div id="lens-content"></div>
+  </div>
+
+  <script>
+    console.log('[LENS] Lens Viewer 初始化');
+
+    // 解析URL参数
+    const urlParams = new URLSearchParams(window.location.search);
+    const lensId = urlParams.get('lensId') || 'lens';
+    const targetWindowId = urlParams.get('targetId') || '';
+    const contentType = urlParams.get('type') || 'text';
+    const contentPath = urlParams.get('path') || '';
+
+    console.log('[LENS] 参数:', { lensId, targetWindowId, contentType, contentPath });
+
+    const loadingEl = document.getElementById('loading');
+    const contentEl = document.getElementById('lens-content');
+    const labelEl = document.getElementById('lens-label');
+
+    // 设置标签
+    labelEl.textContent = `🔍 ${lensId}`;
+
+    // 存储目标窗口信息
+    let targetWindowBounds = null;
+    let currentLensBounds = null;
+
+    // 加载清晰内容
+    async function loadContent() {
+      try {
+        if (contentType === 'image') {
+          await loadImage(contentPath);
+        } else if (contentType === 'text') {
+          await loadText(contentPath);
+        }
+
+        loadingEl.style.display = 'none';
+        console.log('[LENS] 内容加载成功');
+
+        // 开始监听位置变化
+        startPositionTracking();
+      } catch (error) {
+        console.error('[LENS] 加载失败:', error);
+        loadingEl.textContent = '❌ 加载失败: ' + error.message;
+      }
+    }
+
+    // 加载图片
+    async function loadImage(imagePath) {
+      console.log('[LENS] 加载图片:', imagePath);
+
+      if (!imagePath) {
+        throw new Error('未指定图片路径');
+      }
+
+      const imageData = await window.electronAPI.loadPicture(imagePath);
+      
+      if (!imageData.success) {
+        throw new Error(imageData.error || '加载图片失败');
+      }
+
+      const imgDiv = document.createElement('div');
+      imgDiv.className = 'image-content';
+      
+      const img = document.createElement('img');
+      img.src = imageData.dataUrl;
+      img.alt = '清晰内容';
+      
+      // 计算偏移
+      img.onload = () => {
+        updateImagePosition();
+      };
+      
+      imgDiv.appendChild(img);
+      contentEl.appendChild(imgDiv);
+    }
+
+    // 加载文字
+    async function loadText(textPath) {
+      console.log('[LENS] 加载文字:', textPath);
+
+      let textContent = '';
+
+      if (textPath && textPath.startsWith('file://')) {
+        const response = await fetch(textPath);
+        textContent = await response.text();
+      } else if (textPath) {
+        textContent = decodeURIComponent(textPath);
+      } else {
+        // 使用与contentViewer相同的默认文字
+        textContent = '这是一段秘密文字。\n\n只有通过镜头窗口才能看清楚这些内容。\n\n您可以尝试创建一个镜头窗口来查看清晰的文字。';
+      }
+
+      const textDiv = document.createElement('div');
+      textDiv.className = 'text-content';
+      textDiv.textContent = textContent;
+      
+      contentEl.appendChild(textDiv);
+    }
+
+    // 开始位置追踪
+    async function startPositionTracking() {
+      // 首先获取目标窗口信息
+      try {
+        const targetInfo = await window.electronAPI.invoke('window/get-info', targetWindowId);
+        if (targetInfo && targetInfo.success) {
+          targetWindowBounds = targetInfo.bounds;
+          console.log('[LENS] 目标窗口信息:', targetWindowBounds);
+        }
+      } catch (error) {
+        console.error('[LENS] 获取目标窗口失败:', error);
+      }
+
+      // 定期更新位置（用于同步显示区域）
+      setInterval(async () => {
+        try {
+          // 获取当前镜头窗口的位置
+          const lensInfo = await window.electronAPI.invoke('lens/get-position', lensId);
+          if (lensInfo && lensInfo.success) {
+            currentLensBounds = lensInfo.bounds;
+            updateContentPosition();
+          }
+        } catch (error) {
+          console.error('[LENS] 位置更新失败:', error);
+        }
+      }, 50); // 每50ms更新一次
+    }
+
+    // 更新内容位置（用于内容裁剪和偏移）
+    function updateContentPosition() {
+      if (!targetWindowBounds || !currentLensBounds) return;
+
+      // 计算镜头相对于目标窗口的位置
+      const offsetX = currentLensBounds.x - targetWindowBounds.x;
+      const offsetY = currentLensBounds.y - targetWindowBounds.y;
+
+      // 更新图片位置（CSS transform）
+      const imgElement = contentEl.querySelector('.image-content img');
+      if (imgElement) {
+        imgElement.style.transform = `translate(${-offsetX}px, ${-offsetY}px)`;
+      }
+
+      // 更新文字位置（CSS transform）
+      const textElement = contentEl.querySelector('.text-content');
+      if (textElement) {
+        textElement.style.transform = `translate(${-offsetX}px, ${-offsetY}px)`;
+      }
+
+      console.log('[LENS] 内容位置已更新:', { offsetX, offsetY });
+    }
+
+    // 更新图片位置
+    function updateImagePosition() {
+      // 获取目标窗口信息并更新位置
+      if (targetWindowId) {
+        window.electronAPI.invoke('window/get-info', targetWindowId)
+          .then(info => {
+            if (info) {
+              targetWindowBounds = info.bounds;
+              updateContentPosition();
+            }
+          })
+          .catch(err => console.error('[LENS] 获取目标窗口信息失败:', err));
+      }
+    }
+
+    // 监听目标窗口移动
+    if (window.electronAPI.onTargetWindowMove) {
+      window.electronAPI.onTargetWindowMove((data) => {
+        console.log('[LENS] 目标窗口移动:', data);
+        if (data.windowId === targetWindowId) {
+          targetWindowBounds = data.bounds;
+          updateContentPosition();
+        }
+      });
+    }
+
+    // 定期更新目标窗口位置（备用方案）
+    setInterval(async () => {
+      try {
+        const targetInfo = await window.electronAPI.invoke('window/get-info', targetWindowId);
+        if (targetInfo && targetInfo.success) {
+          targetWindowBounds = targetInfo.bounds;
+        }
+      } catch (error) {
+        // 静默失败
+      }
+    }, 200); // 每200ms更新一次
+
+    // 初始加载
+    loadContent();
+  </script>
+</body>
+</html>
+
+

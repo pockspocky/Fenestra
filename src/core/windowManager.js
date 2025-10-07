@@ -2,6 +2,14 @@ import { BrowserWindow } from 'electron';
 import path from 'node:path';
 import url from 'node:url';
 import '../../logger.js'; // 导入日志系统
+import {
+  registerLensSystem,
+  unregisterLensSystem,
+  getLensSystemInfo,
+  getAllLensSystems,
+  getLensSystemCount,
+  lensSystemExists
+} from './lensSystem.js';
 
 // 全局窗口映射
 export const windows = new Map(); // id -> BrowserWindow
@@ -178,25 +186,33 @@ export function createWindow(id, opts = {}) {
   
   // 解析 otherContents 中的文件名和查询参数
   const otherContents = opts.otherContents ?? "index.html";
-  let htmlFileName = otherContents;
-  let additionalQuery = '';
+  const htmlName = opts.htmlName;
+  let htmlFileName;
+  let queryObj = { id };
   
-  // 检查是否包含查询字符串
-  if (otherContents.includes('?')) {
-    const parts = otherContents.split('?');
-    htmlFileName = parts[0];
-    additionalQuery = parts[1];
-  }
-  
-  // 构建完整的查询参数（作为对象，Electron 会自动转换为查询字符串）
-  const queryObj = { id };
-  
-  if (additionalQuery) {
-    // 合并额外的查询参数
-    const additionalParams = new url.URLSearchParams(additionalQuery);
-    for (const [key, value] of additionalParams) {
-      queryObj[key] = value;
+  // 判断 otherContents 的类型
+  if (typeof otherContents === 'string') {
+    // 字符串格式：可能是 "file.html" 或 "file.html?param=value"
+    if (otherContents.includes('?')) {
+      const parts = otherContents.split('?');
+      htmlFileName = parts[0];
+      const additionalQuery = parts[1];
+      
+      // 合并查询参数
+      const additionalParams = new url.URLSearchParams(additionalQuery);
+      for (const [key, value] of additionalParams) {
+        queryObj[key] = value;
+      }
+    } else {
+      htmlFileName = otherContents;
     }
+  } else if (typeof otherContents === 'object' && otherContents !== null) {
+    // 对象格式：直接作为查询参数
+    htmlFileName = htmlName || 'index.html';
+    queryObj = { id, ...otherContents };
+  } else {
+    // 默认
+    htmlFileName = 'index.html';
   }
   
   const htmlPath = path.join(process.cwd(), 'renderer', htmlFileName);
@@ -753,5 +769,368 @@ export function reloadWindowHtml(id, htmlPath) {
     console.error(`[WINDOW] 重新加载HTML失败:`, error);
     return { success: false, message: `加载失败: ${error.message}` };
   }
+}
+
+/**
+ * 创建内容窗口（底层模糊窗口）
+ * @param {string} id - 窗口ID
+ * @param {Object} options - 配置选项
+ * @returns {Object} 操作结果
+ */
+export function createContentWindow(id, options = {}) {
+  console.log(`[WINDOW] 创建内容窗口, ID: ${id}`);
+
+  const {
+    contentType = 'text',       // 'text' 或 'image'
+    contentPath = '',            // 内容路径
+    blurAmount = 10,             // 模糊程度 (0-50)
+    blurred = true,              // 是否初始模糊
+    width = 800,
+    height = 600,
+    x,
+    y,
+    title = '内容窗口'
+  } = options;
+
+  // 构建URL参数
+  const queryObj = {
+    id,
+    type: contentType,
+    path: contentPath,
+    blur: blurAmount.toString(),
+    blurred: blurred.toString()
+  };
+
+  // 确定窗口位置
+  const position = (x !== undefined && y !== undefined) 
+    ? { x, y }
+    : getNextWindowPosition();
+
+  const windowOptions = {
+    width,
+    height,
+    x: position.x,
+    y: position.y,
+    title,
+    htmlName: 'contentViewer.html',
+    otherContents: queryObj,
+    resizable: true,
+    frame: true,
+    transparent: false,
+  };
+
+  const win = createWindow(id, windowOptions);
+  
+  if (win && !win.isDestroyed()) {
+    console.log(`[WINDOW] 内容窗口创建成功: ${id}, 类型: ${contentType}, 模糊: ${blurred}`);
+    return { success: true, message: `内容窗口 ${id} 创建成功`, id };
+  }
+
+  return { success: false, message: '创建内容窗口失败' };
+}
+
+/**
+ * 创建镜头窗口
+ * @param {string} lensId - 镜头窗口ID
+ * @param {string} targetWindowId - 目标窗口ID
+ * @param {Object} options - 配置选项
+ * @returns {Object} 操作结果
+ */
+export function createLensWindow(lensId, targetWindowId, options = {}) {
+  console.log(`[WINDOW] 创建镜头窗口, 镜头ID: ${lensId}, 目标ID: ${targetWindowId}`);
+
+  // 检查镜头数量限制
+  const currentLensCount = getLensSystemCount();
+  if (currentLensCount >= 3) {
+    return { 
+      success: false, 
+      message: '已达到最大镜头数量限制（3个）' 
+    };
+  }
+
+  // 检查镜头ID是否已存在
+  if (lensSystemExists(lensId)) {
+    return {
+      success: false,
+      message: `镜头 ${lensId} 已存在`
+    };
+  }
+
+  // 检查目标窗口是否存在
+  const targetWindow = windows.get(targetWindowId);
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return {
+      success: false,
+      message: `目标窗口 ${targetWindowId} 不存在`
+    };
+  }
+
+  const {
+    contentType = 'text',
+    contentPath = '',
+    width = 300,
+    height = 200,
+    x,
+    y
+  } = options;
+
+  // 从目标窗口获取实际的内容信息
+  let actualContentType = contentType;
+  let actualContentPath = contentPath;
+
+  try {
+    const targetUrl = targetWindow.webContents.getURL();
+    console.log(`[WINDOW] 目标窗口URL: ${targetUrl}`);
+    
+    const urlObj = new URL(targetUrl);
+    const urlParams = urlObj.searchParams;
+    
+    // 如果没有明确指定，则从目标窗口获取
+    if (!contentPath) {
+      actualContentType = urlParams.get('type') || contentType;
+      actualContentPath = urlParams.get('path') || '';
+      console.log(`[WINDOW] 从目标窗口提取内容 - 类型: ${actualContentType}, 路径: ${actualContentPath}`);
+    }
+    
+    console.log(`[WINDOW] 镜头将使用 - 类型: ${actualContentType}, 路径: ${actualContentPath}`);
+  } catch (error) {
+    console.warn(`[WINDOW] 无法从目标窗口获取内容信息:`, error);
+  }
+
+  // 构建URL参数
+  const queryObj = {
+    lensId,
+    targetId: targetWindowId,
+    type: actualContentType,
+    path: actualContentPath
+  };
+
+  // 确定窗口位置（默认在目标窗口中心）
+  let position;
+  if (x !== undefined && y !== undefined) {
+    position = { x, y };
+  } else {
+    const targetBounds = targetWindow.getBounds();
+    position = {
+      x: targetBounds.x + (targetBounds.width - width) / 2,
+      y: targetBounds.y + (targetBounds.height - height) / 2
+    };
+  }
+
+  const windowOptions = {
+    width,
+    height,
+    x: position.x,
+    y: position.y,
+    title: `镜头 - ${lensId}`,
+    htmlName: 'lensViewer.html',
+    otherContents: queryObj,
+    resizable: true,
+    frame: false,           // 无边框
+    transparent: true,      // 透明背景
+    alwaysOnTop: true,      // 始终置顶
+  };
+
+  const lensWindow = createWindow(lensId, windowOptions);
+
+  if (lensWindow && !lensWindow.isDestroyed()) {
+    // 注册镜头系统
+    registerLensSystem(lensId, lensWindow, targetWindowId, targetWindow);
+
+    // 监听镜头窗口关闭
+    lensWindow.on('closed', () => {
+      console.log(`[WINDOW] 镜头窗口关闭: ${lensId}`);
+      unregisterLensSystem(lensId);
+    });
+
+    console.log(`[WINDOW] 镜头窗口创建成功: ${lensId} -> ${targetWindowId}`);
+    return { success: true, message: `镜头窗口 ${lensId} 创建成功`, id: lensId };
+  }
+
+  return { success: false, message: '创建镜头窗口失败' };
+}
+
+/**
+ * 设置窗口透明度
+ * @param {string} id - 窗口ID
+ * @param {number} opacity - 透明度 (0.0-1.0)
+ * @returns {Object} 操作结果
+ */
+export function setWindowOpacity(id, opacity) {
+  console.log(`[WINDOW] 设置窗口透明度, ID: ${id}, 透明度: ${opacity}`);
+
+  const win = windows.get(id);
+  if (!win || win.isDestroyed()) {
+    return { success: false, message: `窗口 ${id} 不存在` };
+  }
+
+  // 验证opacity参数
+  // API查询结果：setOpacity(opacity)
+  // - 用处：设置窗口不透明度
+  // - 输入：opacity (Number) - 0.0（完全透明）到 1.0（完全不透明）
+  // - 输出：void
+  const opacityNum = parseFloat(opacity);
+  if (isNaN(opacityNum) || opacityNum < 0 || opacityNum > 1) {
+    return { 
+      success: false, 
+      message: 'opacity 必须是 0.0 到 1.0 之间的数字' 
+    };
+  }
+
+  try {
+    win.setOpacity(opacityNum);
+    console.log(`[WINDOW] 窗口 ${id} 透明度已设置为 ${opacityNum}`);
+    return { 
+      success: true, 
+      message: `窗口 ${id} 透明度已设置为 ${opacityNum}` 
+    };
+  } catch (error) {
+    console.error(`[WINDOW] 设置透明度失败:`, error);
+    return { 
+      success: false, 
+      message: `设置失败: ${error.message}` 
+    };
+  }
+}
+
+/**
+ * 设置窗口始终置顶
+ * @param {string} id - 窗口ID
+ * @param {boolean} flag - 是否置顶
+ * @param {string} level - 置顶级别（可选）
+ * @returns {Object} 操作结果
+ */
+export function setWindowAlwaysOnTop(id, flag, level = 'normal') {
+  console.log(`[WINDOW] 设置窗口置顶, ID: ${id}, 置顶: ${flag}, 级别: ${level}`);
+
+  const win = windows.get(id);
+  if (!win || win.isDestroyed()) {
+    return { success: false, message: `窗口 ${id} 不存在` };
+  }
+
+  // 验证flag参数
+  if (typeof flag !== 'boolean') {
+    return { 
+      success: false, 
+      message: 'flag 必须是 true 或 false' 
+    };
+  }
+
+  // 验证level参数
+  // API查询结果：setAlwaysOnTop(flag, level)
+  // - 用处：设置窗口是否始终显示在其他窗口之上
+  // - 输入：flag (Boolean), level (String, 可选) - 'normal', 'floating', 'torn-off-menu', etc.
+  // - 输出：void
+  const validLevels = ['normal', 'floating', 'torn-off-menu', 'modal-panel', 'main-menu', 'status', 'pop-up-menu', 'screen-saver'];
+  if (!validLevels.includes(level)) {
+    return {
+      success: false,
+      message: `不支持的level: ${level}。有效值: ${validLevels.join(', ')}`
+    };
+  }
+
+  try {
+    win.setAlwaysOnTop(flag, level);
+    console.log(`[WINDOW] 窗口 ${id} 置顶状态已设置为 ${flag}, 级别: ${level}`);
+    return { 
+      success: true, 
+      message: `窗口 ${id} 置顶状态已设置为 ${flag}` 
+    };
+  } catch (error) {
+    console.error(`[WINDOW] 设置置顶状态失败:`, error);
+    return { 
+      success: false, 
+      message: `设置失败: ${error.message}` 
+    };
+  }
+}
+
+/**
+ * 更新内容窗口的模糊程度
+ * @param {string} id - 窗口ID
+ * @param {number} blurAmount - 模糊程度 (0-50)
+ * @returns {Object} 操作结果
+ */
+export function updateContentBlur(id, blurAmount) {
+  console.log(`[WINDOW] 更新内容窗口模糊度, ID: ${id}, 模糊度: ${blurAmount}`);
+
+  const win = windows.get(id);
+  if (!win || win.isDestroyed()) {
+    return { success: false, message: `窗口 ${id} 不存在` };
+  }
+
+  const blurNum = parseFloat(blurAmount);
+  if (isNaN(blurNum) || blurNum < 0 || blurNum > 50) {
+    return {
+      success: false,
+      message: 'blurAmount 必须是 0 到 50 之间的数字'
+    };
+  }
+
+  try {
+    win.webContents.send('update-blur', blurNum);
+    console.log(`[WINDOW] 窗口 ${id} 模糊度已更新为 ${blurNum}`);
+    return {
+      success: true,
+      message: `窗口 ${id} 模糊度已更新为 ${blurNum}`
+    };
+  } catch (error) {
+    console.error(`[WINDOW] 更新模糊度失败:`, error);
+    return {
+      success: false,
+      message: `更新失败: ${error.message}`
+    };
+  }
+}
+
+/**
+ * 销毁镜头系统（镜头窗口和相关绑定）
+ * @param {string} lensId - 镜头窗口ID
+ * @returns {Object} 操作结果
+ */
+export function destroyLensSystem(lensId) {
+  console.log(`[WINDOW] 销毁镜头系统, ID: ${lensId}`);
+
+  const lensWindow = windows.get(lensId);
+  if (!lensWindow || lensWindow.isDestroyed()) {
+    return { success: false, message: `镜头 ${lensId} 不存在` };
+  }
+
+  try {
+    // 注销镜头系统（会自动移除事件监听器）
+    unregisterLensSystem(lensId);
+
+    // 关闭窗口
+    lensWindow.close();
+
+    console.log(`[WINDOW] 镜头系统已销毁: ${lensId}`);
+    return {
+      success: true,
+      message: `镜头系统 ${lensId} 已销毁`
+    };
+  } catch (error) {
+    console.error(`[WINDOW] 销毁镜头系统失败:`, error);
+    return {
+      success: false,
+      message: `销毁失败: ${error.message}`
+    };
+  }
+}
+
+/**
+ * 获取所有镜头系统信息
+ * @returns {Array} 镜头系统列表
+ */
+export function getLensSystems() {
+  return getAllLensSystems();
+}
+
+/**
+ * 获取镜头系统信息
+ * @param {string} lensId - 镜头ID
+ * @returns {Object|null} 镜头系统信息
+ */
+export function getLensSystem(lensId) {
+  return getLensSystemInfo(lensId);
 }
 

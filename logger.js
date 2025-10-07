@@ -4,7 +4,7 @@ const shouldLog = (level) => {
   return logLevels.indexOf(level) >= logLevels.indexOf(global.logLevel);
 };
 
-global.logLevel = "error"; // 默认级别，可在各文件中覆盖
+global.logLevel = "debug"; // 默认级别，可在各文件中覆盖
 
 const _console = console;
 global.console = {
