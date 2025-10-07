@@ -774,30 +774,47 @@ export function reloadWindowHtml(id, htmlPath) {
 
 /**
  * 解析内容输入
- * 支持三种格式：
- * 1. "表面内容|||隐藏内容" - 使用|||分隔符
- * 2. "文件路径.txt" - 读取文件内容
- * 3. "普通文本" - 直接使用
+ * 支持格式：
+ * 1. "表面内容|||隐藏内容" - 使用|||分隔符（文字/图片路径）
+ * 2. "文件路径.txt" - 读取文本文件内容
+ * 3. "图片路径.png" - 图片路径（清晰化模式）
+ * 4. "普通文本" - 直接使用文本
  * 
  * @param {string} input - 输入字符串
+ * @param {string} contentType - 内容类型（'text' 或 'image'）
  * @returns {Object} { surface: string, hidden: string }
  */
-function parseContentInput(input) {
+function parseContentInput(input, contentType = 'text') {
   if (!input || typeof input !== 'string') {
     console.warn('[CONTENT_PARSE] 输入为空或不是字符串');
     return { surface: '', hidden: '' };
   }
 
-  // 检测特殊分隔符 |||
+  // 检测特殊分隔符 |||（适用于文字和图片路径）
   if (input.includes('|||')) {
     const parts = input.split('|||');
     const surface = parts[0] || '';
     const hidden = parts[1] || parts[0]; // 如果没有隐藏内容，使用表面内容
-    console.log(`[CONTENT_PARSE] 使用分隔符模式 - 表面: "${surface.substring(0, 50)}...", 隐藏: "${hidden.substring(0, 50)}..."`);
+    
+    if (contentType === 'image') {
+      console.log(`[CONTENT_PARSE] 图片双路径模式 - 表面: "${surface}", 隐藏: "${hidden}"`);
+    } else {
+      console.log(`[CONTENT_PARSE] 文字分隔符模式 - 表面: "${surface.substring(0, 50)}...", 隐藏: "${hidden.substring(0, 50)}..."`);
+    }
     return { surface, hidden };
   }
 
-  // 检测文件路径（以 .txt 结尾）
+  // 图片路径检测（以图片扩展名结尾）
+  const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'];
+  const isImagePath = imageExtensions.some(ext => input.toLowerCase().endsWith(ext));
+  
+  if (contentType === 'image' && isImagePath) {
+    // 图片清晰化模式：镜头显示相同图片但清晰
+    console.log(`[CONTENT_PARSE] 图片清晰化模式 - 路径: "${input}"`);
+    return { surface: input, hidden: input };
+  }
+
+  // 文本文件路径检测（以 .txt 结尾）
   if (input.endsWith('.txt')) {
     try {
       const fullPath = path.isAbsolute(input) 
@@ -855,15 +872,20 @@ export function createContentWindow(id, options = {}) {
     title = '内容窗口'
   } = options;
 
-  // 解析内容（仅对文本类型，图片以后实现）
+  // 解析内容（支持文字和图片）
   let surfaceContent = contentPath;
   let hiddenContent = contentPath;
   
-  if (contentType === 'text' && contentPath) {
-    const parsed = parseContentInput(contentPath);
+  if (contentPath) {
+    const parsed = parseContentInput(contentPath, contentType);
     surfaceContent = parsed.surface;
     hiddenContent = parsed.hidden;
-    console.log(`[WINDOW] 内容已解析 - 表面长度: ${surfaceContent.length}, 隐藏长度: ${hiddenContent.length}`);
+    
+    if (contentType === 'image') {
+      console.log(`[WINDOW] 图片内容已解析 - 表面: "${surfaceContent}", 隐藏: "${hiddenContent}"`);
+    } else {
+      console.log(`[WINDOW] 文字内容已解析 - 表面长度: ${surfaceContent.length}, 隐藏长度: ${hiddenContent.length}`);
+    }
   }
 
   // 构建URL参数

@@ -133,15 +133,22 @@
       }
     }
 
-    // 加载图片
+    // 加载图片（显示表面图片）
     async function loadImage(imagePath) {
-      console.log('[CONTENT] 加载图片:', imagePath);
+      console.log('[CONTENT] 加载图片 - 表面图片');
 
-      if (!imagePath) {
+      // 优先使用 surfaceContent（表面图片路径）
+      let actualImagePath = imagePath;
+      if (surfaceContent) {
+        actualImagePath = surfaceContent;
+        console.log('[CONTENT] 使用表面图片路径: ' + actualImagePath);
+      }
+
+      if (!actualImagePath) {
         throw new Error('未指定图片路径');
       }
 
-      const imageData = await window.electronAPI.loadPicture(imagePath);
+      const imageData = await window.electronAPI.loadPicture(actualImagePath);
       
       if (!imageData.success) {
         throw new Error(imageData.error || '加载图片失败');
@@ -152,7 +159,7 @@
       
       const img = document.createElement('img');
       img.src = imageData.dataUrl;
-      img.alt = '内容图片';
+      img.alt = '表面图片';
       
       imgDiv.appendChild(img);
       containerEl.appendChild(imgDiv);

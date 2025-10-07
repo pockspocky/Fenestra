@@ -17,6 +17,7 @@
       overflow: hidden;
       background: transparent;
       cursor: move;
+      -webkit-app-region: drag; /* 允许整个窗口拖动 */
     }
 
     /* 镜头边框 */
@@ -28,6 +29,7 @@
       box-shadow: 0 0 20px rgba(0, 150, 255, 0.5);
       background: rgba(255, 255, 255, 0.1);
       backdrop-filter: blur(1px);
+      -webkit-app-region: drag; /* 整个边框区域可拖动 */
     }
 
     /* 内容容器 */
@@ -37,6 +39,7 @@
       overflow: hidden;
       position: relative;
       background: #fff;
+      -webkit-app-region: drag; /* 内容区域也可拖动 */
     }
 
     /* 文字内容 */
@@ -52,6 +55,8 @@
       min-width: 800px;
       min-height: 600px;
       transform-origin: top left;
+      -webkit-app-region: drag; /* 文字区域可拖动 */
+      pointer-events: none; /* 禁止文字选择，确保拖动流畅 */
     }
 
     /* 图片内容 */
@@ -61,6 +66,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      -webkit-app-region: drag; /* 图片区域可拖动 */
       background: #000;
     }
 
@@ -68,6 +74,7 @@
       max-width: 100%;
       max-height: 100%;
       object-fit: contain;
+      pointer-events: none; /* 禁止图片交互，确保拖动流畅 */
     }
 
     /* 加载状态 */
@@ -79,6 +86,8 @@
       font-size: 16px;
       color: #0096ff;
       text-align: center;
+      -webkit-app-region: drag; /* 加载区域可拖动 */
+      pointer-events: none;
     }
 
     /* 镜头标识 */
@@ -91,7 +100,7 @@
       padding: 2px 8px;
       font-size: 12px;
       border-radius: 3px;
-      pointer-events: none;
+      pointer-events: none; /* 标签不阻止拖动 */
       z-index: 1000;
     }
   </style>
@@ -147,15 +156,22 @@
       }
     }
 
-    // 加载图片
+    // 加载图片（显示隐藏图片）
     async function loadImage(imagePath) {
-      console.log('[LENS] 加载图片:', imagePath);
+      console.log('[LENS] 加载图片 - 隐藏图片');
 
-      if (!imagePath) {
+      // 优先使用 hiddenContent（隐藏图片路径）
+      let actualImagePath = imagePath;
+      if (hiddenContent) {
+        actualImagePath = hiddenContent;
+        console.log('[LENS] 使用隐藏图片路径: ' + actualImagePath);
+      }
+
+      if (!actualImagePath) {
         throw new Error('未指定图片路径');
       }
 
-      const imageData = await window.electronAPI.loadPicture(imagePath);
+      const imageData = await window.electronAPI.loadPicture(actualImagePath);
       
       if (!imageData.success) {
         throw new Error(imageData.error || '加载图片失败');
@@ -166,7 +182,7 @@
       
       const img = document.createElement('img');
       img.src = imageData.dataUrl;
-      img.alt = '清晰内容';
+      img.alt = '隐藏图片';
       
       // 计算偏移
       img.onload = () => {
