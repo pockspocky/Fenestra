@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Picture Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background-color: #2c2c2c;
+            font-family: Arial, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .image-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        
+        .picture-image {
+            max-width: 100%;
+            max-height: 100%;
+            display: none; /* 默认隐藏，加载完成后显示 */
+        }
+        
+        /* 不同的缩放模式 */
+        .picture-image.fit-fill {
+            width: 100%;
+            height: 100%;
+            object-fit: fill;
+        }
+        
+        .picture-image.fit-contain {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        
+        .picture-image.fit-cover {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .picture-image.fit-scale-down {
+            width: 100%;
+            height: 100%;
+            object-fit: scale-down;
+        }
+        
+        .picture-image.fit-none {
+            object-fit: none;
+        }
+        
+        /* 加载动画 */
+        .loading-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #ffffff;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top: 4px solid #ffffff;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            font-size: 16px;
+            color: #cccccc;
+        }
+        
+        /* 错误信息 */
+        .error-container {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #ffffff;
+            padding: 40px;
+            text-align: center;
+            max-width: 600px;
+        }
+        
+        .error-icon {
+            font-size: 60px;
+            margin-bottom: 20px;
+            color: #ff6b6b;
+        }
+        
+        .error-title {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #ff6b6b;
+        }
+        
+        .error-message {
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 10px;
+            color: #cccccc;
+            word-wrap: break-word;
+        }
+        
+        .error-path {
+            font-size: 14px;
+            color: #888888;
+            font-family: 'Courier New', monospace;
+            background-color: rgba(0, 0, 0, 0.3);
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            word-break: break-all;
+        }
+        
+        .retry-button {
+            margin-top: 25px;
+            padding: 12px 30px;
+            font-size: 16px;
+            color: #ffffff;
+            background-color: #4CAF50;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        
+        .retry-button:hover {
+            background-color: #45a049;
+        }
+        
+        .retry-button:active {
+            background-color: #3d8b40;
+        }
+    </style>
+</head>
+<body>
+    <div class="image-container">
+        <!-- 加载状态 -->
+        <div class="loading-container" id="loading">
+            <div class="spinner"></div>
+            <div class="loading-text">正在加载图片...</div>
+        </div>
+        
+        <!-- 图片显示 -->
+        <img id="pictureImage" class="picture-image" alt="Picture">
+        
+        <!-- 错误信息 -->
+        <div class="error-container" id="error">
+            <div class="error-icon">⚠️</div>
+            <div class="error-title">无法加载图片</div>
+            <div class="error-message" id="errorMessage"></div>
+            <div class="error-path" id="errorPath"></div>
+            <button class="retry-button" id="retryButton">重新加载</button>
+        </div>
+    </div>
+
+    <script>
+        // 详细调试信息
+        console.log('[PICTURE_VIEWER] ========== 调试信息 ==========');
+        console.log('[PICTURE_VIEWER] window.location.href:', window.location.href);
+        console.log('[PICTURE_VIEWER] window.location.search:', window.location.search);
+        console.log('[PICTURE_VIEWER] window.location.pathname:', window.location.pathname);
+        
+        // 获取 URL 参数
+        const urlParams = new URLSearchParams(window.location.search);
+        console.log('[PICTURE_VIEWER] URLSearchParams size:', urlParams.size);
+        console.log('[PICTURE_VIEWER] 所有 URL 参数:', Array.from(urlParams.entries()));
+        
+        const imagePath = urlParams.get('imagePath');
+        const fitMode = urlParams.get('fitMode') || 'fill';
+        
+        console.log('[PICTURE_VIEWER] imagePath 类型:', typeof imagePath);
+        console.log('[PICTURE_VIEWER] imagePath 值:', imagePath);
+        console.log('[PICTURE_VIEWER] imagePath === null:', imagePath === null);
+        console.log('[PICTURE_VIEWER] fitMode:', fitMode);
+        console.log('[PICTURE_VIEWER] ================================');
+        
+        // 获取元素
+        const loadingEl = document.getElementById('loading');
+        const errorEl = document.getElementById('error');
+        const imageEl = document.getElementById('pictureImage');
+        const errorMessageEl = document.getElementById('errorMessage');
+        const errorPathEl = document.getElementById('errorPath');
+        const retryButtonEl = document.getElementById('retryButton');
+        
+        // 如果没有图片路径，显示错误
+        if (!imagePath) {
+            console.error('[PICTURE_VIEWER] 错误：未提供图片路径');
+            showError('未提供图片路径，请检查 URL 参数', 'N/A');
+            throw new Error('imagePath is required');
+        }
+        
+        console.log('[PICTURE_VIEWER] 初始化图片查看器');
+        console.log('[PICTURE_VIEWER] 图片路径:', imagePath);
+        console.log('[PICTURE_VIEWER] 缩放模式:', fitMode);
+        
+        // 设置缩放模式
+        imageEl.className = `picture-image fit-${fitMode}`;
+        
+        // 加载图片
+        async function loadPicture(path) {
+            console.log('[PICTURE_VIEWER] 开始加载图片:', path);
+            
+            // 显示加载状态
+            loadingEl.style.display = 'flex';
+            errorEl.style.display = 'none';
+            imageEl.style.display = 'none';
+            
+            try {
+                // 通过 IPC 验证和加载图片
+                const result = await window.electronAPI.loadPicture(path);
+                
+                if (!result.success) {
+                    throw new Error(result.error || '未知错误');
+                }
+                
+                console.log('[PICTURE_VIEWER] 图片验证成功，开始加载');
+                
+                // 预加载图片
+                const img = new Image();
+                
+                img.onload = () => {
+                    console.log('[PICTURE_VIEWER] 图片加载成功');
+                    imageEl.src = result.dataUrl || result.path;
+                    imageEl.style.display = 'block';
+                    loadingEl.style.display = 'none';
+                };
+                
+                img.onerror = (e) => {
+                    console.error('[PICTURE_VIEWER] 图片加载失败:', e);
+                    throw new Error('图片加载失败，可能是格式不支持或文件已损坏');
+                };
+                
+                img.src = result.dataUrl || result.path;
+                
+            } catch (error) {
+                console.error('[PICTURE_VIEWER] 加载错误:', error);
+                showError(error.message, path);
+            }
+        }
+        
+        // 显示错误信息
+        function showError(message, path) {
+            loadingEl.style.display = 'none';
+            errorEl.style.display = 'flex';
+            imageEl.style.display = 'none';
+            
+            errorMessageEl.textContent = message;
+            errorPathEl.textContent = `路径: ${path}`;
+        }
+        
+        // 重新加载按钮
+        retryButtonEl.addEventListener('click', () => {
+            console.log('[PICTURE_VIEWER] 用户点击重新加载');
+            loadPicture(imagePath);
+        });
+        
+        // 监听图片更改事件
+        if (window.electronAPI && window.electronAPI.onPictureChange) {
+            window.electronAPI.onPictureChange((newPath, newFitMode) => {
+                console.log('[PICTURE_VIEWER] 收到图片更改事件:', newPath, newFitMode);
+                
+                // 更新缩放模式
+                if (newFitMode) {
+                    imageEl.className = `picture-image fit-${newFitMode}`;
+                }
+                
+                // 重新加载图片
+                loadPicture(newPath);
+            });
+        }
+        
+        // 监听缩放模式更改事件
+        if (window.electronAPI && window.electronAPI.onFitModeChange) {
+            window.electronAPI.onFitModeChange((newFitMode) => {
+                console.log('[PICTURE_VIEWER] 收到缩放模式更改事件:', newFitMode);
+                
+                // 更新缩放模式
+                imageEl.className = `picture-image fit-${newFitMode}`;
+            });
+        }
+        
+        // 初始加载
+        loadPicture(imagePath);
+    </script>
+</body>
+</html>
+

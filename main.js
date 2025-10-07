@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, globalShortcut } from 'electron';
 import './logger.js'; // 导入日志系统
 import { setLogLevel, getLogLevel } from './src/core/loggerConfig.js'; // 导入日志配置
 
@@ -7,6 +7,7 @@ import {
   setWindowCloseCallback, 
   createDesktop, 
   createVideo,
+  createTerminal,
   setWindowOffset,
   getWindowOffset,
   setKeyDoorMaxOverlap,
@@ -95,6 +96,9 @@ app.whenReady().then(() => {
   // 设置应用事件监听器
   setupAppEventListeners();
   
+  // 注册全局快捷键
+  registerGlobalShortcuts();
+  
   console.debug('[APP] 应用程序启动完成');
 });
 
@@ -127,6 +131,9 @@ function setupAppEventListeners() {
   app.on('before-quit', () => {
     console.debug('[APP] 应用程序即将退出，清理资源...');
     
+    // 注销全局快捷键
+    globalShortcut.unregisterAll();
+    
     // 清理 Worker
     cleanupWorker();
     
@@ -137,6 +144,25 @@ function setupAppEventListeners() {
   });
   
   console.debug('[APP] 应用事件监听器已设置');
+}
+
+// 注册全局快捷键
+function registerGlobalShortcuts() {
+  console.debug('[APP] 注册全局快捷键...');
+  
+  // 注册 Ctrl+~ (Mac 上是 Cmd+~) 来打开/关闭终端
+  const shortcut = isMac ? 'Command+`' : 'Control+`';
+  
+  const registered = globalShortcut.register(shortcut, () => {
+    console.log(`[APP] 终端快捷键被触发: ${shortcut}`);
+    createTerminal();
+  });
+  
+  if (registered) {
+    console.log(`[APP] 全局快捷键注册成功: ${shortcut} (打开终端)`);
+  } else {
+    console.error(`[APP] 全局快捷键注册失败: ${shortcut}`);
+  }
 }
 
 // 导出主要功能供外部使用（如果需要）

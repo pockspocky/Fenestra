@@ -6,7 +6,9 @@ console.log('[PRELOAD] 导入Electron模块完成');
 const whitelist = [
   'game/window/create',
   'game/window/set-bounds',
-  'game/window/get-bounds'
+  'game/window/get-bounds',
+  'terminal/execute-command',
+  'picture/load'
 ];
 
 console.log('[PRELOAD] IPC白名单:', whitelist);
@@ -52,6 +54,30 @@ contextBridge.exposeInMainWorld('api', {
       cb(...args);
     });
     console.log(`[PRELOAD] IPC事件监听器已设置 - 频道: ${channel}`);
+  }
+});
+
+// 为终端窗口和图片窗口单独暴露 API
+contextBridge.exposeInMainWorld('electronAPI', {
+  executeTerminalCommand: (command, args) => {
+    console.log(`[PRELOAD] 执行终端命令: ${command}, 参数:`, args);
+    return ipcRenderer.invoke('terminal/execute-command', { command, args });
+  },
+  loadPicture: (imagePath) => {
+    console.log(`[PRELOAD] 加载图片: ${imagePath}`);
+    return ipcRenderer.invoke('picture/load', imagePath);
+  },
+  onPictureChange: (callback) => {
+    ipcRenderer.on('picture-change', (_e, imagePath, fitMode) => {
+      console.log(`[PRELOAD] 收到图片更改事件: ${imagePath}, ${fitMode}`);
+      callback(imagePath, fitMode);
+    });
+  },
+  onFitModeChange: (callback) => {
+    ipcRenderer.on('fit-mode-change', (_e, fitMode) => {
+      console.log(`[PRELOAD] 收到缩放模式更改事件: ${fitMode}`);
+      callback(fitMode);
+    });
   }
 });
 

@@ -176,10 +176,33 @@ export function createWindow(id, opts = {}) {
   
   console.debug(`[WINDOW] BrowserWindow已创建，ID: ${id}, webContentsId: ${win.webContents.id}`);
   
-  const q = new url.URLSearchParams({ id });
-  const htmlPath = path.join(process.cwd(), 'renderer', opts.otherContents ?? "index.html");
-  console.debug(`[WINDOW] 加载HTML文件: ${htmlPath}?${q.toString()}`);
-  win.loadFile(htmlPath, { query: q.toString() });
+  // 解析 otherContents 中的文件名和查询参数
+  const otherContents = opts.otherContents ?? "index.html";
+  let htmlFileName = otherContents;
+  let additionalQuery = '';
+  
+  // 检查是否包含查询字符串
+  if (otherContents.includes('?')) {
+    const parts = otherContents.split('?');
+    htmlFileName = parts[0];
+    additionalQuery = parts[1];
+  }
+  
+  // 构建完整的查询参数（作为对象，Electron 会自动转换为查询字符串）
+  const queryObj = { id };
+  
+  if (additionalQuery) {
+    // 合并额外的查询参数
+    const additionalParams = new url.URLSearchParams(additionalQuery);
+    for (const [key, value] of additionalParams) {
+      queryObj[key] = value;
+    }
+  }
+  
+  const htmlPath = path.join(process.cwd(), 'renderer', htmlFileName);
+  console.debug(`[WINDOW] 加载HTML文件: ${htmlPath}`);
+  console.debug(`[WINDOW] 查询参数对象:`, queryObj);
+  win.loadFile(htmlPath, { query: queryObj });
   
   // 设置窗口事件监听器
   setupWindowEvents(win, id);
@@ -344,16 +367,111 @@ export function createDoor(doorId = 'door', title = null, encrypt = false) {
   console.log(`[WINDOW] 创建门窗口（${encrypt ? '加密' : '普通'}状态）`);
   
   // 使用自动偏移，不指定固定位置
+  // 使用 pictureViewer.html 并传递默认门图片路径
   const win = createWindow(doorId, { 
     width: 220, 
     height: 320, 
     title: doorTitle,
     resizable: true,
-    otherContents: "doorPicture.html",
+    otherContents: "pictureViewer.html?imagePath=doors/Door.png&fitMode=fill",
   });
   
   console.log('[WINDOW] 门窗口创建完成 ' + win.getContentSize());
   return win;
+}
+
+/**
+ * 创建图片窗口
+ * @param {string} pictureId - 图片窗口ID
+ * @param {string} imagePath - 图片路径（支持绝对路径和相对路径）
+ * @param {string} fitMode - 缩放模式 (fill/contain/cover/scale-down/none)
+ * @param {string} title - 窗口标题
+ * @param {number} width - 窗口宽度
+ * @param {number} height - 窗口高度
+ * @returns {BrowserWindow} 图片窗口
+ */
+export function createPicture(pictureId = 'picture', imagePath = 'doors/Door.png', fitMode = 'fill', title = null, width = 400, height = 300) {
+  const pictureTitle = title || `Picture: ${path.basename(imagePath)}`;
+  console.log(`[WINDOW] 创建图片窗口, ID: ${pictureId}, 路径: ${imagePath}, 缩放模式: ${fitMode}`);
+  
+  // 验证 fitMode
+  const validFitModes = ['fill', 'contain', 'cover', 'scale-down', 'none'];
+  const actualFitMode = validFitModes.includes(fitMode) ? fitMode : 'fill';
+  
+  if (fitMode !== actualFitMode) {
+    console.warn(`[WINDOW] 无效的缩放模式 ${fitMode}，使用默认值: fill`);
+  }
+  
+  // 编码路径参数
+  const encodedPath = encodeURIComponent(imagePath);
+  const queryString = `imagePath=${encodedPath}&fitMode=${actualFitMode}`;
+  
+  const win = createWindow(pictureId, { 
+    width, 
+    height, 
+    title: pictureTitle,
+    resizable: true,
+    otherContents: `pictureViewer.html?${queryString}`,
+  });
+  
+  console.log('[WINDOW] 图片窗口创建完成');
+  return win;
+}
+
+/**
+ * 更改窗口显示的图片
+ * @param {string} windowId - 窗口ID
+ * @param {string} imagePath - 新的图片路径
+ * @param {string} fitMode - 缩放模式（可选）
+ * @returns {Object} 操作结果
+ */
+export function setPicture(windowId, imagePath, fitMode = null) {
+  console.debug(`[WINDOW] 更改窗口图片, ID: ${windowId}, 路径: ${imagePath}`);
+  
+  const win = windows.get(windowId);
+  if (!win || win.isDestroyed()) {
+    return { success: false, message: `窗口 ${windowId} 不存在` };
+  }
+  
+  try {
+    // 向窗口发送图片更改事件
+    win.webContents.send('picture-change', imagePath, fitMode);
+    console.log(`[WINDOW] 窗口 ${windowId} 图片已更新为: ${imagePath}`);
+    return { success: true, message: `窗口 ${windowId} 图片已更新` };
+  } catch (error) {
+    console.error(`[WINDOW] 更改图片失败:`, error);
+    return { success: false, message: `更新失败: ${error.message}` };
+  }
+}
+
+/**
+ * 更改窗口的缩放模式
+ * @param {string} windowId - 窗口ID
+ * @param {string} fitMode - 缩放模式
+ * @returns {Object} 操作结果
+ */
+export function setFitMode(windowId, fitMode) {
+  console.debug(`[WINDOW] 更改窗口缩放模式, ID: ${windowId}, 模式: ${fitMode}`);
+  
+  const win = windows.get(windowId);
+  if (!win || win.isDestroyed()) {
+    return { success: false, message: `窗口 ${windowId} 不存在` };
+  }
+  
+  const validFitModes = ['fill', 'contain', 'cover', 'scale-down', 'none'];
+  if (!validFitModes.includes(fitMode)) {
+    return { success: false, message: `无效的缩放模式: ${fitMode}。支持的模式: ${validFitModes.join(', ')}` };
+  }
+  
+  try {
+    // 向窗口发送缩放模式更改事件
+    win.webContents.send('fit-mode-change', fitMode);
+    console.log(`[WINDOW] 窗口 ${windowId} 缩放模式已更新为: ${fitMode}`);
+    return { success: true, message: `窗口 ${windowId} 缩放模式已更新` };
+  } catch (error) {
+    console.error(`[WINDOW] 更改缩放模式失败:`, error);
+    return { success: false, message: `更新失败: ${error.message}` };
+  }
 }
 
 /**
@@ -403,5 +521,218 @@ export function getAllWindows() {
  */
 export function getWindow(id) {
   return windows.get(id);
+}
+
+/**
+ * 创建终端窗口
+ * @returns {BrowserWindow} 终端窗口
+ */
+export function createTerminal() {
+  console.debug('[WINDOW] 创建终端窗口');
+  
+  // 如果终端已存在，聚焦并返回
+  const existingTerminal = windows.get('terminal');
+  if (existingTerminal && !existingTerminal.isDestroyed()) {
+    existingTerminal.show();
+    existingTerminal.focus();
+    console.debug('[WINDOW] 终端窗口已存在，聚焦显示');
+    return existingTerminal;
+  }
+  
+  // 计算3:2比例的窗口大小
+  const width = 900;
+  const height = 600;
+  
+  const win = createWindow('terminal', { 
+    width, 
+    height, 
+    title: 'Fenestra Terminal',
+    resizable: true,
+    otherContents: "terminal.html",
+  });
+  
+  console.log('[WINDOW] 终端窗口创建完成');
+  return win;
+}
+
+/**
+ * 获取所有窗口的详细信息
+ * @returns {Array} 窗口信息数组
+ */
+export function getWindowsInfo() {
+  console.debug('[WINDOW] 获取所有窗口信息');
+  
+  const windowsInfo = [];
+  
+  for (const [id, win] of windows) {
+    if (win.isDestroyed()) {
+      console.warn(`[WINDOW] 窗口 ${id} 已销毁，跳过`);
+      continue;
+    }
+    
+    const bounds = win.getBounds();
+    const title = win.getTitle();
+    
+    windowsInfo.push({
+      id,
+      title,
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
+      resizable: win.isResizable(),
+      visible: win.isVisible(),
+      minimized: win.isMinimized(),
+      maximized: win.isMaximized(),
+      focused: win.isFocused(),
+    });
+  }
+  
+  console.debug(`[WINDOW] 返回 ${windowsInfo.length} 个窗口的信息`);
+  return windowsInfo;
+}
+
+/**
+ * 获取单个窗口的详细信息
+ * @param {string} id - 窗口ID
+ * @returns {Object|null} 窗口信息或null
+ */
+export function getWindowInfo(id) {
+  console.debug(`[WINDOW] 获取窗口信息, ID: ${id}`);
+  
+  const win = windows.get(id);
+  if (!win || win.isDestroyed()) {
+    console.warn(`[WINDOW] 窗口 ${id} 不存在或已销毁`);
+    return null;
+  }
+  
+  const bounds = win.getBounds();
+  const title = win.getTitle();
+  
+  return {
+    id,
+    title,
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    resizable: win.isResizable(),
+    visible: win.isVisible(),
+    minimized: win.isMinimized(),
+    maximized: win.isMaximized(),
+    focused: win.isFocused(),
+  };
+}
+
+/**
+ * 更新窗口属性
+ * @param {string} id - 窗口ID
+ * @param {string} property - 属性名
+ * @param {any} value - 属性值
+ * @returns {Object} 操作结果
+ */
+export function updateWindowProperty(id, property, value) {
+  console.debug(`[WINDOW] 更新窗口属性, ID: ${id}, 属性: ${property}, 值: ${value}`);
+  
+  const win = windows.get(id);
+  if (!win || win.isDestroyed()) {
+    return { success: false, message: `窗口 ${id} 不存在` };
+  }
+  
+  try {
+    switch (property) {
+      case 'title':
+        win.setTitle(value);
+        console.log(`[WINDOW] 窗口 ${id} 标题已更新为: ${value}`);
+        return { success: true, message: `窗口 ${id} 标题已更新` };
+        
+      case 'size':
+        if (!Array.isArray(value) || value.length !== 2) {
+          return { success: false, message: '大小值必须是 [宽度, 高度]' };
+        }
+        const [width, height] = value;
+        if (width <= 0 || height <= 0) {
+          return { success: false, message: '宽度和高度必须大于0' };
+        }
+        win.setSize(width, height);
+        console.log(`[WINDOW] 窗口 ${id} 大小已更新为: ${width}x${height}`);
+        return { success: true, message: `窗口 ${id} 大小已更新` };
+        
+      case 'position':
+        if (!Array.isArray(value) || value.length !== 2) {
+          return { success: false, message: '位置值必须是 [x, y]' };
+        }
+        const [x, y] = value;
+        win.setPosition(x, y);
+        console.log(`[WINDOW] 窗口 ${id} 位置已更新为: (${x}, ${y})`);
+        return { success: true, message: `窗口 ${id} 位置已更新` };
+        
+      case 'resizable':
+        if (typeof value !== 'boolean') {
+          return { success: false, message: 'resizable 必须是 true 或 false' };
+        }
+        win.setResizable(value);
+        console.log(`[WINDOW] 窗口 ${id} resizable 已更新为: ${value}`);
+        return { success: true, message: `窗口 ${id} resizable 已更新` };
+        
+      case 'visible':
+      case 'visibility':
+        if (typeof value !== 'boolean') {
+          return { success: false, message: 'visibility 必须是 true 或 false' };
+        }
+        if (value) {
+          win.show();
+          console.log(`[WINDOW] 窗口 ${id} 已显示`);
+          return { success: true, message: `窗口 ${id} 已显示` };
+        } else {
+          win.hide();
+          console.log(`[WINDOW] 窗口 ${id} 已隐藏`);
+          return { success: true, message: `窗口 ${id} 已隐藏` };
+        }
+        
+      default:
+        return { success: false, message: `不支持的属性: ${property}` };
+    }
+  } catch (error) {
+    console.error(`[WINDOW] 更新窗口属性失败:`, error);
+    return { success: false, message: `更新失败: ${error.message}` };
+  }
+}
+
+/**
+ * 重新加载窗口HTML
+ * @param {string} id - 窗口ID
+ * @param {string} htmlPath - HTML文件路径
+ * @returns {Object} 操作结果
+ */
+export function reloadWindowHtml(id, htmlPath) {
+  console.debug(`[WINDOW] 重新加载窗口HTML, ID: ${id}, 路径: ${htmlPath}`);
+  
+  const win = windows.get(id);
+  if (!win || win.isDestroyed()) {
+    return { success: false, message: `窗口 ${id} 不存在` };
+  }
+  
+  try {
+    const q = new url.URLSearchParams({ id });
+    
+    // 检查是否是完整路径
+    let fullPath;
+    if (path.isAbsolute(htmlPath)) {
+      fullPath = htmlPath;
+    } else {
+      // 相对路径，假设在 renderer 目录下
+      fullPath = path.join(process.cwd(), 'renderer', htmlPath);
+    }
+    
+    console.debug(`[WINDOW] 加载HTML文件: ${fullPath}?${q.toString()}`);
+    win.loadFile(fullPath, { query: q.toString() });
+    
+    console.log(`[WINDOW] 窗口 ${id} HTML已重新加载: ${htmlPath}`);
+    return { success: true, message: `窗口 ${id} HTML已重新加载` };
+  } catch (error) {
+    console.error(`[WINDOW] 重新加载HTML失败:`, error);
+    return { success: false, message: `加载失败: ${error.message}` };
+  }
 }
 

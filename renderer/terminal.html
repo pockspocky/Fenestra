@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>终端</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background-color: #000000;
+      color: #00ff00;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 14px;
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #terminal-container {
+      flex: 1;
+      padding: 10px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      word-wrap: break-word;
+    }
+
+    #output {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    .output-line {
+      margin: 2px 0;
+    }
+
+    .prompt {
+      color: #00ff00;
+    }
+
+    .error {
+      color: #ff0000;
+    }
+
+    .success {
+      color: #00ff00;
+    }
+
+    .info {
+      color: #ffffff;
+    }
+
+    #input-line {
+      display: flex;
+      padding: 10px;
+      background-color: #000000;
+      border-top: 1px solid #333333;
+    }
+
+    #prompt-symbol {
+      color: #00ff00;
+      margin-right: 5px;
+    }
+
+    #command-input {
+      flex: 1;
+      background-color: transparent;
+      border: none;
+      color: #00ff00;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 14px;
+      outline: none;
+    }
+
+    #command-input::selection {
+      background-color: #00ff00;
+      color: #000000;
+    }
+
+    /* 自定义滚动条 */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #000000;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #333333;
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #555555;
+    }
+
+    .autocomplete-hint {
+      color: #666666;
+      position: absolute;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="terminal-container">
+    <div id="output">
+      <div class="output-line info">Fenestra Terminal v1.0</div>
+      <div class="output-line info">输入 'help' 查看可用命令</div>
+      <div class="output-line info">按 Ctrl+~ 关闭终端</div>
+      <div class="output-line info">---</div>
+    </div>
+  </div>
+  <div id="input-line">
+    <span id="prompt-symbol">></span>
+    <input type="text" id="command-input" autocomplete="off" autofocus>
+  </div>
+
+  <script>
+    // 命令历史
+    let commandHistory = [];
+    let historyIndex = -1;
+    let currentCommand = '';
+
+    // 可用命令列表
+    const commands = [
+      'help', 'clear', 'list', 'ls', 'getWindows', 'info',
+      'set-title', 'set-size', 'set-position', 'set-resizable', 'set-visibility',
+      'show', 'hide', 'reload-html',
+      'create-picture', 'set-picture', 'set-fit-mode'
+    ];
+
+    // 获取元素
+    const outputEl = document.getElementById('output');
+    const inputEl = document.getElementById('command-input');
+
+    // 输出消息到终端
+    function print(message, type = 'info') {
+      const line = document.createElement('div');
+      line.className = `output-line ${type}`;
+      line.textContent = message;
+      outputEl.appendChild(line);
+      
+      // 自动滚动到底部
+      const container = document.getElementById('terminal-container');
+      container.scrollTop = container.scrollHeight;
+    }
+
+    // 执行命令
+    async function executeCommand(cmdStr) {
+      if (!cmdStr.trim()) return;
+
+      // 显示执行的命令
+      print(`> ${cmdStr}`, 'prompt');
+
+      // 添加到历史
+      commandHistory.push(cmdStr);
+      historyIndex = commandHistory.length;
+      currentCommand = '';
+
+      // 解析命令
+      const parts = parseCommand(cmdStr);
+      const cmd = parts[0]?.toLowerCase();
+      const args = parts.slice(1);
+
+      // 执行本地命令
+      if (cmd === 'help') {
+        showHelp();
+      } else if (cmd === 'clear') {
+        clearTerminal();
+      } else {
+        // 发送到主进程处理
+        try {
+          const result = await window.electronAPI.executeTerminalCommand(cmd, args);
+          if (result.success) {
+            if (result.message) {
+              print(result.message, 'success');
+            }
+            if (result.data) {
+              print(JSON.stringify(result.data, null, 2), 'info');
+            }
+          } else {
+            print(`[ERROR] ${result.message}`, 'error');
+          }
+        } catch (error) {
+          print(`[ERROR] ${error.message}`, 'error');
+        }
+      }
+    }
+
+    // 解析命令（支持引号）
+    function parseCommand(str) {
+      const parts = [];
+      let current = '';
+      let inQuotes = false;
+      let quoteChar = '';
+
+      for (let i = 0; i < str.length; i++) {
+        const char = str[i];
+        
+        if ((char === '"' || char === "'") && (!inQuotes || char === quoteChar)) {
+          if (inQuotes) {
+            inQuotes = false;
+            quoteChar = '';
+          } else {
+            inQuotes = true;
+            quoteChar = char;
+          }
+        } else if (char === ' ' && !inQuotes) {
+          if (current) {
+            parts.push(current);
+            current = '';
+          }
+        } else {
+          current += char;
+        }
+      }
+
+      if (current) {
+        parts.push(current);
+      }
+
+      return parts;
+    }
+
+    // 显示帮助信息
+    function showHelp() {
+      print('--- 可用命令 ---', 'info');
+      print('', 'info');
+      print('基础命令:', 'info');
+      print('  help                              - 显示此帮助信息', 'info');
+      print('  clear                             - 清空终端', 'info');
+      print('  list, ls                          - 列出所有窗口', 'info');
+      print('  getWindows                        - 获取所有窗口详细信息', 'info');
+      print('  info [窗口ID]                     - 查看窗口详细信息', 'info');
+      print('', 'info');
+      print('窗口操作命令:', 'info');
+      print('  set-title [ID] "标题"             - 设置窗口标题', 'info');
+      print('  set-size [ID] [宽度] [高度]       - 设置窗口大小', 'info');
+      print('  set-position [ID] [x] [y]         - 设置窗口位置', 'info');
+      print('  set-resizable [ID] [true/false]   - 设置是否可调整大小', 'info');
+      print('  set-visibility [ID] [true/false]  - 设置窗口可见性', 'info');
+      print('  show [ID]                         - 显示窗口', 'info');
+      print('  hide [ID]                         - 隐藏窗口', 'info');
+      print('  reload-html [ID] [htmlPath]       - 重新加载HTML文件', 'info');
+      print('', 'info');
+      print('图片窗口命令:', 'info');
+      print('  create-picture [ID] [路径] [模式] - 创建图片窗口', 'info');
+      print('      模式: fill/contain/cover/scale-down/none', 'info');
+      print('  set-picture [ID] [路径] [模式]    - 更改窗口显示的图片', 'info');
+      print('  set-fit-mode [ID] [模式]          - 更改图片缩放模式', 'info');
+      print('', 'info');
+      print('提示: 使用 Tab 键自动补全命令和窗口ID', 'info');
+      print('提示: 使用上下箭头浏览命令历史', 'info');
+      print('提示: 图片路径支持绝对路径和相对路径', 'info');
+    }
+
+    // 清空终端
+    function clearTerminal() {
+      outputEl.innerHTML = '';
+    }
+
+    // 自动补全
+    function autocomplete(input) {
+      const parts = input.trim().split(/\s+/);
+      
+      if (parts.length === 1) {
+        // 补全命令
+        const matches = commands.filter(cmd => cmd.startsWith(parts[0].toLowerCase()));
+        return matches.length === 1 ? matches[0] : null;
+      } else {
+        // 补全窗口ID（需要从主进程获取）
+        return null;
+      }
+    }
+
+    // 输入事件监听
+    inputEl.addEventListener('keydown', async (e) => {
+      // Enter - 执行命令
+      if (e.key === 'Enter') {
+        const cmd = inputEl.value;
+        inputEl.value = '';
+        await executeCommand(cmd);
+      }
+      // Tab - 自动补全
+      else if (e.key === 'Tab') {
+        e.preventDefault();
+        const completion = autocomplete(inputEl.value);
+        if (completion) {
+          inputEl.value = completion + ' ';
+        }
+      }
+      // 上箭头 - 上一条命令
+      else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (historyIndex > 0) {
+          if (historyIndex === commandHistory.length) {
+            currentCommand = inputEl.value;
+          }
+          historyIndex--;
+          inputEl.value = commandHistory[historyIndex];
+        }
+      }
+      // 下箭头 - 下一条命令
+      else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (historyIndex < commandHistory.length) {
+          historyIndex++;
+          if (historyIndex === commandHistory.length) {
+            inputEl.value = currentCommand;
+          } else {
+            inputEl.value = commandHistory[historyIndex];
+          }
+        }
+      }
+    });
+
+    // 保持焦点在输入框
+    document.addEventListener('click', () => {
+      inputEl.focus();
+    });
+
+    // 欢迎信息
+    print('', 'info');
+  </script>
+</body>
+</html>
+
