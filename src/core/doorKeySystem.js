@@ -123,7 +123,7 @@ function animateKeyMovement(keyWin, targetX, targetY) {
   
   const distance = Math.sqrt(Math.pow(targetX - startX, 2) + Math.pow(targetY - startY, 2));
   const duration = Math.min(distance / 5, 1000); // 最大300ms
-  const steps = Math.ceil(duration / 4); // 60fps
+  const steps = Math.ceil(duration / 1); // 60fps
   
   let currentStep = 0;
   
