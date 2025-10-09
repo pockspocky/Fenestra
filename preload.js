@@ -82,10 +82,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     });
   },
   // 镜头系统 API
-  invoke: (channel, ...args) => {
-    console.log(`[PRELOAD] IPC调用: ${channel}, 参数:`, args);
-    return ipcRenderer.invoke(channel, ...args);
-  },
   onUpdateBlur: (callback) => {
     ipcRenderer.on('update-blur', (_e, blurValue) => {
       console.log(`[PRELOAD] 收到模糊度更新事件: ${blurValue}`);

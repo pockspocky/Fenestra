@@ -226,7 +226,7 @@
     async function startPositionTracking() {
       // 首先获取目标窗口信息
       try {
-        const targetInfo = await window.electronAPI.invoke('window/get-info', targetWindowId);
+        const targetInfo = await window.api.invoke('window/get-info', targetWindowId);
         if (targetInfo && targetInfo.success) {
           targetWindowBounds = targetInfo.bounds;
           console.log('[LENS] 目标窗口信息:', targetWindowBounds);
@@ -239,7 +239,7 @@
       setInterval(async () => {
         try {
           // 获取当前镜头窗口的位置
-          const lensInfo = await window.electronAPI.invoke('lens/get-position', lensId);
+          const lensInfo = await window.api.invoke('lens/get-position', lensId);
           if (lensInfo && lensInfo.success) {
             currentLensBounds = lensInfo.bounds;
             updateContentPosition();
@@ -277,7 +277,7 @@
     function updateImagePosition() {
       // 获取目标窗口信息并更新位置
       if (targetWindowId) {
-        window.electronAPI.invoke('window/get-info', targetWindowId)
+        window.api.invoke('window/get-info', targetWindowId)
           .then(info => {
             if (info) {
               targetWindowBounds = info.bounds;
@@ -302,7 +302,7 @@
     // 定期更新目标窗口位置（备用方案）
     setInterval(async () => {
       try {
-        const targetInfo = await window.electronAPI.invoke('window/get-info', targetWindowId);
+        const targetInfo = await window.api.invoke('window/get-info', targetWindowId);
         if (targetInfo && targetInfo.success) {
           targetWindowBounds = targetInfo.bounds;
         }
