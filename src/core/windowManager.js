@@ -1,7 +1,16 @@
 import { BrowserWindow } from 'electron';
 import path from 'node:path';
 import url from 'node:url';
+import fs from 'node:fs';
 import '../../logger.js'; // 导入日志系统
+import {
+  registerLensSystem,
+  unregisterLensSystem,
+  getLensSystemInfo,
+  getAllLensSystems,
+  getLensSystemCount,
+  lensSystemExists
+} from './lensSystem.js';
 
 // 全局窗口映射
 export const windows = new Map(); // id -> BrowserWindow
@@ -177,26 +186,37 @@ export function createWindow(id, opts = {}) {
   console.debug(`[WINDOW] BrowserWindow已创建，ID: ${id}, webContentsId: ${win.webContents.id}`);
   
   // 解析 otherContents 中的文件名和查询参数
-  const otherContents = opts.otherContents ?? "index.html";
-  let htmlFileName = otherContents;
-  let additionalQuery = '';
+  const otherContents = opts.otherContents;
+  const htmlName = opts.htmlName;
+  let htmlFileName;
+  let queryObj = { id };
   
-  // 检查是否包含查询字符串
-  if (otherContents.includes('?')) {
-    const parts = otherContents.split('?');
-    htmlFileName = parts[0];
-    additionalQuery = parts[1];
-  }
-  
-  // 构建完整的查询参数（作为对象，Electron 会自动转换为查询字符串）
-  const queryObj = { id };
-  
-  if (additionalQuery) {
-    // 合并额外的查询参数
-    const additionalParams = new url.URLSearchParams(additionalQuery);
-    for (const [key, value] of additionalParams) {
-      queryObj[key] = value;
+  // 判断 otherContents 的类型
+  if (typeof otherContents === 'string') {
+    // 字符串格式：可能是 "file.html" 或 "file.html?param=value"
+    if (otherContents.includes('?')) {
+      const parts = otherContents.split('?');
+      htmlFileName = parts[0];
+      const additionalQuery = parts[1];
+      
+      // 合并查询参数
+      const additionalParams = new url.URLSearchParams(additionalQuery);
+      for (const [key, value] of additionalParams) {
+        queryObj[key] = value;
+      }
+    } else {
+      htmlFileName = otherContents;
     }
+  } else if (typeof otherContents === 'object' && otherContents !== null) {
+    // 对象格式：直接作为查询参数
+    // 优先使用 htmlName，否则默认为 'index.html'
+    htmlFileName = htmlName || 'index.html';
+    // 确保窗口的 id 不会被 otherContents 中的 id 覆盖
+    queryObj = { ...otherContents, id };
+  } else {
+    // 未提供 otherContents 或为其他类型
+    // 优先使用 htmlName，否则默认为 'index.html'
+    htmlFileName = htmlName || 'index.html';
   }
   
   const htmlPath = path.join(process.cwd(), 'renderer', htmlFileName);
@@ -221,6 +241,13 @@ export function createWindow(id, opts = {}) {
 function setupWindowEvents(win, id) {
   win.on('closed', () => {
     console.debug(`[WINDOW] 窗口关闭事件触发, ID: ${id}`);
+    
+    // 如果是镜头窗口，先注销镜头系统（在删除窗口之前）
+    if (lensSystemExists(id)) {
+      console.debug(`[WINDOW] 检测到镜头窗口关闭，先注销镜头系统: ${id}`);
+      unregisterLensSystem(id);
+    }
+    
     windows.delete(id);
     console.log(`[WINDOW] 从窗口映射中移除 ID: ${id}, 剩余窗口数量: ${windows.size}`);
     
@@ -753,5 +780,492 @@ export function reloadWindowHtml(id, htmlPath) {
     console.error(`[WINDOW] 重新加载HTML失败:`, error);
     return { success: false, message: `加载失败: ${error.message}` };
   }
+}
+
+/**
+ * 解析内容输入
+ * 支持格式：
+ * 1. "表面内容|||隐藏内容" - 使用|||分隔符（文字/图片路径）
+ * 2. "文件路径.txt" - 读取文本文件内容
+ * 3. "图片路径.png" - 图片路径（清晰化模式）
+ * 4. "普通文本" - 直接使用文本
+ * 
+ * @param {string} input - 输入字符串
+ * @param {string} contentType - 内容类型（'text' 或 'image'）
+ * @returns {Object} { surface: string, hidden: string }
+ */
+function parseContentInput(input, contentType = 'text') {
+  if (!input || typeof input !== 'string') {
+    console.warn('[CONTENT_PARSE] 输入为空或不是字符串');
+    return { surface: '', hidden: '' };
+  }
+
+  // 检测特殊分隔符 |||（适用于文字和图片路径）
+  if (input.includes('|||')) {
+    const parts = input.split('|||');
+    const surface = parts[0] || '';
+    const hidden = parts[1] || parts[0]; // 如果没有隐藏内容，使用表面内容
+    
+    if (contentType === 'image') {
+      console.log(`[CONTENT_PARSE] 图片双路径模式 - 表面: "${surface}", 隐藏: "${hidden}"`);
+    } else {
+      console.log(`[CONTENT_PARSE] 文字分隔符模式 - 表面: "${surface.substring(0, 50)}...", 隐藏: "${hidden.substring(0, 50)}..."`);
+    }
+    return { surface, hidden };
+  }
+
+  // 图片路径检测（以图片扩展名结尾）
+  const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'];
+  const isImagePath = imageExtensions.some(ext => input.toLowerCase().endsWith(ext));
+  
+  if (contentType === 'image' && isImagePath) {
+    // 图片清晰化模式：镜头显示相同图片但清晰
+    console.log(`[CONTENT_PARSE] 图片清晰化模式 - 路径: "${input}"`);
+    return { surface: input, hidden: input };
+  }
+
+  // 文本文件路径检测（以 .txt 结尾）
+  if (input.endsWith('.txt')) {
+    try {
+      const fullPath = path.isAbsolute(input) 
+        ? input 
+        : path.join(process.cwd(), input);
+      
+      if (fs.existsSync(fullPath)) {
+        const content = fs.readFileSync(fullPath, 'utf-8');
+        
+        // 文件内容也可能包含 ||| 分隔符
+        if (content.includes('|||')) {
+          const parts = content.split('|||');
+          const surface = parts[0] || '';
+          const hidden = parts[1] || parts[0];
+          console.log(`[CONTENT_PARSE] 从文件读取双内容 - 文件: ${input}`);
+          return { surface, hidden };
+        } else {
+          // 文件只有一种内容，镜头显示相同内容（清晰化模式）
+          console.log(`[CONTENT_PARSE] 从文件读取单内容 - 文件: ${input}`);
+          return { surface: content, hidden: content };
+        }
+      } else {
+        console.warn(`[CONTENT_PARSE] 文件不存在: ${fullPath}`);
+        return { surface: `[错误] 文件不存在: ${input}`, hidden: `[错误] 文件不存在: ${input}` };
+      }
+    } catch (error) {
+      console.error(`[CONTENT_PARSE] 读取文件失败:`, error);
+      return { surface: `[错误] 读取文件失败: ${error.message}`, hidden: `[错误] 读取文件失败: ${error.message}` };
+    }
+  }
+
+  // 普通文本，镜头显示相同内容（清晰化模式）
+  console.log(`[CONTENT_PARSE] 使用普通文本模式 - "${input.substring(0, 50)}..."`);
+  return { surface: input, hidden: input };
+}
+
+/**
+ * 创建内容窗口（底层模糊窗口）
+ * @param {string} id - 窗口ID
+ * @param {Object} options - 配置选项
+ * @returns {Object} 操作结果
+ */
+export function createContentWindow(id, options = {}) {
+  console.log(`[WINDOW] 创建内容窗口, ID: ${id}`);
+
+  const {
+    contentType = 'text',       // 'text' 或 'image'
+    contentPath = '',            // 内容路径
+    blurAmount = 10,             // 模糊程度 (0-50)
+    blurred = true,              // 是否初始模糊
+    width = 800,
+    height = 600,
+    x,
+    y,
+    title = '内容窗口'
+  } = options;
+
+  // 解析内容（支持文字和图片）
+  let surfaceContent = contentPath;
+  let hiddenContent = contentPath;
+  
+  if (contentPath) {
+    const parsed = parseContentInput(contentPath, contentType);
+    surfaceContent = parsed.surface;
+    hiddenContent = parsed.hidden;
+    
+    if (contentType === 'image') {
+      console.log(`[WINDOW] 图片内容已解析 - 表面: "${surfaceContent}", 隐藏: "${hiddenContent}"`);
+    } else {
+      console.log(`[WINDOW] 文字内容已解析 - 表面长度: ${surfaceContent.length}, 隐藏长度: ${hiddenContent.length}`);
+    }
+  }
+
+  // 构建URL参数
+  const queryObj = {
+    id,
+    type: contentType,
+    path: contentPath,
+    surfaceContent,      // 表面内容（模糊显示）
+    hiddenContent,       // 隐藏内容（镜头显示）
+    blur: blurAmount.toString(),
+    blurred: blurred.toString()
+  };
+
+  // 确定窗口位置
+  const position = (x !== undefined && y !== undefined) 
+    ? { x, y }
+    : getNextWindowPosition();
+
+  const windowOptions = {
+    width,
+    height,
+    x: position.x,
+    y: position.y,
+    title,
+    htmlName: 'contentViewer.html',
+    otherContents: queryObj,
+    resizable: true,
+    frame: true,
+    transparent: false,
+  };
+
+  const win = createWindow(id, windowOptions);
+  
+  if (win && !win.isDestroyed()) {
+    console.log(`[WINDOW] 内容窗口创建成功: ${id}, 类型: ${contentType}, 模糊: ${blurred}`);
+    return { success: true, message: `内容窗口 ${id} 创建成功`, id };
+  }
+
+  return { success: false, message: '创建内容窗口失败' };
+}
+
+/**
+ * 创建镜头窗口
+ * @param {string} lensId - 镜头窗口ID
+ * @param {string} targetWindowId - 目标窗口ID
+ * @param {Object} options - 配置选项
+ * @returns {Object} 操作结果
+ */
+export function createLensWindow(lensId, targetWindowId, options = {}) {
+  console.log(`[WINDOW] 创建镜头窗口, 镜头ID: ${lensId}, 目标ID: ${targetWindowId}`);
+
+  // 检查镜头数量限制
+  const currentLensCount = getLensSystemCount();
+  if (currentLensCount >= 3) {
+    return { 
+      success: false, 
+      message: '已达到最大镜头数量限制（3个）' 
+    };
+  }
+
+  // 检查镜头ID是否已存在
+  if (lensSystemExists(lensId)) {
+    return {
+      success: false,
+      message: `镜头 ${lensId} 已存在`
+    };
+  }
+
+  // 检查目标窗口是否存在
+  const targetWindow = windows.get(targetWindowId);
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return {
+      success: false,
+      message: `目标窗口 ${targetWindowId} 不存在`
+    };
+  }
+
+  const {
+    contentType = 'text',
+    contentPath = '',
+    width = 300,
+    height = 200,
+    x,
+    y
+  } = options;
+
+  // 从目标窗口获取实际的内容信息
+  let actualContentType = contentType;
+  let actualContentPath = contentPath;
+  let hiddenContent = '';
+
+  try {
+    const targetUrl = targetWindow.webContents.getURL();
+    console.log(`[WINDOW] 目标窗口URL: ${targetUrl}`);
+    
+    // 如果没有明确指定内容路径，尝试从目标窗口URL获取
+    if (!contentPath && targetUrl) {
+      try {
+        const urlObj = new URL(targetUrl);
+        const urlParams = urlObj.searchParams;
+        
+        actualContentType = urlParams.get('type') || contentType;
+        actualContentPath = urlParams.get('path') || '';
+        hiddenContent = urlParams.get('hiddenContent') || '';
+        
+        console.log(`[WINDOW] 从目标窗口提取内容 - 类型: ${actualContentType}, 路径: ${actualContentPath}`);
+        console.log(`[WINDOW] 隐藏内容长度: ${hiddenContent.length}`);
+      } catch (urlError) {
+        console.warn(`[WINDOW] URL解析失败 (${targetUrl}):`, urlError.message);
+        
+        // 尝试手动解析file://协议的URL
+        if (targetUrl.includes('?')) {
+          try {
+            const queryString = targetUrl.split('?')[1];
+            const urlParams = new URLSearchParams(queryString);
+            
+            actualContentType = urlParams.get('type') || contentType;
+            actualContentPath = urlParams.get('path') || '';
+            hiddenContent = urlParams.get('hiddenContent') || '';
+            
+            console.log(`[WINDOW] 手动解析成功 - 类型: ${actualContentType}, 路径: ${actualContentPath}`);
+          } catch (parseError) {
+            console.warn(`[WINDOW] 手动解析也失败:`, parseError.message);
+            // 使用默认值，已在上面初始化
+          }
+        }
+      }
+    }
+    
+    console.log(`[WINDOW] 镜头将使用 - 类型: ${actualContentType}, 路径: ${actualContentPath || '(无)'}, 隐藏内容: ${hiddenContent ? '是' : '否'}`);
+  } catch (error) {
+    console.error(`[WINDOW] 从目标窗口获取内容信息时发生错误:`, error);
+    // 确保使用初始默认值
+    actualContentType = contentType;
+    actualContentPath = contentPath;
+    hiddenContent = '';
+  }
+
+  // 构建URL参数
+  const queryObj = {
+    lensId,
+    targetId: targetWindowId,
+    type: actualContentType,
+    path: actualContentPath,
+    hiddenContent  // 镜头显示隐藏内容
+  };
+
+  // 确定窗口位置（默认在目标窗口中心）
+  let position;
+  if (x !== undefined && y !== undefined) {
+    position = { x, y };
+  } else {
+    const targetBounds = targetWindow.getBounds();
+    position = {
+      x: targetBounds.x + (targetBounds.width - width) / 2,
+      y: targetBounds.y + (targetBounds.height - height) / 2
+    };
+  }
+
+  const windowOptions = {
+    width,
+    height,
+    x: position.x,
+    y: position.y,
+    title: `镜头 - ${lensId}`,
+    htmlName: 'lensViewer.html',
+    otherContents: queryObj,
+    resizable: true,
+    frame: false,           // 无边框
+    transparent: true,      // 透明背景
+    alwaysOnTop: true,      // 始终置顶
+  };
+
+  const lensWindow = createWindow(lensId, windowOptions);
+
+  if (lensWindow && !lensWindow.isDestroyed()) {
+    // 注册镜头系统
+    registerLensSystem(lensId, lensWindow, targetWindowId, targetWindow);
+
+    // 注意：镜头窗口关闭时的清理已在 setupWindowEvents 中统一处理
+    // 无需在此处添加额外的 closed 监听器
+
+    console.log(`[WINDOW] 镜头窗口创建成功: ${lensId} -> ${targetWindowId}`);
+    return { success: true, message: `镜头窗口 ${lensId} 创建成功`, id: lensId };
+  }
+
+  return { success: false, message: '创建镜头窗口失败' };
+}
+
+/**
+ * 设置窗口透明度
+ * @param {string} id - 窗口ID
+ * @param {number} opacity - 透明度 (0.0-1.0)
+ * @returns {Object} 操作结果
+ */
+export function setWindowOpacity(id, opacity) {
+  console.log(`[WINDOW] 设置窗口透明度, ID: ${id}, 透明度: ${opacity}`);
+
+  const win = windows.get(id);
+  if (!win || win.isDestroyed()) {
+    return { success: false, message: `窗口 ${id} 不存在` };
+  }
+
+  // 验证opacity参数
+  // API查询结果：setOpacity(opacity)
+  // - 用处：设置窗口不透明度
+  // - 输入：opacity (Number) - 0.0（完全透明）到 1.0（完全不透明）
+  // - 输出：void
+  const opacityNum = parseFloat(opacity);
+  if (isNaN(opacityNum) || opacityNum < 0 || opacityNum > 1) {
+    return { 
+      success: false, 
+      message: 'opacity 必须是 0.0 到 1.0 之间的数字' 
+    };
+  }
+
+  try {
+    win.setOpacity(opacityNum);
+    console.log(`[WINDOW] 窗口 ${id} 透明度已设置为 ${opacityNum}`);
+    return { 
+      success: true, 
+      message: `窗口 ${id} 透明度已设置为 ${opacityNum}` 
+    };
+  } catch (error) {
+    console.error(`[WINDOW] 设置透明度失败:`, error);
+    return { 
+      success: false, 
+      message: `设置失败: ${error.message}` 
+    };
+  }
+}
+
+/**
+ * 设置窗口始终置顶
+ * @param {string} id - 窗口ID
+ * @param {boolean} flag - 是否置顶
+ * @param {string} level - 置顶级别（可选）
+ * @returns {Object} 操作结果
+ */
+export function setWindowAlwaysOnTop(id, flag, level = 'normal') {
+  console.log(`[WINDOW] 设置窗口置顶, ID: ${id}, 置顶: ${flag}, 级别: ${level}`);
+
+  const win = windows.get(id);
+  if (!win || win.isDestroyed()) {
+    return { success: false, message: `窗口 ${id} 不存在` };
+  }
+
+  // 验证flag参数
+  if (typeof flag !== 'boolean') {
+    return { 
+      success: false, 
+      message: 'flag 必须是 true 或 false' 
+    };
+  }
+
+  // 验证level参数
+  // API查询结果：setAlwaysOnTop(flag, level)
+  // - 用处：设置窗口是否始终显示在其他窗口之上
+  // - 输入：flag (Boolean), level (String, 可选) - 'normal', 'floating', 'torn-off-menu', etc.
+  // - 输出：void
+  const validLevels = ['normal', 'floating', 'torn-off-menu', 'modal-panel', 'main-menu', 'status', 'pop-up-menu', 'screen-saver'];
+  if (!validLevels.includes(level)) {
+    return {
+      success: false,
+      message: `不支持的level: ${level}。有效值: ${validLevels.join(', ')}`
+    };
+  }
+
+  try {
+    win.setAlwaysOnTop(flag, level);
+    console.log(`[WINDOW] 窗口 ${id} 置顶状态已设置为 ${flag}, 级别: ${level}`);
+    return { 
+      success: true, 
+      message: `窗口 ${id} 置顶状态已设置为 ${flag}` 
+    };
+  } catch (error) {
+    console.error(`[WINDOW] 设置置顶状态失败:`, error);
+    return { 
+      success: false, 
+      message: `设置失败: ${error.message}` 
+    };
+  }
+}
+
+/**
+ * 更新内容窗口的模糊程度
+ * @param {string} id - 窗口ID
+ * @param {number} blurAmount - 模糊程度 (0-50)
+ * @returns {Object} 操作结果
+ */
+export function updateContentBlur(id, blurAmount) {
+  console.log(`[WINDOW] 更新内容窗口模糊度, ID: ${id}, 模糊度: ${blurAmount}`);
+
+  const win = windows.get(id);
+  if (!win || win.isDestroyed()) {
+    return { success: false, message: `窗口 ${id} 不存在` };
+  }
+
+  const blurNum = parseFloat(blurAmount);
+  if (isNaN(blurNum) || blurNum < 0 || blurNum > 50) {
+    return {
+      success: false,
+      message: 'blurAmount 必须是 0 到 50 之间的数字'
+    };
+  }
+
+  try {
+    win.webContents.send('update-blur', blurNum);
+    console.log(`[WINDOW] 窗口 ${id} 模糊度已更新为 ${blurNum}`);
+    return {
+      success: true,
+      message: `窗口 ${id} 模糊度已更新为 ${blurNum}`
+    };
+  } catch (error) {
+    console.error(`[WINDOW] 更新模糊度失败:`, error);
+    return {
+      success: false,
+      message: `更新失败: ${error.message}`
+    };
+  }
+}
+
+/**
+ * 销毁镜头系统（镜头窗口和相关绑定）
+ * @param {string} lensId - 镜头窗口ID
+ * @returns {Object} 操作结果
+ */
+export function destroyLensSystem(lensId) {
+  console.log(`[WINDOW] 销毁镜头系统, ID: ${lensId}`);
+
+  const lensWindow = windows.get(lensId);
+  if (!lensWindow || lensWindow.isDestroyed()) {
+    return { success: false, message: `镜头 ${lensId} 不存在` };
+  }
+
+  try {
+    // 注销镜头系统（会自动移除事件监听器）
+    unregisterLensSystem(lensId);
+
+    // 关闭窗口
+    lensWindow.close();
+
+    console.log(`[WINDOW] 镜头系统已销毁: ${lensId}`);
+    return {
+      success: true,
+      message: `镜头系统 ${lensId} 已销毁`
+    };
+  } catch (error) {
+    console.error(`[WINDOW] 销毁镜头系统失败:`, error);
+    return {
+      success: false,
+      message: `销毁失败: ${error.message}`
+    };
+  }
+}
+
+/**
+ * 获取所有镜头系统信息
+ * @returns {Array} 镜头系统列表
+ */
+export function getLensSystems() {
+  return getAllLensSystems();
+}
+
+/**
+ * 获取镜头系统信息
+ * @param {string} lensId - 镜头ID
+ * @returns {Object|null} 镜头系统信息
+ */
+export function getLensSystem(lensId) {
+  return getLensSystemInfo(lensId);
 }
 

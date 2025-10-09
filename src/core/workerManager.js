@@ -52,10 +52,10 @@ export function startOverlapLoop() {
     const windows = getAllWindows();
     
     for (const [doorId, doorWin] of windows) {
-      if (!doorId.startsWith('door')) continue;
+      if (typeof doorId !== 'string' || !doorId.startsWith('door')) continue;
       
       for (const [keyId, keyWin] of windows) {
-        if (!keyId.startsWith('key')) continue;
+        if (typeof keyId !== 'string' || !keyId.startsWith('key')) continue;
         
         const doorBounds = doorWin.getBounds();
         const keyBounds = keyWin.getBounds();

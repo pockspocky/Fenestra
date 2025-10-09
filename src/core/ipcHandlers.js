@@ -10,7 +10,15 @@ import {
   reloadWindowHtml,
   createPicture,
   setPicture,
-  setFitMode
+  setFitMode,
+  createContentWindow,
+  createLensWindow,
+  setWindowOpacity,
+  setWindowAlwaysOnTop,
+  updateContentBlur,
+  destroyLensSystem,
+  getLensSystems,
+  getLensSystem
 } from './windowManager.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -86,6 +94,25 @@ export function initializeIpcHandlers() {
       console.error('[IPC] 图片加载错误:', error);
       return { success: false, error: error.message };
     }
+  });
+
+  // 镜头系统处理程序
+  ipcMain.handle('lens/get-position', (_e, lensId) => {
+    console.debug(`[IPC] 获取镜头位置: ${lensId}`);
+    const lensInfo = getLensSystem(lensId);
+    if (lensInfo && lensInfo.lensBounds) {
+      return { success: true, bounds: lensInfo.lensBounds };
+    }
+    return { success: false, error: '镜头不存在或缺少位置信息' };
+  });
+
+  ipcMain.handle('window/get-info', (_e, windowId) => {
+    console.debug(`[IPC] 获取窗口信息: ${windowId}`);
+    const info = getWindowInfo(windowId);
+    if (info) {
+      return { success: true, bounds: { x: info.x, y: info.y, width: info.width, height: info.height } };
+    }
+    return { success: false, error: '窗口不存在' };
   });
 
   console.debug('[IPC] 所有IPC处理程序已设置完成');
@@ -300,6 +327,141 @@ function executeTerminalCommand(command, args) {
       return setFitMode(windowId, fitMode);
     }
     
+    // 镜头系统命令
+    case 'create-content': {
+      if (args.length < 2) {
+        return { success: false, message: '用法: create-content [ID] [类型:text/image] [路径] [模糊度:0-50] [是否模糊:true/false]' };
+      }
+      
+      const id = args[0];
+      const contentType = args[1];
+      const contentPath = args[2] || '';
+      const blurAmount = args[3] ? parseFloat(args[3]) : 10;
+      const blurred = args[4] !== 'false'; // 默认为true
+      
+      try {
+        const result = createContentWindow(id, {
+          contentType,
+          contentPath,
+          blurAmount,
+          blurred
+        });
+        return result;
+      } catch (error) {
+        return { success: false, message: `创建失败: ${error.message}` };
+      }
+    }
+    
+    case 'create-lens': {
+      if (args.length < 2) {
+        return { success: false, message: '用法: create-lens [镜头ID] [目标窗口ID] [宽度] [高度]' };
+      }
+      
+      const lensId = args[0];
+      const targetWindowId = args[1];
+      const width = args[2] ? parseInt(args[2]) : 300;
+      const height = args[3] ? parseInt(args[3]) : 200;
+      
+      try {
+        // 获取目标窗口信息以确定内容类型和路径
+        const targetInfo = getWindowInfo(targetWindowId);
+        if (!targetInfo) {
+          return { success: false, message: `目标窗口 ${targetWindowId} 不存在` };
+        }
+        
+        const result = createLensWindow(lensId, targetWindowId, {
+          width,
+          height,
+          contentType: 'text', // 默认文字类型，后续可扩展
+          contentPath: ''
+        });
+        return result;
+      } catch (error) {
+        return { success: false, message: `创建失败: ${error.message}` };
+      }
+    }
+    
+    case 'set-opacity': {
+      if (args.length < 2) {
+        return { success: false, message: '用法: set-opacity [窗口ID] [0-1]' };
+      }
+      
+      const windowId = args[0];
+      const opacity = parseFloat(args[1]);
+      
+      return setWindowOpacity(windowId, opacity);
+    }
+    
+    case 'set-always-on-top': {
+      if (args.length < 2) {
+        return { success: false, message: '用法: set-always-on-top [窗口ID] [true/false] [level(可选)]' };
+      }
+      
+      const windowId = args[0];
+      const flag = args[1] === 'true';
+      const level = args[2] || 'normal';
+      
+      return setWindowAlwaysOnTop(windowId, flag, level);
+    }
+    
+    case 'update-blur': {
+      if (args.length < 2) {
+        return { success: false, message: '用法: update-blur [窗口ID] [0-50]' };
+      }
+      
+      const windowId = args[0];
+      const blurAmount = parseFloat(args[1]);
+      
+      return updateContentBlur(windowId, blurAmount);
+    }
+    
+    case 'destroy-lens': {
+      if (args.length < 1) {
+        return { success: false, message: '用法: destroy-lens [镜头ID]' };
+      }
+      
+      const lensId = args[0];
+      return destroyLensSystem(lensId);
+    }
+    
+    case 'list-lens':
+    case 'lens-list': {
+      const lensSystems = getLensSystems();
+      
+      if (lensSystems.length === 0) {
+        return { success: true, message: '当前没有镜头窗口' };
+      }
+      
+      const message = lensSystems.map(lens => 
+        `${lens.lensId} -> ${lens.targetWindowId} (追踪: ${lens.isTracking})`
+      ).join('\n');
+      
+      return {
+        success: true,
+        message: `找到 ${lensSystems.length} 个镜头系统:\n${message}`,
+        data: lensSystems
+      };
+    }
+    
+    case 'lens-info': {
+      if (args.length < 1) {
+        return { success: false, message: '用法: lens-info [镜头ID]' };
+      }
+      
+      const lensId = args[0];
+      const lensInfo = getLensSystem(lensId);
+      
+      if (!lensInfo) {
+        return { success: false, message: `镜头 ${lensId} 不存在` };
+      }
+      
+      return {
+        success: true,
+        message: `镜头 ${lensId} 的信息:`,
+        data: lensInfo
+      };
+    }
+    
     default:
       return { 
         success: false, 
@@ -421,6 +583,8 @@ export function cleanupIpcHandlers() {
   ipcMain.removeAllListeners('game/window/get-bounds');
   ipcMain.removeAllListeners('terminal/execute-command');
   ipcMain.removeAllListeners('picture/load');
+  ipcMain.removeAllListeners('lens/get-position');
+  ipcMain.removeAllListeners('window/get-info');
   
   console.debug('[IPC] IPC处理程序已清理');
 }

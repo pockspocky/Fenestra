@@ -132,7 +132,9 @@
       'help', 'clear', 'list', 'ls', 'getWindows', 'info',
       'get-title', 'set-title', 'set-size', 'set-position', 'set-resizable', 'set-visibility',
       'show', 'hide', 'reload-html',
-      'create-picture', 'set-picture', 'set-fit-mode'
+      'create-picture', 'set-picture', 'set-fit-mode',
+      'create-content', 'create-lens', 'set-opacity', 'set-always-on-top', 
+      'update-blur', 'destroy-lens', 'list-lens', 'lens-list', 'lens-info'
     ];
 
     // 获取元素
@@ -256,9 +258,22 @@
       print('  set-picture [ID] [路径] [模式]    - 更改窗口显示的图片', 'info');
       print('  set-fit-mode [ID] [模式]          - 更改图片缩放模式', 'info');
       print('', 'info');
+      print('镜头系统命令:', 'info');
+      print('  create-content [ID] [类型] [路径] [模糊度] [是否模糊]', 'info');
+      print('      - 创建内容窗口（text/image，模糊度0-50）', 'info');
+      print('  create-lens [镜头ID] [目标ID] [宽] [高]', 'info');
+      print('      - 创建镜头窗口（最多3个）', 'info');
+      print('  set-opacity [ID] [0-1]            - 设置窗口透明度', 'info');
+      print('  set-always-on-top [ID] [true/false] - 设置窗口置顶', 'info');
+      print('  update-blur [ID] [0-50]           - 更新内容模糊度', 'info');
+      print('  destroy-lens [镜头ID]             - 销毁镜头系统', 'info');
+      print('  list-lens, lens-list              - 列出所有镜头', 'info');
+      print('  lens-info [镜头ID]                - 查看镜头详情', 'info');
+      print('', 'info');
       print('提示: 使用 Tab 键自动补全命令和窗口ID', 'info');
       print('提示: 使用上下箭头浏览命令历史', 'info');
       print('提示: 图片路径支持绝对路径和相对路径', 'info');
+      print('提示: 镜头窗口可显示底层模糊内容的清晰版本', 'info');
     }
 
     // 清空终端
