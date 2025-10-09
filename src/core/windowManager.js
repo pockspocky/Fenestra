@@ -991,21 +991,47 @@ export function createLensWindow(lensId, targetWindowId, options = {}) {
     const targetUrl = targetWindow.webContents.getURL();
     console.log(`[WINDOW] 目标窗口URL: ${targetUrl}`);
     
-    const urlObj = new URL(targetUrl);
-    const urlParams = urlObj.searchParams;
-    
-    // 如果没有明确指定，则从目标窗口获取
-    if (!contentPath) {
-      actualContentType = urlParams.get('type') || contentType;
-      actualContentPath = urlParams.get('path') || '';
-      hiddenContent = urlParams.get('hiddenContent') || '';
-      console.log(`[WINDOW] 从目标窗口提取内容 - 类型: ${actualContentType}, 路径: ${actualContentPath}`);
-      console.log(`[WINDOW] 隐藏内容长度: ${hiddenContent.length}`);
+    // 如果没有明确指定内容路径，尝试从目标窗口URL获取
+    if (!contentPath && targetUrl) {
+      try {
+        const urlObj = new URL(targetUrl);
+        const urlParams = urlObj.searchParams;
+        
+        actualContentType = urlParams.get('type') || contentType;
+        actualContentPath = urlParams.get('path') || '';
+        hiddenContent = urlParams.get('hiddenContent') || '';
+        
+        console.log(`[WINDOW] 从目标窗口提取内容 - 类型: ${actualContentType}, 路径: ${actualContentPath}`);
+        console.log(`[WINDOW] 隐藏内容长度: ${hiddenContent.length}`);
+      } catch (urlError) {
+        console.warn(`[WINDOW] URL解析失败 (${targetUrl}):`, urlError.message);
+        
+        // 尝试手动解析file://协议的URL
+        if (targetUrl.includes('?')) {
+          try {
+            const queryString = targetUrl.split('?')[1];
+            const urlParams = new URLSearchParams(queryString);
+            
+            actualContentType = urlParams.get('type') || contentType;
+            actualContentPath = urlParams.get('path') || '';
+            hiddenContent = urlParams.get('hiddenContent') || '';
+            
+            console.log(`[WINDOW] 手动解析成功 - 类型: ${actualContentType}, 路径: ${actualContentPath}`);
+          } catch (parseError) {
+            console.warn(`[WINDOW] 手动解析也失败:`, parseError.message);
+            // 使用默认值，已在上面初始化
+          }
+        }
+      }
     }
     
-    console.log(`[WINDOW] 镜头将使用 - 类型: ${actualContentType}, 隐藏内容: ${hiddenContent ? '是' : '否'}`);
+    console.log(`[WINDOW] 镜头将使用 - 类型: ${actualContentType}, 路径: ${actualContentPath || '(无)'}, 隐藏内容: ${hiddenContent ? '是' : '否'}`);
   } catch (error) {
-    console.warn(`[WINDOW] 无法从目标窗口获取内容信息:`, error);
+    console.error(`[WINDOW] 从目标窗口获取内容信息时发生错误:`, error);
+    // 确保使用初始默认值
+    actualContentType = contentType;
+    actualContentPath = contentPath;
+    hiddenContent = '';
   }
 
   // 构建URL参数
