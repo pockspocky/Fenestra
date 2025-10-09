@@ -211,7 +211,8 @@ export function createWindow(id, opts = {}) {
     // 对象格式：直接作为查询参数
     // 优先使用 htmlName，否则默认为 'index.html'
     htmlFileName = htmlName || 'index.html';
-    queryObj = { id, ...otherContents };
+    // 确保窗口的 id 不会被 otherContents 中的 id 覆盖
+    queryObj = { ...otherContents, id };
   } else {
     // 未提供 otherContents 或为其他类型
     // 优先使用 htmlName，否则默认为 'index.html'

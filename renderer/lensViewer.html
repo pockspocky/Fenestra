@@ -235,19 +235,31 @@
         console.error('[LENS] 获取目标窗口失败:', error);
       }
 
-      // 定期更新位置（用于同步显示区域）
-      setInterval(async () => {
-        try {
-          // 获取当前镜头窗口的位置
-          const lensInfo = await window.api.invoke('lens/get-position', lensId);
-          if (lensInfo && lensInfo.success) {
-            currentLensBounds = lensInfo.bounds;
+      // 获取初始镜头位置
+      try {
+        const lensInfo = await window.api.invoke('lens/get-position', lensId);
+        if (lensInfo && lensInfo.success) {
+          currentLensBounds = lensInfo.bounds;
+          updateContentPosition();
+        }
+      } catch (error) {
+        console.error('[LENS] 获取初始镜头位置失败:', error);
+      }
+
+      // 使用事件驱动方式监听镜头位置更新（替代轮询）
+      if (window.electronAPI.onLensPositionUpdate) {
+        window.electronAPI.onLensPositionUpdate((data) => {
+          console.log('[LENS] 镜头位置更新事件:', data);
+          if (data.lensBounds) {
+            currentLensBounds = data.lensBounds;
+            // 同时更新目标窗口边界（如果提供）
+            if (data.targetBounds) {
+              targetWindowBounds = data.targetBounds;
+            }
             updateContentPosition();
           }
-        } catch (error) {
-          console.error('[LENS] 位置更新失败:', error);
-        }
-      }, 50); // 每50ms更新一次
+        });
+      }
     }
 
     // 更新内容位置（用于内容裁剪和偏移）
@@ -288,7 +300,7 @@
       }
     }
 
-    // 监听目标窗口移动
+    // 监听目标窗口移动（事件驱动，无需轮询）
     if (window.electronAPI.onTargetWindowMove) {
       window.electronAPI.onTargetWindowMove((data) => {
         console.log('[LENS] 目标窗口移动:', data);
@@ -298,18 +310,6 @@
         }
       });
     }
-
-    // 定期更新目标窗口位置（备用方案）
-    setInterval(async () => {
-      try {
-        const targetInfo = await window.api.invoke('window/get-info', targetWindowId);
-        if (targetInfo && targetInfo.success) {
-          targetWindowBounds = targetInfo.bounds;
-        }
-      } catch (error) {
-        // 静默失败
-      }
-    }, 200); // 每200ms更新一次
 
     // 初始加载
     loadContent();
