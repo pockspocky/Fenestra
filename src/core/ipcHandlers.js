@@ -100,10 +100,10 @@ export function initializeIpcHandlers() {
   ipcMain.handle('lens/get-position', (_e, lensId) => {
     console.debug(`[IPC] 获取镜头位置: ${lensId}`);
     const lensInfo = getLensSystem(lensId);
-    if (lensInfo) {
+    if (lensInfo && lensInfo.lensBounds) {
       return { success: true, bounds: lensInfo.lensBounds };
     }
-    return { success: false, error: '镜头不存在' };
+    return { success: false, error: '镜头不存在或缺少位置信息' };
   });
 
   ipcMain.handle('window/get-info', (_e, windowId) => {
