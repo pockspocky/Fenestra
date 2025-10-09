@@ -186,7 +186,7 @@ export function createWindow(id, opts = {}) {
   console.debug(`[WINDOW] BrowserWindow已创建，ID: ${id}, webContentsId: ${win.webContents.id}`);
   
   // 解析 otherContents 中的文件名和查询参数
-  const otherContents = opts.otherContents ?? "index.html";
+  const otherContents = opts.otherContents;
   const htmlName = opts.htmlName;
   let htmlFileName;
   let queryObj = { id };
@@ -209,11 +209,13 @@ export function createWindow(id, opts = {}) {
     }
   } else if (typeof otherContents === 'object' && otherContents !== null) {
     // 对象格式：直接作为查询参数
+    // 优先使用 htmlName，否则默认为 'index.html'
     htmlFileName = htmlName || 'index.html';
     queryObj = { id, ...otherContents };
   } else {
-    // 默认
-    htmlFileName = 'index.html';
+    // 未提供 otherContents 或为其他类型
+    // 优先使用 htmlName，否则默认为 'index.html'
+    htmlFileName = htmlName || 'index.html';
   }
   
   const htmlPath = path.join(process.cwd(), 'renderer', htmlFileName);
