@@ -238,6 +238,13 @@ export function createWindow(id, opts = {}) {
 function setupWindowEvents(win, id) {
   win.on('closed', () => {
     console.debug(`[WINDOW] 窗口关闭事件触发, ID: ${id}`);
+    
+    // 如果是镜头窗口，先注销镜头系统（在删除窗口之前）
+    if (lensSystemExists(id)) {
+      console.debug(`[WINDOW] 检测到镜头窗口关闭，先注销镜头系统: ${id}`);
+      unregisterLensSystem(id);
+    }
+    
     windows.delete(id);
     console.log(`[WINDOW] 从窗口映射中移除 ID: ${id}, 剩余窗口数量: ${windows.size}`);
     
@@ -1039,11 +1046,8 @@ export function createLensWindow(lensId, targetWindowId, options = {}) {
     // 注册镜头系统
     registerLensSystem(lensId, lensWindow, targetWindowId, targetWindow);
 
-    // 监听镜头窗口关闭
-    lensWindow.on('closed', () => {
-      console.log(`[WINDOW] 镜头窗口关闭: ${lensId}`);
-      unregisterLensSystem(lensId);
-    });
+    // 注意：镜头窗口关闭时的清理已在 setupWindowEvents 中统一处理
+    // 无需在此处添加额外的 closed 监听器
 
     console.log(`[WINDOW] 镜头窗口创建成功: ${lensId} -> ${targetWindowId}`);
     return { success: true, message: `镜头窗口 ${lensId} 创建成功`, id: lensId };
