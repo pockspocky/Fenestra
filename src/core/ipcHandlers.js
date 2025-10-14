@@ -123,6 +123,18 @@ export function initializeIpcHandlers() {
     return { success: false, error: '窗口不存在' };
   });
 
+  // Window storage validation handler
+  ipcMain.handle('storage/validate-fenestra-file', (_e, filePath) => {
+    console.debug(`[IPC] 验证.fenestra文件: ${filePath}`);
+    
+    try {
+      return validateFenestraFile(filePath);
+    } catch (error) {
+      console.error('[IPC] .fenestra文件验证错误:', error);
+      return { success: false, message: error.message };
+    }
+  });
+
   console.debug('[IPC] 所有IPC处理程序已设置完成');
 }
 
@@ -661,6 +673,58 @@ function getMimeType(ext) {
 }
 
 /**
+ * 验证 .fenestra 文件
+ * @param {string} filePath - 文件路径
+ * @returns {Object} 验证结果
+ */
+function validateFenestraFile(filePath) {
+  console.debug(`[STORAGE] 验证.fenestra文件: ${filePath}`);
+  
+  try {
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      return { success: false, message: '文件不存在' };
+    }
+    
+    // Check file extension
+    if (!filePath.toLowerCase().endsWith('.fenestra')) {
+      return { success: false, message: '文件扩展名必须是.fenestra' };
+    }
+    
+    // Read and parse JSON
+    const fileContent = fs.readFileSync(filePath, 'utf8');
+    let windowData;
+    
+    try {
+      windowData = JSON.parse(fileContent);
+    } catch (parseError) {
+      return { success: false, message: '文件格式无效，不是有效的JSON' };
+    }
+    
+    // Validate window data structure
+    const validationResult = validateWindowData(windowData);
+    
+    if (!validationResult.success) {
+      return { success: false, message: `文件内容无效: ${validationResult.message}` };
+    }
+    
+    console.log(`[STORAGE] .fenestra文件验证成功: ${filePath}`);
+    return { 
+      success: true, 
+      message: '文件验证成功',
+      data: windowData 
+    };
+    
+  } catch (error) {
+    console.error(`[STORAGE] 验证.fenestra文件失败:`, error);
+    return { 
+      success: false, 
+      message: `验证失败: ${error.message}` 
+    };
+  }
+}
+
+/**
  * 清理 IPC 处理程序
  */
 export function cleanupIpcHandlers() {
@@ -672,6 +736,7 @@ export function cleanupIpcHandlers() {
   ipcMain.removeAllListeners('picture/load');
   ipcMain.removeAllListeners('lens/get-position');
   ipcMain.removeAllListeners('window/get-info');
+  ipcMain.removeAllListeners('storage/validate-fenestra-file');
   
   console.debug('[IPC] IPC处理程序已清理');
 }

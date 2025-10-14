@@ -105,6 +105,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       console.log(`[PRELOAD] 收到镜头位置更新事件:`, data);
       callback(data);
     });
+  },
+  // Window storage validation API
+  validateFenestraFile: (filePath) => {
+    console.log(`[PRELOAD] 验证.fenestra文件: ${filePath}`);
+    return ipcRenderer.invoke('storage/validate-fenestra-file', filePath);
   }
 });
 

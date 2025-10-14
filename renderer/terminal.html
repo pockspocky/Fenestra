@@ -105,6 +105,35 @@
       position: absolute;
       pointer-events: none;
     }
+
+    /* Drag and drop styles */
+    .drag-over {
+      background-color: #001100;
+      border: 2px dashed #00ff00;
+    }
+
+    .drag-feedback {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background-color: rgba(0, 255, 0, 0.1);
+      border: 2px solid #00ff00;
+      padding: 20px;
+      border-radius: 8px;
+      color: #00ff00;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 16px;
+      pointer-events: none;
+      z-index: 1000;
+      display: none;
+    }
+
+    .drag-error {
+      color: #ff0000;
+      border-color: #ff0000;
+      background-color: rgba(255, 0, 0, 0.1);
+    }
   </style>
 </head>
 <body>
@@ -119,6 +148,11 @@
   <div id="input-line">
     <span id="prompt-symbol">></span>
     <input type="text" id="command-input" autocomplete="off" autofocus>
+  </div>
+  
+  <!-- Drag and drop feedback overlay -->
+  <div id="drag-feedback" class="drag-feedback">
+    Drop .fenestra file to restore window
   </div>
 
   <script>
@@ -354,6 +388,132 @@
     document.addEventListener('click', () => {
       inputEl.focus();
     });
+
+    // Drag and drop functionality
+    const terminalContainer = document.getElementById('terminal-container');
+    const dragFeedback = document.getElementById('drag-feedback');
+    let dragCounter = 0;
+
+    // Prevent default drag behaviors on the entire document
+    document.addEventListener('dragover', (e) => {
+      e.preventDefault();
+    });
+
+    document.addEventListener('drop', (e) => {
+      e.preventDefault();
+    });
+
+    // Handle drag enter
+    terminalContainer.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      dragCounter++;
+      
+      if (dragCounter === 1) {
+        terminalContainer.classList.add('drag-over');
+        dragFeedback.style.display = 'block';
+        
+        // Check if the dragged item contains files
+        const hasFiles = e.dataTransfer.types.includes('Files');
+        if (!hasFiles) {
+          dragFeedback.textContent = 'Only files are supported';
+          dragFeedback.classList.add('drag-error');
+        } else {
+          dragFeedback.textContent = 'Drop .fenestra file to restore window';
+          dragFeedback.classList.remove('drag-error');
+        }
+      }
+    });
+
+    // Handle drag over
+    terminalContainer.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    });
+
+    // Handle drag leave
+    terminalContainer.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      dragCounter--;
+      
+      if (dragCounter === 0) {
+        terminalContainer.classList.remove('drag-over');
+        dragFeedback.style.display = 'none';
+        dragFeedback.classList.remove('drag-error');
+      }
+    });
+
+    // Handle file drop
+    terminalContainer.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dragCounter = 0;
+      
+      // Remove visual feedback
+      terminalContainer.classList.remove('drag-over');
+      dragFeedback.style.display = 'none';
+      dragFeedback.classList.remove('drag-error');
+      
+      const files = Array.from(e.dataTransfer.files);
+      
+      if (files.length === 0) {
+        print('[ERROR] No files detected in drop operation', 'error');
+        return;
+      }
+      
+      if (files.length > 1) {
+        print('[ERROR] Please drop only one file at a time', 'error');
+        return;
+      }
+      
+      const file = files[0];
+      
+      // Validate file extension
+      if (!file.name.toLowerCase().endsWith('.fenestra')) {
+        print(`[ERROR] Invalid file type: ${file.name}. Only .fenestra files are supported`, 'error');
+        return;
+      }
+      
+      // Extract file path and populate command input
+      const filePath = file.path || file.name;
+      
+      try {
+        // Validate that the file is readable and contains valid JSON
+        await validateFenestraFile(filePath);
+        
+        // Populate the command input with restore command
+        const restoreCommand = `restore-window "${filePath}"`;
+        inputEl.value = restoreCommand;
+        
+        print(`[INFO] File dropped: ${file.name}`, 'info');
+        print('[INFO] Press Enter to restore the window, or edit the command as needed', 'info');
+        
+        // Focus the input for immediate execution
+        inputEl.focus();
+        
+      } catch (error) {
+        print(`[ERROR] Invalid .fenestra file: ${error.message}`, 'error');
+      }
+    });
+
+    // Function to validate .fenestra file
+    async function validateFenestraFile(filePath) {
+      try {
+        // Use the electron API to read and validate the file
+        const result = await window.electronAPI.validateFenestraFile(filePath);
+        
+        if (!result.success) {
+          throw new Error(result.message || 'File validation failed');
+        }
+        
+        return result.data;
+      } catch (error) {
+        // If the API doesn't exist yet, do basic validation
+        if (error.message.includes('validateFenestraFile is not a function')) {
+          // Basic file extension check already done above
+          return true;
+        }
+        throw error;
+      }
+    }
 
     // 欢迎信息
     print('', 'info');
