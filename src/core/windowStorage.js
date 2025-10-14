@@ -1,14 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { 
-  getWindow, 
-  getAllWindows, 
-  getWindowInfo,
+import {
+  getWindow,
   createWindow,
   createPicture,
   createContentWindow,
-  createLensWindow,
-  updateWindowProperty
+  createLensWindow
 } from './windowManager.js';
 import { getLensSystemInfo } from './lensSystem.js';
 import '../../logger.js';
@@ -24,7 +21,7 @@ const STORAGE_VERSION = '1.0';
  */
 export function ensureStorageDirectory() {
   const storageDir = path.join(process.cwd(), STORAGE_DIR);
-  
+
   if (!fs.existsSync(storageDir)) {
     try {
       fs.mkdirSync(storageDir, { recursive: true });
@@ -34,7 +31,7 @@ export function ensureStorageDirectory() {
       throw new Error(`Failed to create storage directory: ${error.message}`);
     }
   }
-  
+
   return storageDir;
 }
 
@@ -53,29 +50,25 @@ export function getStorageDirectory() {
  */
 export function getWindowSerializationData(windowId) {
   console.debug(`[STORAGE] Extracting serialization data for window: ${windowId}`);
-  
+
   const win = getWindow(windowId);
   if (!win || win.isDestroyed()) {
     console.warn(`[STORAGE] Window ${windowId} not found or destroyed`);
     return null;
   }
-  
-  const windowInfo = getWindowInfo(windowId);
-  if (!windowInfo) {
-    console.warn(`[STORAGE] Could not get window info for ${windowId}`);
-    return null;
-  }
-  
+
+
+
   try {
     // Get basic window properties
     const bounds = win.getBounds();
     const title = win.getTitle();
-    
+
     // Determine window type and extract specific properties
     const windowType = determineWindowType(windowId, win);
     const contentConfig = extractContentConfig(windowId, win, windowType);
     const specialConfig = extractSpecialConfig(windowId, win, windowType);
-    
+
     const serializationData = {
       windowConfig: {
         id: windowId,
@@ -100,10 +93,10 @@ export function getWindowSerializationData(windowId) {
       specialConfig: specialConfig,
       windowType: windowType
     };
-    
+
     console.debug(`[STORAGE] Successfully extracted data for window ${windowId}, type: ${windowType}`);
     return serializationData;
-    
+
   } catch (error) {
     console.error(`[STORAGE] Error extracting window data for ${windowId}:`, error);
     return null;
@@ -126,7 +119,7 @@ function determineWindowType(windowId, win) {
   if (windowId === 'terminal') return 'terminal';
   if (windowId === 'desktop') return 'desktop';
   if (windowId === 'video') return 'video';
-  
+
   // Try to determine from URL
   try {
     const url = win.webContents.getURL();
@@ -137,7 +130,7 @@ function determineWindowType(windowId, win) {
   } catch (error) {
     console.debug(`[STORAGE] Could not get URL for window ${windowId}:`, error.message);
   }
-  
+
   return 'generic';
 }
 
@@ -159,14 +152,14 @@ function extractContentConfig(windowId, win, windowType) {
     blurAmount: 0,
     blurred: false
   };
-  
+
   try {
     const url = win.webContents.getURL();
-    
+
     if (url.includes('?')) {
       const urlObj = new URL(url);
       const params = urlObj.searchParams;
-      
+
       // Extract HTML file name from URL
       const pathname = urlObj.pathname;
       if (pathname) {
@@ -175,7 +168,7 @@ function extractContentConfig(windowId, win, windowType) {
           contentConfig.htmlName = htmlFile;
         }
       }
-      
+
       // Extract query parameters
       contentConfig.type = params.get('type') || 'text';
       contentConfig.path = params.get('path') || params.get('imagePath') || '';
@@ -183,7 +176,7 @@ function extractContentConfig(windowId, win, windowType) {
       contentConfig.hiddenContent = params.get('hiddenContent') || '';
       contentConfig.blurAmount = parseInt(params.get('blur')) || 0;
       contentConfig.blurred = params.get('blurred') === 'true';
-      
+
       // Store all other parameters
       for (const [key, value] of params) {
         if (!['type', 'path', 'imagePath', 'surfaceContent', 'hiddenContent', 'blur', 'blurred', 'id'].includes(key)) {
@@ -191,11 +184,11 @@ function extractContentConfig(windowId, win, windowType) {
         }
       }
     }
-    
+
   } catch (error) {
     console.debug(`[STORAGE] Could not extract content config for ${windowId}:`, error.message);
   }
-  
+
   return contentConfig;
 }
 
@@ -208,7 +201,7 @@ function extractContentConfig(windowId, win, windowType) {
  */
 function extractSpecialConfig(windowId, win, windowType) {
   const specialConfig = {};
-  
+
   try {
     switch (windowType) {
       case 'picture':
@@ -217,14 +210,14 @@ function extractSpecialConfig(windowId, win, windowType) {
         if (url.includes('?')) {
           const urlObj = new URL(url);
           const params = urlObj.searchParams;
-          
+
           specialConfig.pictureSettings = {
             imagePath: params.get('imagePath') || params.get('path') || '',
             fitMode: params.get('fitMode') || 'fill'
           };
         }
         break;
-        
+
       case 'lens':
         // Get lens system information
         const lensInfo = getLensSystemInfo(windowId);
@@ -236,7 +229,7 @@ function extractSpecialConfig(windowId, win, windowType) {
           };
         }
         break;
-        
+
       case 'door':
       case 'key':
         specialConfig.doorKeySettings = {
@@ -246,16 +239,16 @@ function extractSpecialConfig(windowId, win, windowType) {
           relatedItems: [] // TODO: Extract related doors/keys
         };
         break;
-        
+
       case 'content':
         // Content-specific settings are already in contentConfig
         break;
     }
-    
+
   } catch (error) {
     console.debug(`[STORAGE] Could not extract special config for ${windowId}:`, error.message);
   }
-  
+
   return specialConfig;
 }
 
@@ -266,12 +259,12 @@ function extractSpecialConfig(windowId, win, windowType) {
  */
 export function serializeWindow(windowId) {
   console.debug(`[STORAGE] Serializing window: ${windowId}`);
-  
+
   const windowData = getWindowSerializationData(windowId);
   if (!windowData) {
     return null;
   }
-  
+
   // Create serialization object with metadata
   const serializedData = {
     version: STORAGE_VERSION,
@@ -285,7 +278,7 @@ export function serializeWindow(windowId) {
     contentConfig: windowData.contentConfig,
     specialConfig: windowData.specialConfig
   };
-  
+
   console.debug(`[STORAGE] Successfully serialized window ${windowId}`);
   return serializedData;
 }
@@ -302,10 +295,11 @@ function generateFilename(windowId, windowType, customName = null) {
     // Ensure custom name has correct extension
     return customName.endsWith(FILE_EXTENSION) ? customName : `${customName}${FILE_EXTENSION}`;
   }
-  
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0] + 'T' + 
-                   new Date().toISOString().replace(/[:.]/g, '-').split('T')[1].split('-')[0];
-  
+
+  const isoString = new Date().toISOString();
+  const timestamp = isoString.replace(/[:.]/g, '-').split('T')[0] + 'T' +
+    isoString.replace(/[:.]/g, '-').split('T')[1].split('-')[0];
+
   return `${windowType}-${windowId}-${timestamp}${FILE_EXTENSION}`;
 }
 
@@ -317,15 +311,15 @@ function generateFilename(windowId, windowType, customName = null) {
  */
 export function saveWindowToFile(windowId, customPath = null) {
   console.log(`[STORAGE] Saving window ${windowId} to file`);
-  
+
   try {
     const serializedData = serializeWindow(windowId);
     if (!serializedData) {
       return { success: false, message: `Failed to serialize window ${windowId}` };
     }
-    
+
     const storageDir = ensureStorageDirectory();
-    
+
     let filePath;
     if (customPath) {
       // Use custom path (can be absolute or relative to storage dir)
@@ -339,30 +333,30 @@ export function saveWindowToFile(windowId, customPath = null) {
       const filename = generateFilename(windowId, serializedData.metadata.windowType);
       filePath = path.join(storageDir, filename);
     }
-    
+
     // Ensure directory exists for the file path
     const fileDir = path.dirname(filePath);
     if (!fs.existsSync(fileDir)) {
       fs.mkdirSync(fileDir, { recursive: true });
     }
-    
+
     // Write file with proper formatting
     const jsonString = JSON.stringify(serializedData, null, 2);
     fs.writeFileSync(filePath, jsonString, 'utf8');
-    
+
     console.log(`[STORAGE] Successfully saved window ${windowId} to: ${filePath}`);
-    return { 
-      success: true, 
+    return {
+      success: true,
       message: `Window ${windowId} saved successfully`,
       filePath: filePath,
       filename: path.basename(filePath)
     };
-    
+
   } catch (error) {
     console.error(`[STORAGE] Error saving window ${windowId}:`, error);
-    return { 
-      success: false, 
-      message: `Failed to save window: ${error.message}` 
+    return {
+      success: false,
+      message: `Failed to save window: ${error.message}`
     };
   }
 }
@@ -374,26 +368,26 @@ export function saveWindowToFile(windowId, customPath = null) {
  */
 export function validateWindowData(data) {
   console.debug(`[STORAGE] Validating window data`);
-  
+
   const errors = [];
-  
+
   // Check required top-level fields
   if (!data.version) errors.push('Missing version field');
   if (!data.timestamp) errors.push('Missing timestamp field');
   if (!data.metadata) errors.push('Missing metadata field');
   if (!data.windowConfig) errors.push('Missing windowConfig field');
-  
+
   // Check metadata
   if (data.metadata) {
     if (!data.metadata.originalId) errors.push('Missing metadata.originalId');
     if (!data.metadata.windowType) errors.push('Missing metadata.windowType');
   }
-  
+
   // Check window config
   if (data.windowConfig) {
     if (!data.windowConfig.id) errors.push('Missing windowConfig.id');
     if (!data.windowConfig.bounds) errors.push('Missing windowConfig.bounds');
-    
+
     if (data.windowConfig.bounds) {
       const bounds = data.windowConfig.bounds;
       if (typeof bounds.x !== 'number') errors.push('Invalid bounds.x');
@@ -402,20 +396,20 @@ export function validateWindowData(data) {
       if (typeof bounds.height !== 'number' || bounds.height <= 0) errors.push('Invalid bounds.height');
     }
   }
-  
+
   // Version compatibility check
   if (data.version && data.version !== STORAGE_VERSION) {
     errors.push(`Version mismatch: expected ${STORAGE_VERSION}, got ${data.version}`);
   }
-  
+
   const isValid = errors.length === 0;
-  
+
   if (isValid) {
     console.debug(`[STORAGE] Window data validation passed`);
   } else {
     console.warn(`[STORAGE] Window data validation failed:`, errors);
   }
-  
+
   return {
     isValid,
     errors,
@@ -430,7 +424,7 @@ export function validateWindowData(data) {
  */
 export function loadWindowFromFile(filePath) {
   console.log(`[STORAGE] Loading window from file: ${filePath}`);
-  
+
   try {
     // Resolve file path
     let fullPath;
@@ -440,66 +434,66 @@ export function loadWindowFromFile(filePath) {
       // Try relative to storage directory first, then current directory
       const storageDir = getStorageDirectory();
       const storagePath = path.join(storageDir, filePath);
-      
+
       if (fs.existsSync(storagePath)) {
         fullPath = storagePath;
       } else {
         fullPath = path.join(process.cwd(), filePath);
       }
     }
-    
+
     // Check file exists
     if (!fs.existsSync(fullPath)) {
-      return { 
-        success: false, 
-        message: `File not found: ${filePath}` 
+      return {
+        success: false,
+        message: `File not found: ${filePath}`
       };
     }
-    
+
     // Check file extension
     if (!fullPath.endsWith(FILE_EXTENSION)) {
-      return { 
-        success: false, 
-        message: `Invalid file extension. Expected ${FILE_EXTENSION}` 
+      return {
+        success: false,
+        message: `Invalid file extension. Expected ${FILE_EXTENSION}`
       };
     }
-    
+
     // Read and parse file
     const fileContent = fs.readFileSync(fullPath, 'utf8');
     let windowData;
-    
+
     try {
       windowData = JSON.parse(fileContent);
     } catch (parseError) {
-      return { 
-        success: false, 
-        message: `Invalid JSON format: ${parseError.message}` 
+      return {
+        success: false,
+        message: `Invalid JSON format: ${parseError.message}`
       };
     }
-    
+
     // Validate data structure
     const validation = validateWindowData(windowData);
     if (!validation.isValid) {
-      return { 
-        success: false, 
+      return {
+        success: false,
         message: `Invalid window data: ${validation.errors.join(', ')}`,
         errors: validation.errors
       };
     }
-    
+
     console.log(`[STORAGE] Successfully loaded window data from: ${fullPath}`);
-    return { 
-      success: true, 
+    return {
+      success: true,
       message: `Window data loaded successfully`,
       data: windowData,
       filePath: fullPath
     };
-    
+
   } catch (error) {
     console.error(`[STORAGE] Error loading window from file:`, error);
-    return { 
-      success: false, 
-      message: `Failed to load file: ${error.message}` 
+    return {
+      success: false,
+      message: `Failed to load file: ${error.message}`
     };
   }
 }
@@ -510,24 +504,24 @@ export function loadWindowFromFile(filePath) {
  */
 export function listStoredWindows() {
   console.debug(`[STORAGE] Listing stored windows`);
-  
+
   try {
     const storageDir = getStorageDirectory();
-    
+
     if (!fs.existsSync(storageDir)) {
-      return { 
-        success: true, 
+      return {
+        success: true,
         message: 'No storage directory found',
         files: []
       };
     }
-    
+
     const files = fs.readdirSync(storageDir)
       .filter(file => file.endsWith(FILE_EXTENSION))
       .map(file => {
         const filePath = path.join(storageDir, file);
         const stats = fs.statSync(filePath);
-        
+
         return {
           filename: file,
           path: filePath,
@@ -537,18 +531,18 @@ export function listStoredWindows() {
         };
       })
       .sort((a, b) => b.modified - a.modified); // Sort by modification time, newest first
-    
+
     console.debug(`[STORAGE] Found ${files.length} stored window files`);
-    return { 
-      success: true, 
+    return {
+      success: true,
       message: `Found ${files.length} stored window files`,
       files: files
     };
-    
+
   } catch (error) {
     console.error(`[STORAGE] Error listing stored windows:`, error);
-    return { 
-      success: false, 
+    return {
+      success: false,
       message: `Failed to list files: ${error.message}`,
       files: []
     };
@@ -562,38 +556,38 @@ export function listStoredWindows() {
  */
 export function deleteStoredWindow(filename) {
   console.log(`[STORAGE] Deleting stored window: ${filename}`);
-  
+
   try {
     const storageDir = getStorageDirectory();
     const filePath = path.join(storageDir, filename);
-    
+
     if (!fs.existsSync(filePath)) {
-      return { 
-        success: false, 
-        message: `File not found: ${filename}` 
+      return {
+        success: false,
+        message: `File not found: ${filename}`
       };
     }
-    
+
     if (!filename.endsWith(FILE_EXTENSION)) {
-      return { 
-        success: false, 
-        message: `Invalid file extension. Expected ${FILE_EXTENSION}` 
+      return {
+        success: false,
+        message: `Invalid file extension. Expected ${FILE_EXTENSION}`
       };
     }
-    
+
     fs.unlinkSync(filePath);
-    
+
     console.log(`[STORAGE] Successfully deleted: ${filename}`);
-    return { 
-      success: true, 
-      message: `File ${filename} deleted successfully` 
+    return {
+      success: true,
+      message: `File ${filename} deleted successfully`
     };
-    
+
   } catch (error) {
     console.error(`[STORAGE] Error deleting file:`, error);
-    return { 
-      success: false, 
-      message: `Failed to delete file: ${error.message}` 
+    return {
+      success: false,
+      message: `Failed to delete file: ${error.message}`
     };
   }
 }
@@ -606,17 +600,17 @@ export function deleteStoredWindow(filename) {
  */
 export function deserializeWindow(windowData, options = {}) {
   console.log(`[STORAGE] Deserializing window: ${windowData.metadata.originalId}`);
-  
+
   try {
-    const { 
+    const {
       forceNewId = false,
       customId = null,
-      skipContentValidation = false 
+      skipContentValidation = false
     } = options;
-    
+
     // Determine window ID for recreation
     let targetId = customId || windowData.windowConfig.id;
-    
+
     // Check if window already exists
     const existingWindow = getWindow(targetId);
     if (existingWindow && !existingWindow.isDestroyed()) {
@@ -625,13 +619,13 @@ export function deserializeWindow(windowData, options = {}) {
         targetId = `${targetId}-restored-${Date.now()}`;
         console.log(`[STORAGE] Window ${windowData.windowConfig.id} exists, using new ID: ${targetId}`);
       } else {
-        return { 
-          success: false, 
-          message: `Window ${targetId} already exists. Use forceNewId option to create with new ID.` 
+        return {
+          success: false,
+          message: `Window ${targetId} already exists. Use forceNewId option to create with new ID.`
         };
       }
     }
-    
+
     // Validate content files if needed
     if (!skipContentValidation) {
       const contentValidation = validateContentFiles(windowData);
@@ -640,10 +634,10 @@ export function deserializeWindow(windowData, options = {}) {
         // Continue with warnings but log them
       }
     }
-    
+
     // Recreate window based on type
     const result = recreateWindowByType(targetId, windowData);
-    
+
     if (result.success) {
       console.log(`[STORAGE] Successfully recreated window: ${targetId}`);
       return {
@@ -655,12 +649,12 @@ export function deserializeWindow(windowData, options = {}) {
     } else {
       return result;
     }
-    
+
   } catch (error) {
     console.error(`[STORAGE] Error deserializing window:`, error);
-    return { 
-      success: false, 
-      message: `Failed to recreate window: ${error.message}` 
+    return {
+      success: false,
+      message: `Failed to recreate window: ${error.message}`
     };
   }
 }
@@ -673,44 +667,44 @@ export function deserializeWindow(windowData, options = {}) {
 function validateContentFiles(windowData) {
   const warnings = [];
   let isValid = true;
-  
+
   try {
     const { contentConfig, specialConfig } = windowData;
-    
+
     // Check content paths
     if (contentConfig && contentConfig.path) {
       const contentPath = contentConfig.path;
       if (contentPath && !contentPath.startsWith('http')) {
         // Check if local file exists
-        const fullPath = path.isAbsolute(contentPath) 
-          ? contentPath 
+        const fullPath = path.isAbsolute(contentPath)
+          ? contentPath
           : path.join(process.cwd(), contentPath);
-          
+
         if (!fs.existsSync(fullPath)) {
           warnings.push(`Content file not found: ${contentPath}`);
         }
       }
     }
-    
+
     // Check picture paths
     if (specialConfig && specialConfig.pictureSettings) {
       const imagePath = specialConfig.pictureSettings.imagePath;
       if (imagePath && !imagePath.startsWith('http')) {
-        const fullPath = path.isAbsolute(imagePath) 
-          ? imagePath 
+        const fullPath = path.isAbsolute(imagePath)
+          ? imagePath
           : path.join(process.cwd(), imagePath);
-          
+
         if (!fs.existsSync(fullPath)) {
           warnings.push(`Image file not found: ${imagePath}`);
         }
       }
     }
-    
+
   } catch (error) {
     console.debug(`[STORAGE] Content validation error:`, error.message);
     warnings.push(`Content validation error: ${error.message}`);
   }
-  
+
   return { isValid, warnings };
 }
 
@@ -723,23 +717,23 @@ function validateContentFiles(windowData) {
 function recreateWindowByType(windowId, windowData) {
   const { metadata, windowConfig, contentConfig, specialConfig } = windowData;
   const windowType = metadata.windowType;
-  
+
   console.debug(`[STORAGE] Recreating ${windowType} window: ${windowId}`);
-  
+
   try {
     let createdWindow = null;
     const warnings = [];
-    
+
     switch (windowType) {
       case 'picture':
       case 'door':
         createdWindow = recreatePictureWindow(windowId, windowData);
         break;
-        
+
       case 'content':
         createdWindow = recreateContentWindow(windowId, windowData);
         break;
-        
+
       case 'lens':
         const lensResult = recreateLensWindow(windowId, windowData);
         if (!lensResult.success) {
@@ -748,7 +742,7 @@ function recreateWindowByType(windowId, windowData) {
         createdWindow = lensResult.window;
         warnings.push(...(lensResult.warnings || []));
         break;
-        
+
       case 'terminal':
       case 'desktop':
       case 'video':
@@ -758,25 +752,25 @@ function recreateWindowByType(windowId, windowData) {
         createdWindow = recreateGenericWindow(windowId, windowData);
         break;
     }
-    
+
     if (!createdWindow) {
       return { success: false, message: `Failed to create ${windowType} window` };
     }
-    
+
     // Apply window properties after creation
     applyWindowProperties(createdWindow, windowConfig);
-    
-    return { 
-      success: true, 
+
+    return {
+      success: true,
       window: createdWindow,
       warnings: warnings
     };
-    
+
   } catch (error) {
     console.error(`[STORAGE] Error recreating ${windowType} window:`, error);
-    return { 
-      success: false, 
-      message: `Failed to recreate ${windowType} window: ${error.message}` 
+    return {
+      success: false,
+      message: `Failed to recreate ${windowType} window: ${error.message}`
     };
   }
 }
@@ -789,17 +783,17 @@ function recreateWindowByType(windowId, windowData) {
  */
 function recreatePictureWindow(windowId, windowData) {
   const { windowConfig, specialConfig } = windowData;
-  
+
   let imagePath = 'doors/Door.png'; // Default
   let fitMode = 'fill';
-  
+
   if (specialConfig && specialConfig.pictureSettings) {
     imagePath = specialConfig.pictureSettings.imagePath || imagePath;
     fitMode = specialConfig.pictureSettings.fitMode || fitMode;
   }
-  
+
   const { bounds } = windowConfig;
-  
+
   return createPicture(
     windowId,
     imagePath,
@@ -819,7 +813,7 @@ function recreatePictureWindow(windowId, windowData) {
 function recreateContentWindow(windowId, windowData) {
   const { windowConfig, contentConfig } = windowData;
   const { bounds } = windowConfig;
-  
+
   const options = {
     contentType: contentConfig.type || 'text',
     contentPath: contentConfig.path || '',
@@ -831,13 +825,13 @@ function recreateContentWindow(windowId, windowData) {
     y: bounds.y,
     title: windowConfig.title
   };
-  
+
   const result = createContentWindow(windowId, options);
-  
+
   if (result.success) {
     return getWindow(windowId);
   }
-  
+
   return null;
 }
 
@@ -851,27 +845,27 @@ function recreateLensWindow(windowId, windowData) {
   const { windowConfig, contentConfig, specialConfig } = windowData;
   const { bounds } = windowConfig;
   const warnings = [];
-  
+
   let targetWindowId = null;
-  
+
   if (specialConfig && specialConfig.lensSettings) {
     targetWindowId = specialConfig.lensSettings.targetWindowId;
   }
-  
+
   if (!targetWindowId) {
-    return { 
-      success: false, 
-      message: 'Lens window requires target window ID' 
+    return {
+      success: false,
+      message: 'Lens window requires target window ID'
     };
   }
-  
+
   // Check if target window exists
   const targetWindow = getWindow(targetWindowId);
   if (!targetWindow || targetWindow.isDestroyed()) {
     warnings.push(`Target window ${targetWindowId} not found. Lens may not function correctly.`);
     // Continue creation anyway - lens will be created but won't function until target exists
   }
-  
+
   const options = {
     contentType: contentConfig.type || 'text',
     contentPath: contentConfig.path || '',
@@ -880,19 +874,19 @@ function recreateLensWindow(windowId, windowData) {
     x: bounds.x,
     y: bounds.y
   };
-  
+
   const result = createLensWindow(windowId, targetWindowId, options);
-  
+
   if (result.success) {
-    return { 
-      success: true, 
+    return {
+      success: true,
       window: getWindow(windowId),
       warnings: warnings
     };
   }
-  
-  return { 
-    success: false, 
+
+  return {
+    success: false,
     message: result.message,
     warnings: warnings
   };
@@ -907,7 +901,7 @@ function recreateLensWindow(windowId, windowData) {
 function recreateGenericWindow(windowId, windowData) {
   const { windowConfig, contentConfig } = windowData;
   const { bounds } = windowConfig;
-  
+
   const options = {
     width: bounds.width,
     height: bounds.height,
@@ -917,11 +911,11 @@ function recreateGenericWindow(windowId, windowData) {
     resizable: windowConfig.properties.resizable !== false,
     transparent: windowConfig.properties.transparent === true
   };
-  
+
   // Use HTML name from content config if available
   if (contentConfig && contentConfig.htmlName) {
     options.otherContents = contentConfig.htmlName;
-    
+
     // Add other content parameters
     if (contentConfig.otherContents && Object.keys(contentConfig.otherContents).length > 0) {
       options.otherContents = {
@@ -930,7 +924,7 @@ function recreateGenericWindow(windowId, windowData) {
       };
     }
   }
-  
+
   return createWindow(windowId, options);
 }
 
@@ -943,10 +937,10 @@ function applyWindowProperties(win, windowConfig) {
   if (!win || win.isDestroyed()) {
     return;
   }
-  
+
   try {
     const { bounds, properties } = windowConfig;
-    
+
     // Set bounds
     if (bounds) {
       win.setBounds({
@@ -956,21 +950,21 @@ function applyWindowProperties(win, windowConfig) {
         height: bounds.height
       });
     }
-    
+
     // Apply properties
     if (properties) {
       if (typeof properties.resizable === 'boolean') {
         win.setResizable(properties.resizable);
       }
-      
+
       if (typeof properties.alwaysOnTop === 'boolean') {
         win.setAlwaysOnTop(properties.alwaysOnTop);
       }
-      
+
       if (typeof properties.opacity === 'number' && win.setOpacity) {
         win.setOpacity(Math.max(0, Math.min(1, properties.opacity)));
       }
-      
+
       if (typeof properties.visible === 'boolean') {
         if (properties.visible) {
           win.show();
@@ -978,16 +972,16 @@ function applyWindowProperties(win, windowConfig) {
           win.hide();
         }
       }
-      
+
       if (properties.minimized === true) {
         win.minimize();
       } else if (properties.maximized === true) {
         win.maximize();
       }
     }
-    
+
     console.debug(`[STORAGE] Applied window properties for ${windowConfig.id}`);
-    
+
   } catch (error) {
     console.error(`[STORAGE] Error applying window properties:`, error);
   }
@@ -1002,16 +996,16 @@ export function makePathRelative(filePath) {
   if (!filePath || typeof filePath !== 'string') {
     return filePath;
   }
-  
+
   try {
     const cwd = process.cwd();
-    
+
     if (path.isAbsolute(filePath) && filePath.startsWith(cwd)) {
       const relativePath = path.relative(cwd, filePath);
       console.debug(`[STORAGE] Converted absolute path to relative: ${filePath} -> ${relativePath}`);
       return relativePath;
     }
-    
+
     return filePath;
   } catch (error) {
     console.debug(`[STORAGE] Could not convert path to relative: ${error.message}`);
@@ -1028,10 +1022,10 @@ export function resolveRelativePath(filePath) {
   if (!filePath || typeof filePath !== 'string') {
     return filePath;
   }
-  
+
   if (path.isAbsolute(filePath)) {
     return filePath;
   }
-  
+
   return path.join(process.cwd(), filePath);
 }
