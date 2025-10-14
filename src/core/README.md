@@ -103,6 +103,8 @@ import { createWindow, canOpenDoor } from './src/core/index.js';
 3. **清晰依赖**: 模块间依赖关系明确
 4. **易于扩展**: 新功能可以轻松添加到对应模块
 5. **代码分离**: 主文件 `main.js` 变得简洁易读
+6. **状态持久化**: 窗口配置可以保存和恢复
+7. **跨平台兼容**: 相对路径处理确保配置可移植
 
 ## 注意事项
 
@@ -110,4 +112,33 @@ import { createWindow, canOpenDoor } from './src/core/index.js';
 - 模块间通过导入/导出来共享功能
 - 全局状态（如窗口映射）在 `windowManager.js` 中管理
 - 每个模块都有完整的错误处理和日志记录
+- 窗口存储使用 `.fenestra` 文件格式
+- 存储目录默认为 `.fenestra-storage/`
+- 支持拖拽 `.fenestra` 文件到终端进行恢复
+
+## 新增功能
+
+### 窗口存储系统
+```javascript
+// 保存窗口配置
+import { saveWindowToFile } from './src/core/windowStorage.js';
+const result = saveWindowToFile('window1', 'my-config.fenestra');
+
+// 加载窗口配置
+import { loadWindowFromFile, deserializeWindow } from './src/core/windowStorage.js';
+const loadResult = loadWindowFromFile('my-config.fenestra');
+if (loadResult.success) {
+  const restoreResult = deserializeWindow(loadResult.data);
+}
+
+// 列出已保存的配置
+import { listStoredWindows } from './src/core/windowStorage.js';
+const files = listStoredWindows();
+```
+
+### 终端命令扩展
+- `save-window [windowId] [filename]` - 保存窗口配置
+- `restore-window [filepath]` - 恢复窗口配置
+- `list-saved` - 列出已保存的配置文件
+- `delete-saved [filename]` - 删除配置文件
 
