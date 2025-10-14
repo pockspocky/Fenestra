@@ -20,6 +20,14 @@ import {
   getLensSystems,
   getLensSystem
 } from './windowManager.js';
+import {
+  saveWindowToFile,
+  loadWindowFromFile,
+  deserializeWindow,
+  listStoredWindows,
+  deleteStoredWindow,
+  validateWindowData
+} from './windowStorage.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import '../../logger.js'; // 导入日志系统
@@ -460,6 +468,85 @@ function executeTerminalCommand(command, args) {
         message: `镜头 ${lensId} 的信息:`,
         data: lensInfo
       };
+    }
+    
+    // Window storage commands
+    case 'save-window': {
+      if (args.length < 1) {
+        return { success: false, message: '用法: save-window [窗口ID] [文件名(可选)]' };
+      }
+      
+      const windowId = args[0];
+      const customFilename = args[1] || null;
+      
+      return saveWindowToFile(windowId, customFilename);
+    }
+    
+    case 'restore-window': {
+      if (args.length < 1) {
+        return { success: false, message: '用法: restore-window [文件路径]' };
+      }
+      
+      const filePath = args.slice(0).join(' '); // Join all args to handle paths with spaces
+      
+      try {
+        // Load window data from file
+        const loadResult = loadWindowFromFile(filePath);
+        if (!loadResult.success) {
+          return loadResult;
+        }
+        
+        // Deserialize and recreate window
+        const restoreResult = deserializeWindow(loadResult.data, { forceNewId: false });
+        
+        if (restoreResult.success && restoreResult.warnings && restoreResult.warnings.length > 0) {
+          // Include warnings in the success message
+          return {
+            success: true,
+            message: `${restoreResult.message}\n警告: ${restoreResult.warnings.join(', ')}`,
+            windowId: restoreResult.windowId
+          };
+        }
+        
+        return restoreResult;
+        
+      } catch (error) {
+        return { success: false, message: `恢复失败: ${error.message}` };
+      }
+    }
+    
+    case 'list-saved': {
+      const listResult = listStoredWindows();
+      
+      if (!listResult.success) {
+        return listResult;
+      }
+      
+      if (listResult.files.length === 0) {
+        return { success: true, message: '没有找到已保存的窗口文件' };
+      }
+      
+      const fileList = listResult.files.map(file => {
+        const date = file.modified.toLocaleDateString();
+        const time = file.modified.toLocaleTimeString();
+        const sizeKB = Math.round(file.size / 1024 * 100) / 100;
+        return `${file.filename} (${sizeKB}KB, ${date} ${time})`;
+      }).join('\n');
+      
+      return {
+        success: true,
+        message: `找到 ${listResult.files.length} 个已保存的窗口:\n${fileList}`,
+        data: listResult.files
+      };
+    }
+    
+    case 'delete-saved': {
+      if (args.length < 1) {
+        return { success: false, message: '用法: delete-saved [文件名]' };
+      }
+      
+      const filename = args[0];
+      return deleteStoredWindow(filename);
     }
     
     default:

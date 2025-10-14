@@ -1269,3 +1269,78 @@ export function getLensSystem(lensId) {
   return getLensSystemInfo(lensId);
 }
 
+/**
+ * Get window serialization data (integration with storage system)
+ * @param {string} windowId - Window ID
+ * @returns {Object|null} Window serialization data
+ */
+export function getWindowSerializationData(windowId) {
+  // This function will be called from windowStorage.js to avoid circular imports
+  // The actual implementation is in windowStorage.js
+  console.debug(`[WINDOW] Getting serialization data for ${windowId} - delegating to storage module`);
+  return null; // This will be overridden by the storage module
+}
+
+/**
+ * Create window from deserialized data
+ * @param {Object} windowData - Deserialized window data
+ * @param {Object} options - Creation options
+ * @returns {Object} Creation result
+ */
+export function createWindowFromData(windowData, options = {}) {
+  // This function will be called from windowStorage.js to avoid circular imports
+  // The actual implementation is in windowStorage.js
+  console.debug(`[WINDOW] Creating window from data - delegating to storage module`);
+  return { success: false, message: 'Function not implemented - use storage module directly' };
+}
+
+/**
+ * Update existing window from data
+ * @param {string} windowId - Window ID
+ * @param {Object} windowData - Window data
+ * @returns {Object} Update result
+ */
+export function updateWindowFromData(windowId, windowData) {
+  console.debug(`[WINDOW] Updating window ${windowId} from data`);
+  
+  const win = windows.get(windowId);
+  if (!win || win.isDestroyed()) {
+    return { success: false, message: `Window ${windowId} not found` };
+  }
+  
+  try {
+    const { windowConfig } = windowData;
+    
+    // Update basic properties
+    if (windowConfig.title) {
+      win.setTitle(windowConfig.title);
+    }
+    
+    if (windowConfig.bounds) {
+      win.setBounds(windowConfig.bounds);
+    }
+    
+    if (windowConfig.properties) {
+      const props = windowConfig.properties;
+      
+      if (typeof props.resizable === 'boolean') {
+        win.setResizable(props.resizable);
+      }
+      
+      if (typeof props.alwaysOnTop === 'boolean') {
+        win.setAlwaysOnTop(props.alwaysOnTop);
+      }
+      
+      if (typeof props.opacity === 'number' && win.setOpacity) {
+        win.setOpacity(props.opacity);
+      }
+    }
+    
+    console.log(`[WINDOW] Successfully updated window ${windowId} from data`);
+    return { success: true, message: `Window ${windowId} updated successfully` };
+    
+  } catch (error) {
+    console.error(`[WINDOW] Error updating window from data:`, error);
+    return { success: false, message: `Update failed: ${error.message}` };
+  }
+}

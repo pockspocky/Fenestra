@@ -43,3 +43,6 @@
 # cursor
 .cursor/
 .vscode/settings.json
+.kiro/hooks/auto-git-commit.kiro.hook
+.kiro/hooks/docs-sync-hook.kiro.hook
+
