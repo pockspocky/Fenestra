@@ -47,10 +47,27 @@ src/core/
   - `cleanupWorker()` - 清理 Worker 资源
 
 ### 5. ipcHandlers.js
-- **功能**: IPC 通信处理
+- **功能**: IPC 通信处理、终端命令执行
 - **导出**:
   - `initializeIpcHandlers()` - 初始化 IPC 处理程序
   - `cleanupIpcHandlers()` - 清理 IPC 处理程序
+
+### 6. windowStorage.js
+- **功能**: 窗口状态序列化、文件存储、配置恢复
+- **导出**:
+  - `saveWindowToFile()` - 保存窗口配置到文件
+  - `loadWindowFromFile()` - 从文件加载窗口配置
+  - `deserializeWindow()` - 反序列化并重建窗口
+  - `listStoredWindows()` - 列出已保存的窗口文件
+  - `deleteStoredWindow()` - 删除保存的窗口文件
+
+### 7. lensSystem.js
+- **功能**: 镜头系统、内容同步、位置追踪
+- **导出**:
+  - `createLensSystem()` - 创建镜头系统
+  - `destroyLensSystem()` - 销毁镜头系统
+  - `getLensSystemInfo()` - 获取镜头系统信息
+  - `updateLensContent()` - 更新镜头内容
 
 ## 使用方式
 
@@ -63,16 +80,21 @@ import { createWindow } from './src/core/windowManager.js';
 import { createWindow, createDoor } from './src/core/windowManager.js';
 import { canOpenDoor } from './src/core/doorKeySystem.js';
 
+// 导入存储功能
+import { saveWindowToFile, loadWindowFromFile } from './src/core/windowStorage.js';
+
 // 统一导入
 import { createWindow, canOpenDoor } from './src/core/index.js';
 ```
 
 ### 模块间依赖
-- `windowManager.js` - 独立模块
+- `windowManager.js` - 独立模块，提供基础窗口管理
+- `windowStorage.js` - 依赖 `windowManager.js`, `lensSystem.js`
+- `lensSystem.js` - 依赖 `windowManager.js`
 - `doorKeySystem.js` - 依赖 `windowManager.js`
 - `gameLogic.js` - 依赖 `windowManager.js`, `doorKeySystem.js`
 - `workerManager.js` - 依赖所有其他模块
-- `ipcHandlers.js` - 依赖 `windowManager.js`
+- `ipcHandlers.js` - 依赖 `windowManager.js`, `windowStorage.js`
 
 ## 优势
 
