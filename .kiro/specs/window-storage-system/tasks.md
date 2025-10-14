@@ -63,7 +63,7 @@
     - Create helper functions for storage directory operations
     - _Requirements: 1.5, 3.1_
 
-  - [ ] 4.4 Update terminal help and autocomplete
+  - [x] 4.4 Update terminal help and autocomplete
     - Add storage commands to help text in `terminal.html`
     - Include storage commands in autocomplete list
     - Update command documentation with usage examples

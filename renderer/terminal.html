@@ -134,7 +134,8 @@
       'show', 'hide', 'reload-html',
       'create-picture', 'set-picture', 'set-fit-mode',
       'create-content', 'create-lens', 'set-opacity', 'set-always-on-top', 
-      'update-blur', 'destroy-lens', 'list-lens', 'lens-list', 'lens-info'
+      'update-blur', 'destroy-lens', 'list-lens', 'lens-list', 'lens-info',
+      'save-window', 'restore-window', 'list-saved', 'delete-saved'
     ];
 
     // 获取元素
@@ -270,10 +271,23 @@
       print('  list-lens, lens-list              - 列出所有镜头', 'info');
       print('  lens-info [镜头ID]                - 查看镜头详情', 'info');
       print('', 'info');
+      print('窗口存储命令:', 'info');
+      print('  save-window [ID] [文件名]         - 保存窗口配置到文件', 'info');
+      print('      示例: save-window window1 my-config', 'info');
+      print('      文件名可选，默认使用时间戳命名', 'info');
+      print('  restore-window [文件路径]         - 从文件恢复窗口', 'info');
+      print('      示例: restore-window .fenestra-storage/window1.fenestra', 'info');
+      print('      支持拖拽.fenestra文件到终端', 'info');
+      print('  list-saved                        - 列出所有已保存的窗口文件', 'info');
+      print('  delete-saved [文件名]             - 删除已保存的窗口文件', 'info');
+      print('      示例: delete-saved window1-20241014.fenestra', 'info');
+      print('', 'info');
       print('提示: 使用 Tab 键自动补全命令和窗口ID', 'info');
       print('提示: 使用上下箭头浏览命令历史', 'info');
       print('提示: 图片路径支持绝对路径和相对路径', 'info');
       print('提示: 镜头窗口可显示底层模糊内容的清晰版本', 'info');
+      print('提示: 窗口配置文件保存在.fenestra-storage目录', 'info');
+      print('提示: 可拖拽.fenestra文件到终端快速恢复窗口', 'info');
     }
 
     // 清空终端
