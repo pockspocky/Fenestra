@@ -6,7 +6,7 @@
   - Add JSON serialization with proper error handling and validation
   - _Requirements: 1.1, 1.2, 1.3, 5.1, 5.2, 5.3, 5.4, 5.5_
 
-- [x] 2. Implement window serialization functionality
+- [-] 2. Implement window serialization functionality
   - [x] 2.1 Create window data extraction functions
     - Write functions to extract window properties (bounds, title, visibility, etc.)
     - Implement content-specific data extraction for different window types
