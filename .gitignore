@@ -46,3 +46,4 @@
 .kiro/hooks/auto-git-commit.kiro.hook
 .kiro/hooks/docs-sync-hook.kiro.hook
 
+.kiro/hooks/doc-sync-hook.kiro.hook
