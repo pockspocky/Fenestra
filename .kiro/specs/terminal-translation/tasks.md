@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Update HTML document metadata and structure
+- [x] 1. Update HTML document metadata and structure
   - Change HTML lang attribute from "zh-CN" to "en"
   - Update document title from "终端" to "Terminal"
   - _Requirements: 3.1_
