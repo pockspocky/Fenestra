@@ -6,39 +6,39 @@
   - Add JSON serialization with proper error handling and validation
   - _Requirements: 1.1, 1.2, 1.3, 5.1, 5.2, 5.3, 5.4, 5.5_
 
-- [ ] 2. Implement window serialization functionality
-  - [ ] 2.1 Create window data extraction functions
+- [x] 2. Implement window serialization functionality
+  - [x] 2.1 Create window data extraction functions
     - Write functions to extract window properties (bounds, title, visibility, etc.)
     - Implement content-specific data extraction for different window types
     - Add special property handling for picture, lens, and content windows
     - _Requirements: 1.1, 4.1, 4.2, 4.3, 4.4_
 
-  - [ ] 2.2 Implement JSON serialization with metadata
+  - [x] 2.2 Implement JSON serialization with metadata
     - Create serialization function that converts window data to JSON format
     - Add metadata including timestamp, version, and window type
     - Implement relative path conversion for portability
     - _Requirements: 1.2, 5.1, 5.2, 5.3, 5.4, 5.5_
 
-  - [ ] 2.3 Add file system operations for saving
+  - [x] 2.3 Add file system operations for saving
     - Create storage directory management functions
     - Implement file naming convention with timestamps
     - Add file writing with proper error handling
     - _Requirements: 1.3, 1.5_
 
-- [ ] 3. Implement window deserialization and restoration
-  - [ ] 3.1 Create JSON parsing and validation
+- [x] 3. Implement window deserialization and restoration
+  - [x] 3.1 Create JSON parsing and validation
     - Write JSON parsing function with error handling
     - Implement data validation for required fields and structure
     - Add version compatibility checking
     - _Requirements: 3.1, 3.2, 5.4_
 
-  - [ ] 3.2 Implement window recreation logic
+  - [x] 3.2 Implement window recreation logic
     - Create function to recreate windows from deserialized data
     - Add window ID conflict resolution (update existing or create new)
     - Implement property restoration for all window types
     - _Requirements: 3.3, 3.4, 3.5, 4.1, 4.2, 4.3, 4.4_
 
-  - [ ] 3.3 Add content restoration handling
+  - [x] 3.3 Add content restoration handling
     - Implement content file validation and loading
     - Add graceful handling of missing content files
     - Create warning system for missing resources
