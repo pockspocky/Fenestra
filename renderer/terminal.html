@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>终端</title>
+  <title>Terminal</title>
   <style>
     * {
       margin: 0;
@@ -82,7 +82,7 @@
       color: #000000;
     }
 
-    /* 自定义滚动条 */
+    /* Custom scrollbar */
     ::-webkit-scrollbar {
       width: 8px;
     }
@@ -140,8 +140,8 @@
   <div id="terminal-container">
     <div id="output">
       <div class="output-line info">Fenestra Terminal v1.0</div>
-      <div class="output-line info">输入 'help' 查看可用命令</div>
-      <div class="output-line info">按 Ctrl+~ 关闭终端</div>
+      <div class="output-line info">Type 'help' to see available commands</div>
+      <div class="output-line info">Press Ctrl+~ to close terminal</div>
       <div class="output-line info">---</div>
     </div>
   </div>
@@ -156,12 +156,12 @@
   </div>
 
   <script>
-    // 命令历史
+    // Command history
     let commandHistory = [];
     let historyIndex = -1;
     let currentCommand = '';
 
-    // 可用命令列表
+    // Available commands list
     const commands = [
       'help', 'clear', 'list', 'ls', 'getWindows', 'info',
       'get-title', 'set-title', 'set-size', 'set-position', 'set-resizable', 'set-visibility',
@@ -172,46 +172,46 @@
       'save-window', 'restore-window', 'list-saved', 'delete-saved'
     ];
 
-    // 获取元素
+    // Get elements
     const outputEl = document.getElementById('output');
     const inputEl = document.getElementById('command-input');
 
-    // 输出消息到终端
+    // Output message to terminal
     function print(message, type = 'info') {
       const line = document.createElement('div');
       line.className = `output-line ${type}`;
       line.textContent = message;
       outputEl.appendChild(line);
       
-      // 自动滚动到底部
+      // Auto scroll to bottom
       const container = document.getElementById('terminal-container');
       container.scrollTop = container.scrollHeight;
     }
 
-    // 执行命令
+    // Execute command
     async function executeCommand(cmdStr) {
       if (!cmdStr.trim()) return;
 
-      // 显示执行的命令
+      // Display executed command
       print(`> ${cmdStr}`, 'prompt');
 
-      // 添加到历史
+      // Add to history
       commandHistory.push(cmdStr);
       historyIndex = commandHistory.length;
       currentCommand = '';
 
-      // 解析命令
+      // Parse command
       const parts = parseCommand(cmdStr);
       const cmd = parts[0]?.toLowerCase();
       const args = parts.slice(1);
 
-      // 执行本地命令
+      // Execute local commands
       if (cmd === 'help') {
         showHelp();
       } else if (cmd === 'clear') {
         clearTerminal();
       } else {
-        // 发送到主进程处理
+        // Send to main process for handling
         try {
           const result = await window.electronAPI.executeTerminalCommand(cmd, args);
           if (result.success) {
@@ -230,7 +230,7 @@
       }
     }
 
-    // 解析命令（支持引号）
+    // Parse command (supports quotes)
     function parseCommand(str) {
       const parts = [];
       let current = '';
@@ -265,93 +265,93 @@
       return parts;
     }
 
-    // 显示帮助信息
+    // Display help information
     function showHelp() {
-      print('--- 可用命令 ---', 'info');
+      print('--- Available Commands ---', 'info');
       print('', 'info');
-      print('基础命令:', 'info');
-      print('  help                              - 显示此帮助信息', 'info');
-      print('  clear                             - 清空终端', 'info');
-      print('  list, ls                          - 列出所有窗口', 'info');
-      print('  getWindows                        - 获取所有窗口详细信息', 'info');
-      print('  info [窗口ID]                     - 查看窗口详细信息', 'info');
+      print('Basic Commands:', 'info');
+      print('  help                              - Show this help information', 'info');
+      print('  clear                             - Clear terminal', 'info');
+      print('  list, ls                          - List all windows', 'info');
+      print('  getWindows                        - Get detailed information for all windows', 'info');
+      print('  info [windowID]                   - View detailed window information', 'info');
       print('', 'info');
-      print('窗口操作命令:', 'info');
-      print('  get-title [ID]                    - 获取窗口标题', 'info');
-      print('  set-title [ID] "标题"             - 设置窗口标题', 'info');
-      print('  set-size [ID] [宽度] [高度]       - 设置窗口大小', 'info');
-      print('  set-position [ID] [x] [y]         - 设置窗口位置', 'info');
-      print('  set-resizable [ID] [true/false]   - 设置是否可调整大小', 'info');
-      print('  set-visibility [ID] [true/false]  - 设置窗口可见性', 'info');
-      print('  show [ID]                         - 显示窗口', 'info');
-      print('  hide [ID]                         - 隐藏窗口', 'info');
-      print('  reload-html [ID] [htmlPath]       - 重新加载HTML文件', 'info');
+      print('Window Operations:', 'info');
+      print('  get-title [ID]                    - Get window title', 'info');
+      print('  set-title [ID] "title"            - Set window title', 'info');
+      print('  set-size [ID] [width] [height]    - Set window size', 'info');
+      print('  set-position [ID] [x] [y]         - Set window position', 'info');
+      print('  set-resizable [ID] [true/false]   - Set whether window is resizable', 'info');
+      print('  set-visibility [ID] [true/false]  - Set window visibility', 'info');
+      print('  show [ID]                         - Show window', 'info');
+      print('  hide [ID]                         - Hide window', 'info');
+      print('  reload-html [ID] [htmlPath]       - Reload HTML file', 'info');
       print('', 'info');
-      print('图片窗口命令:', 'info');
-      print('  create-picture [ID] [路径] [模式] - 创建图片窗口', 'info');
-      print('      模式: fill/contain/cover/scale-down/none', 'info');
-      print('  set-picture [ID] [路径] [模式]    - 更改窗口显示的图片', 'info');
-      print('  set-fit-mode [ID] [模式]          - 更改图片缩放模式', 'info');
+      print('Picture Window Commands:', 'info');
+      print('  create-picture [ID] [path] [mode] - Create picture window', 'info');
+      print('      modes: fill/contain/cover/scale-down/none', 'info');
+      print('  set-picture [ID] [path] [mode]    - Change window displayed image', 'info');
+      print('  set-fit-mode [ID] [mode]          - Change image scaling mode', 'info');
       print('', 'info');
-      print('镜头系统命令:', 'info');
-      print('  create-content [ID] [类型] [路径] [模糊度] [是否模糊]', 'info');
-      print('      - 创建内容窗口（text/image，模糊度0-50）', 'info');
-      print('  create-lens [镜头ID] [目标ID] [宽] [高]', 'info');
-      print('      - 创建镜头窗口（最多3个）', 'info');
-      print('  set-opacity [ID] [0-1]            - 设置窗口透明度', 'info');
-      print('  set-always-on-top [ID] [true/false] - 设置窗口置顶', 'info');
-      print('  update-blur [ID] [0-50]           - 更新内容模糊度', 'info');
-      print('  destroy-lens [镜头ID]             - 销毁镜头系统', 'info');
-      print('  list-lens, lens-list              - 列出所有镜头', 'info');
-      print('  lens-info [镜头ID]                - 查看镜头详情', 'info');
+      print('Lens System Commands:', 'info');
+      print('  create-content [ID] [type] [path] [blur] [shouldBlur]', 'info');
+      print('      - Create content window (text/image, blur 0-50)', 'info');
+      print('  create-lens [lensID] [targetID] [width] [height]', 'info');
+      print('      - Create lens window (maximum 3)', 'info');
+      print('  set-opacity [ID] [0-1]            - Set window opacity', 'info');
+      print('  set-always-on-top [ID] [true/false] - Set window always on top', 'info');
+      print('  update-blur [ID] [0-50]           - Update content blur level', 'info');
+      print('  destroy-lens [lensID]             - Destroy lens system', 'info');
+      print('  list-lens, lens-list              - List all lenses', 'info');
+      print('  lens-info [lensID]                - View lens details', 'info');
       print('', 'info');
-      print('窗口存储命令:', 'info');
-      print('  save-window [ID] [文件名]         - 保存窗口配置到文件', 'info');
-      print('      示例: save-window window1 my-config', 'info');
-      print('      文件名可选，默认使用时间戳命名', 'info');
-      print('  restore-window [文件路径]         - 从文件恢复窗口', 'info');
-      print('      示例: restore-window .fenestra-storage/window1.fenestra', 'info');
-      print('      支持拖拽.fenestra文件到终端', 'info');
-      print('  list-saved                        - 列出所有已保存的窗口文件', 'info');
-      print('  delete-saved [文件名]             - 删除已保存的窗口文件', 'info');
-      print('      示例: delete-saved window1-20241014.fenestra', 'info');
+      print('Window Storage Commands:', 'info');
+      print('  save-window [ID] [filename]       - Save window configuration to file', 'info');
+      print('      example: save-window window1 my-config', 'info');
+      print('      filename optional, defaults to timestamp naming', 'info');
+      print('  restore-window [filePath]         - Restore window from file', 'info');
+      print('      example: restore-window .fenestra-storage/window1.fenestra', 'info');
+      print('      supports dragging .fenestra files to terminal', 'info');
+      print('  list-saved                        - List all saved window files', 'info');
+      print('  delete-saved [filename]           - Delete saved window file', 'info');
+      print('      example: delete-saved window1-20241014.fenestra', 'info');
       print('', 'info');
-      print('提示: 使用 Tab 键自动补全命令和窗口ID', 'info');
-      print('提示: 使用上下箭头浏览命令历史', 'info');
-      print('提示: 图片路径支持绝对路径和相对路径', 'info');
-      print('提示: 镜头窗口可显示底层模糊内容的清晰版本', 'info');
-      print('提示: 窗口配置文件保存在.fenestra-storage目录', 'info');
-      print('提示: 可拖拽.fenestra文件到终端快速恢复窗口', 'info');
+      print('Tip: Use Tab key to autocomplete commands and window IDs', 'info');
+      print('Tip: Use up/down arrows to browse command history', 'info');
+      print('Tip: Image paths support both absolute and relative paths', 'info');
+      print('Tip: Lens windows can display clear versions of blurred background content', 'info');
+      print('Tip: Window configuration files are saved in .fenestra-storage directory', 'info');
+      print('Tip: You can drag .fenestra files to terminal for quick window restoration', 'info');
     }
 
-    // 清空终端
+    // Clear terminal
     function clearTerminal() {
       outputEl.innerHTML = '';
     }
 
-    // 自动补全
+    // Auto completion
     function autocomplete(input) {
       const parts = input.trim().split(/\s+/);
       
       if (parts.length === 1) {
-        // 补全命令
+        // Complete command
         const matches = commands.filter(cmd => cmd.startsWith(parts[0].toLowerCase()));
         return matches.length === 1 ? matches[0] : null;
       } else {
-        // 补全窗口ID（需要从主进程获取）
+        // Complete window ID (needs to be obtained from main process)
         return null;
       }
     }
 
-    // 输入事件监听
+    // Input event listeners
     inputEl.addEventListener('keydown', async (e) => {
-      // Enter - 执行命令
+      // Enter - execute command
       if (e.key === 'Enter') {
         const cmd = inputEl.value;
         inputEl.value = '';
         await executeCommand(cmd);
       }
-      // Tab - 自动补全
+      // Tab - auto completion
       else if (e.key === 'Tab') {
         e.preventDefault();
         const completion = autocomplete(inputEl.value);
@@ -359,7 +359,7 @@
           inputEl.value = completion + ' ';
         }
       }
-      // 上箭头 - 上一条命令
+      // Up arrow - previous command
       else if (e.key === 'ArrowUp') {
         e.preventDefault();
         if (historyIndex > 0) {
@@ -370,7 +370,7 @@
           inputEl.value = commandHistory[historyIndex];
         }
       }
-      // 下箭头 - 下一条命令
+      // Down arrow - next command
       else if (e.key === 'ArrowDown') {
         e.preventDefault();
         if (historyIndex < commandHistory.length) {
@@ -384,7 +384,7 @@
       }
     });
 
-    // 保持焦点在输入框
+    // Keep focus on input box
     document.addEventListener('click', () => {
       inputEl.focus();
     });
@@ -515,7 +515,7 @@
       }
     }
 
-    // 欢迎信息
+    // Welcome message
     print('', 'info');
   </script>
 </body>
