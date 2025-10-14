@@ -715,7 +715,7 @@ function validateContentFiles(windowData) {
  * @returns {Object} Recreation result
  */
 function recreateWindowByType(windowId, windowData) {
-  const { metadata, windowConfig, contentConfig, specialConfig } = windowData;
+  const { metadata, windowConfig } = windowData;
   const windowType = metadata.windowType;
 
   console.debug(`[STORAGE] Recreating ${windowType} window: ${windowId}`);

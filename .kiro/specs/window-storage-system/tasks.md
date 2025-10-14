@@ -114,7 +114,7 @@
     - Create validation for window configuration integrity
     - _Requirements: 3.2, 5.1, 5.2, 5.3_
 
-- [ ] 8. Code cleanup and optimization
+- [-] 8. Code cleanup and optimization
   - [x] 8.1 Clean up unused imports in windowStorage.js
     - Remove unused imports: getAllWindows, updateWindowProperty
     - Remove unused variables in functions
