@@ -42,3 +42,4 @@
 
 # cursor
 .cursor/
+.vscode/settings.json
