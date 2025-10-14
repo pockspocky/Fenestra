@@ -69,20 +69,20 @@
     - Update command documentation with usage examples
     - _Requirements: 1.5, 3.1_
 
-- [ ] 5. Implement drag-and-drop functionality in terminal
-  - [ ] 5.1 Add drag-drop event handlers to terminal HTML
+- [x] 5. Implement drag-and-drop functionality in terminal
+  - [x] 5.1 Add drag-drop event handlers to terminal HTML
     - Modify `renderer/terminal.html` to handle drag events
     - Implement visual feedback for drag-over states
     - Add file type validation on drop
     - _Requirements: 2.1, 2.2, 2.3, 2.4_
 
-  - [ ] 5.2 Implement file path extraction and command population
+  - [x] 5.2 Implement file path extraction and command population
     - Create function to extract file path from drop event
     - Implement automatic command input population
     - Add validation for .fenestra file extension
     - _Requirements: 2.2, 2.3, 2.5_
 
-  - [ ] 5.3 Add error handling for invalid drops
+  - [x] 5.3 Add error handling for invalid drops
     - Implement error display for invalid file types
     - Add handling for corrupted or unreadable files
     - Create user feedback for validation failures
