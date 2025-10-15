@@ -389,6 +389,495 @@
     // Create global autocompleter instance
     const autoCompleter = new AutoCompleter();
 
+    // Command help data structure
+    const commandHelp = {
+      'help': {
+        description: 'Display help information for commands',
+        usage: 'help [command_name]',
+        parameters: [
+          { name: 'command_name', description: 'Optional: specific command to get help for', required: false }
+        ],
+        examples: [
+          'help',
+          'help set-title',
+          'help create-lens'
+        ],
+        tips: [
+          'Use "help [command]" to get detailed help for a specific command',
+          'Commands also support --help and -h flags for individual help'
+        ]
+      },
+      'clear': {
+        description: 'Clear the terminal screen',
+        usage: 'clear',
+        parameters: [],
+        examples: ['clear'],
+        tips: ['Clears all previous output from the terminal display']
+      },
+      'list': {
+        description: 'List all open windows with their IDs and titles',
+        usage: 'list',
+        aliases: ['ls'],
+        parameters: [],
+        examples: ['list', 'ls'],
+        tips: [
+          'Shows a simple list of window ID and title pairs',
+          'Use "getWindows" for more detailed information'
+        ]
+      },
+      'ls': {
+        description: 'Alias for list command - list all open windows',
+        usage: 'ls',
+        aliases: ['list'],
+        parameters: [],
+        examples: ['ls', 'list'],
+        tips: ['This is an alias for the "list" command']
+      },
+      'getwindows': {
+        description: 'Get detailed information for all open windows',
+        usage: 'getWindows',
+        parameters: [],
+        examples: ['getWindows'],
+        tips: [
+          'Provides comprehensive details about all windows',
+          'Use "list" for a simpler overview'
+        ]
+      },
+      'info': {
+        description: 'View detailed information about a specific window',
+        usage: 'info [windowID]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the window to inspect', required: true }
+        ],
+        examples: [
+          'info window1',
+          'info main-window',
+          'info picture-viewer'
+        ],
+        tips: [
+          'Shows position, size, visibility, and other window properties',
+          'Use "list" first to see available window IDs'
+        ]
+      },
+      'get-title': {
+        description: 'Get the current title of a window',
+        usage: 'get-title [windowID]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the target window', required: true }
+        ],
+        examples: [
+          'get-title window1',
+          'get-title main-window'
+        ],
+        tips: ['Returns the current title text of the specified window']
+      },
+      'set-title': {
+        description: 'Set the title of a window',
+        usage: 'set-title [windowID] "title"',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the target window', required: true },
+          { name: 'title', description: 'The new title text (use quotes for spaces)', required: true }
+        ],
+        examples: [
+          'set-title window1 "My Window"',
+          'set-title main-window "Updated Title"',
+          'set-title viewer "Image Viewer - Photo.jpg"'
+        ],
+        tips: [
+          'Use quotes around titles that contain spaces',
+          'Title changes are immediately visible in the window title bar'
+        ]
+      },
+      'set-size': {
+        description: 'Set the size of a window',
+        usage: 'set-size [windowID] [width] [height]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the target window', required: true },
+          { name: 'width', description: 'Width in pixels', required: true },
+          { name: 'height', description: 'Height in pixels', required: true }
+        ],
+        examples: [
+          'set-size window1 800 600',
+          'set-size viewer 1920 1080',
+          'set-size lens1 300 200'
+        ],
+        tips: [
+          'Width and height must be positive integers',
+          'Very small sizes may be limited by system constraints'
+        ]
+      },
+      'set-position': {
+        description: 'Set the position of a window on screen',
+        usage: 'set-position [windowID] [x] [y]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the target window', required: true },
+          { name: 'x', description: 'X coordinate in pixels from left edge', required: true },
+          { name: 'y', description: 'Y coordinate in pixels from top edge', required: true }
+        ],
+        examples: [
+          'set-position window1 100 100',
+          'set-position viewer 0 0',
+          'set-position lens1 500 300'
+        ],
+        tips: [
+          'Coordinates are relative to the primary display',
+          'Negative values may position windows off-screen'
+        ]
+      },
+      'set-resizable': {
+        description: 'Set whether a window can be resized by the user',
+        usage: 'set-resizable [windowID] [true/false]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the target window', required: true },
+          { name: 'resizable', description: 'true to allow resizing, false to prevent it', required: true }
+        ],
+        examples: [
+          'set-resizable window1 true',
+          'set-resizable viewer false',
+          'set-resizable lens1 false'
+        ],
+        tips: [
+          'Non-resizable windows cannot be resized by dragging edges',
+          'This affects user interaction, not programmatic resizing'
+        ]
+      },
+      'set-visibility': {
+        description: 'Set the visibility state of a window',
+        usage: 'set-visibility [windowID] [true/false]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the target window', required: true },
+          { name: 'visible', description: 'true to show, false to hide', required: true }
+        ],
+        examples: [
+          'set-visibility window1 true',
+          'set-visibility viewer false',
+          'set-visibility lens1 true'
+        ],
+        tips: [
+          'Hidden windows remain in memory but are not visible',
+          'Use "show" and "hide" commands as shortcuts'
+        ]
+      },
+      'show': {
+        description: 'Show a hidden window',
+        usage: 'show [windowID]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the window to show', required: true }
+        ],
+        examples: [
+          'show window1',
+          'show viewer',
+          'show lens1'
+        ],
+        tips: [
+          'Shortcut for "set-visibility [windowID] true"',
+          'Brings the window to the foreground if it was hidden'
+        ]
+      },
+      'hide': {
+        description: 'Hide a visible window',
+        usage: 'hide [windowID]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the window to hide', required: true }
+        ],
+        examples: [
+          'hide window1',
+          'hide viewer',
+          'hide lens1'
+        ],
+        tips: [
+          'Shortcut for "set-visibility [windowID] false"',
+          'Window remains in memory but becomes invisible'
+        ]
+      },
+      'reload-html': {
+        description: 'Reload a window with new HTML content from a file',
+        usage: 'reload-html [windowID] [htmlPath]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the target window', required: true },
+          { name: 'htmlPath', description: 'Path to the HTML file to load', required: true }
+        ],
+        examples: [
+          'reload-html window1 renderer/index.html',
+          'reload-html viewer renderer/pictureViewer.html',
+          'reload-html terminal renderer/terminal.html'
+        ],
+        tips: [
+          'Supports both absolute and relative file paths',
+          'Use Tab completion to navigate to HTML files',
+          'Window content will be completely replaced'
+        ]
+      },
+      'create-picture': {
+        description: 'Create a new picture window to display an image',
+        usage: 'create-picture [windowID] [imagePath] [fitMode]',
+        parameters: [
+          { name: 'windowID', description: 'Unique ID for the new picture window', required: true },
+          { name: 'imagePath', description: 'Path to the image file to display', required: true },
+          { name: 'fitMode', description: 'How to scale the image: fill/contain/cover/scale-down/none', required: false }
+        ],
+        examples: [
+          'create-picture viewer1 doors/Door.png',
+          'create-picture photo doors/Squirrel.jpg contain',
+          'create-picture wallpaper /path/to/image.png cover'
+        ],
+        tips: [
+          'Default fit mode is "fill" if not specified',
+          'Supported formats: PNG, JPG, JPEG, GIF, WebP, SVG, BMP',
+          'Use Tab completion to navigate to image files'
+        ]
+      },
+      'set-picture': {
+        description: 'Change the image displayed in an existing picture window',
+        usage: 'set-picture [windowID] [imagePath] [fitMode]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the picture window', required: true },
+          { name: 'imagePath', description: 'Path to the new image file', required: true },
+          { name: 'fitMode', description: 'Optional: new scaling mode', required: false }
+        ],
+        examples: [
+          'set-picture viewer1 doors/Squirrel.jpg',
+          'set-picture photo /new/path/image.png contain',
+          'set-picture wallpaper background.jpg cover'
+        ],
+        tips: [
+          'Window must already exist as a picture window',
+          'If fitMode is omitted, current scaling mode is preserved'
+        ]
+      },
+      'set-fit-mode': {
+        description: 'Change the image scaling mode of a picture window',
+        usage: 'set-fit-mode [windowID] [fitMode]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the picture window', required: true },
+          { name: 'fitMode', description: 'Scaling mode: fill/contain/cover/scale-down/none', required: true }
+        ],
+        examples: [
+          'set-fit-mode viewer1 contain',
+          'set-fit-mode photo cover',
+          'set-fit-mode wallpaper none'
+        ],
+        tips: [
+          'fill: stretch to fill window, contain: fit within window, cover: fill window cropping if needed',
+          'scale-down: like contain but never scale up, none: original size'
+        ]
+      },
+      'create-content': {
+        description: 'Create a content window with text or image content and optional blur effect',
+        usage: 'create-content [windowID] [type] [path] [blurAmount] [shouldBlur]',
+        parameters: [
+          { name: 'windowID', description: 'Unique ID for the new content window', required: true },
+          { name: 'type', description: 'Content type: "text" or "image"', required: true },
+          { name: 'path', description: 'Path to content file (optional for text type)', required: false },
+          { name: 'blurAmount', description: 'Blur intensity from 0-50 (default: 10)', required: false },
+          { name: 'shouldBlur', description: 'Whether to apply blur: true/false (default: true)', required: false }
+        ],
+        examples: [
+          'create-content bg1 text',
+          'create-content bg2 image doors/Door.png 20',
+          'create-content bg3 text "" 15 true'
+        ],
+        tips: [
+          'Content windows are designed to work with the lens system',
+          'Blur effect creates a background that lens windows can reveal clearly',
+          'Higher blur values create more pronounced effects'
+        ]
+      },
+      'create-lens': {
+        description: 'Create a lens window that shows clear content from a blurred background window',
+        usage: 'create-lens [lensID] [targetWindowID] [width] [height]',
+        parameters: [
+          { name: 'lensID', description: 'Unique ID for the new lens window', required: true },
+          { name: 'targetWindowID', description: 'ID of the content window to create lens for', required: true },
+          { name: 'width', description: 'Lens width in pixels (default: 300)', required: false },
+          { name: 'height', description: 'Lens height in pixels (default: 200)', required: false }
+        ],
+        examples: [
+          'create-lens lens1 bg1',
+          'create-lens magnifier bg2 400 300',
+          'create-lens viewer bg3 500 400'
+        ],
+        tips: [
+          'Maximum of 3 lens windows can exist simultaneously',
+          'Lens windows show unblurred content from the target window',
+          'Target window should be a content window with blur applied'
+        ]
+      },
+      'set-opacity': {
+        description: 'Set the opacity (transparency) of a window',
+        usage: 'set-opacity [windowID] [opacity]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the target window', required: true },
+          { name: 'opacity', description: 'Opacity value from 0 (transparent) to 1 (opaque)', required: true }
+        ],
+        examples: [
+          'set-opacity window1 0.8',
+          'set-opacity lens1 0.5',
+          'set-opacity viewer 1.0'
+        ],
+        tips: [
+          '0.0 makes the window completely transparent',
+          '1.0 makes the window completely opaque',
+          'Values between create various transparency levels'
+        ]
+      },
+      'set-always-on-top': {
+        description: 'Set whether a window stays above all other windows',
+        usage: 'set-always-on-top [windowID] [true/false] [level]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the target window', required: true },
+          { name: 'alwaysOnTop', description: 'true to keep on top, false to allow normal layering', required: true },
+          { name: 'level', description: 'Optional: stacking level (normal, floating, torn-off-menu, modal-panel, main-menu, status, pop-up-menu, screen-saver)', required: false }
+        ],
+        examples: [
+          'set-always-on-top lens1 true',
+          'set-always-on-top window1 false',
+          'set-always-on-top overlay true floating'
+        ],
+        tips: [
+          'Always-on-top windows remain visible above other applications',
+          'Default level is "normal" if not specified',
+          'Use carefully to avoid blocking user interaction'
+        ]
+      },
+      'update-blur': {
+        description: 'Update the blur amount of a content window',
+        usage: 'update-blur [windowID] [blurAmount]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the content window', required: true },
+          { name: 'blurAmount', description: 'New blur intensity from 0-50', required: true }
+        ],
+        examples: [
+          'update-blur bg1 25',
+          'update-blur content1 0',
+          'update-blur bg2 50'
+        ],
+        tips: [
+          'Only works on content windows created with create-content',
+          '0 removes blur completely, 50 is maximum blur',
+          'Changes affect the background that lens windows reveal'
+        ]
+      },
+      'destroy-lens': {
+        description: 'Destroy a lens system and close the lens window',
+        usage: 'destroy-lens [lensID]',
+        parameters: [
+          { name: 'lensID', description: 'The ID of the lens window to destroy', required: true }
+        ],
+        examples: [
+          'destroy-lens lens1',
+          'destroy-lens magnifier',
+          'destroy-lens viewer'
+        ],
+        tips: [
+          'Completely removes the lens window and its tracking system',
+          'Target content window remains unaffected',
+          'Frees up lens slot for creating new lens windows'
+        ]
+      },
+      'list-lens': {
+        description: 'List all active lens systems',
+        usage: 'list-lens',
+        aliases: ['lens-list'],
+        parameters: [],
+        examples: ['list-lens', 'lens-list'],
+        tips: [
+          'Shows lens ID, target window, and tracking status',
+          'Maximum of 3 lens systems can be active',
+          'Use "lens-info" for detailed information about a specific lens'
+        ]
+      },
+      'lens-list': {
+        description: 'Alias for list-lens - list all active lens systems',
+        usage: 'lens-list',
+        aliases: ['list-lens'],
+        parameters: [],
+        examples: ['lens-list', 'list-lens'],
+        tips: ['This is an alias for the "list-lens" command']
+      },
+      'lens-info': {
+        description: 'View detailed information about a specific lens system',
+        usage: 'lens-info [lensID]',
+        parameters: [
+          { name: 'lensID', description: 'The ID of the lens to inspect', required: true }
+        ],
+        examples: [
+          'lens-info lens1',
+          'lens-info magnifier',
+          'lens-info viewer'
+        ],
+        tips: [
+          'Shows lens properties, target window, and tracking details',
+          'Use "list-lens" first to see available lens IDs'
+        ]
+      },
+      'save-window': {
+        description: 'Save window configuration to a .fenestra file for later restoration',
+        usage: 'save-window [windowID] [filename]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the window to save', required: true },
+          { name: 'filename', description: 'Optional: custom filename (without extension)', required: false }
+        ],
+        examples: [
+          'save-window window1',
+          'save-window viewer my-config',
+          'save-window lens1 lens-setup'
+        ],
+        tips: [
+          'Files are saved in .fenestra-storage directory',
+          'If no filename provided, uses timestamp naming',
+          'Saves position, size, content, and other window properties'
+        ]
+      },
+      'restore-window': {
+        description: 'Restore a window from a saved .fenestra file',
+        usage: 'restore-window [filePath]',
+        parameters: [
+          { name: 'filePath', description: 'Path to the .fenestra file to restore', required: true }
+        ],
+        examples: [
+          'restore-window .fenestra-storage/window1.fenestra',
+          'restore-window my-config.fenestra',
+          'restore-window "/path/to/saved/window.fenestra"'
+        ],
+        tips: [
+          'Supports both absolute and relative file paths',
+          'Use Tab completion to navigate to .fenestra files',
+          'You can also drag .fenestra files to the terminal',
+          'Recreates window with saved position, size, and content'
+        ]
+      },
+      'list-saved': {
+        description: 'List all saved window configuration files',
+        usage: 'list-saved',
+        parameters: [],
+        examples: ['list-saved'],
+        tips: [
+          'Shows filename, size, and modification date',
+          'Files are stored in .fenestra-storage directory',
+          'Use "restore-window" to load any of these configurations'
+        ]
+      },
+      'delete-saved': {
+        description: 'Delete a saved window configuration file',
+        usage: 'delete-saved [filename]',
+        parameters: [
+          { name: 'filename', description: 'Name of the .fenestra file to delete', required: true }
+        ],
+        examples: [
+          'delete-saved window1.fenestra',
+          'delete-saved my-config.fenestra',
+          'delete-saved old-setup-20241014.fenestra'
+        ],
+        tips: [
+          'Only provide the filename, not the full path',
+          'Files are deleted from .fenestra-storage directory',
+          'Use "list-saved" to see available files to delete',
+          'This action cannot be undone'
+        ]
+      }
+    };
+
     // Get elements
     const outputEl = document.getElementById('output');
     const inputEl = document.getElementById('command-input');
