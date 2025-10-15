@@ -135,6 +135,29 @@ export function initializeIpcHandlers() {
     }
   });
 
+  // File system auto-completion handlers
+  ipcMain.handle('terminal/get-file-completions', (_e, { partialPath, currentDir }) => {
+    console.debug(`[IPC] 获取文件补全: ${partialPath}, 当前目录: ${currentDir}`);
+    
+    try {
+      return getFileCompletions(partialPath, currentDir);
+    } catch (error) {
+      console.error('[IPC] 文件补全错误:', error);
+      return { success: false, message: error.message, completions: [] };
+    }
+  });
+
+  ipcMain.handle('terminal/get-current-directory', (_e) => {
+    console.debug('[IPC] 获取当前工作目录');
+    
+    try {
+      return getCurrentDirectory();
+    } catch (error) {
+      console.error('[IPC] 获取当前目录错误:', error);
+      return { success: false, message: error.message };
+    }
+  });
+
   console.debug('[IPC] 所有IPC处理程序已设置完成');
 }
 
@@ -725,6 +748,205 @@ function validateFenestraFile(filePath) {
 }
 
 /**
+ * 获取文件补全建议
+ * @param {string} partialPath - 部分路径
+ * @param {string} currentDir - 当前工作目录
+ * @returns {Object} 补全结果
+ */
+function getFileCompletions(partialPath, currentDir) {
+  console.debug(`[FILE_COMPLETION] 处理补全请求: "${partialPath}", 当前目录: "${currentDir}"`);
+  
+  try {
+    // 如果没有提供当前目录，使用进程工作目录
+    const workingDir = currentDir || process.cwd();
+    
+    // 处理空输入
+    if (!partialPath || partialPath.trim() === '') {
+      return getDirectoryContents(workingDir);
+    }
+    
+    // 确定搜索目录和文件名模式
+    let searchDir, filePattern;
+    
+    if (path.isAbsolute(partialPath)) {
+      // 绝对路径
+      const dirname = path.dirname(partialPath);
+      const basename = path.basename(partialPath);
+      
+      searchDir = dirname;
+      filePattern = basename;
+    } else {
+      // 相对路径
+      const dirname = path.dirname(partialPath);
+      const basename = path.basename(partialPath);
+      
+      if (dirname === '.') {
+        searchDir = workingDir;
+      } else {
+        searchDir = path.resolve(workingDir, dirname);
+      }
+      filePattern = basename;
+    }
+    
+    console.debug(`[FILE_COMPLETION] 搜索目录: "${searchDir}", 文件模式: "${filePattern}"`);
+    
+    // 检查搜索目录是否存在
+    if (!fs.existsSync(searchDir)) {
+      console.debug(`[FILE_COMPLETION] 搜索目录不存在: ${searchDir}`);
+      return {
+        success: true,
+        completions: [],
+        commonPrefix: '',
+        message: '目录不存在'
+      };
+    }
+    
+    // 检查目录访问权限
+    try {
+      fs.accessSync(searchDir, fs.constants.R_OK);
+    } catch (accessError) {
+      console.debug(`[FILE_COMPLETION] 目录访问权限不足: ${searchDir}`);
+      return {
+        success: true,
+        completions: [],
+        commonPrefix: '',
+        message: '权限不足'
+      };
+    }
+    
+    // 读取目录内容
+    const entries = fs.readdirSync(searchDir, { withFileTypes: true });
+    
+    // 过滤匹配的条目
+    const matchingEntries = entries.filter(entry => {
+      // 跳过隐藏文件（除非用户明确输入了点开头）
+      if (entry.name.startsWith('.') && !filePattern.startsWith('.')) {
+        return false;
+      }
+      
+      // 检查是否匹配模式
+      return entry.name.toLowerCase().startsWith(filePattern.toLowerCase());
+    });
+    
+    // 转换为补全格式
+    const completions = matchingEntries.map(entry => {
+      const fullPath = path.join(searchDir, entry.name);
+      const relativePath = path.relative(workingDir, fullPath);
+      
+      return {
+        name: entry.isDirectory() ? `${entry.name}/` : entry.name,
+        type: entry.isDirectory() ? 'directory' : 'file',
+        path: relativePath || entry.name
+      };
+    });
+    
+    // 计算公共前缀
+    const commonPrefix = findCommonPrefix(completions.map(c => c.name));
+    
+    console.debug(`[FILE_COMPLETION] 找到 ${completions.length} 个匹配项`);
+    
+    return {
+      success: true,
+      completions: completions.slice(0, 50), // 限制返回数量
+      commonPrefix,
+      message: completions.length > 50 ? `显示前50个结果，共${completions.length}个匹配项` : ''
+    };
+    
+  } catch (error) {
+    console.error(`[FILE_COMPLETION] 补全处理失败:`, error);
+    return {
+      success: false,
+      message: `补全失败: ${error.message}`,
+      completions: []
+    };
+  }
+}
+
+/**
+ * 获取目录内容
+ * @param {string} dirPath - 目录路径
+ * @returns {Object} 目录内容
+ */
+function getDirectoryContents(dirPath) {
+  try {
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    
+    const completions = entries
+      .filter(entry => !entry.name.startsWith('.')) // 跳过隐藏文件
+      .map(entry => ({
+        name: entry.isDirectory() ? `${entry.name}/` : entry.name,
+        type: entry.isDirectory() ? 'directory' : 'file',
+        path: entry.name
+      }))
+      .slice(0, 50); // 限制数量
+    
+    return {
+      success: true,
+      completions,
+      commonPrefix: '',
+      message: completions.length === 50 ? '显示前50个文件' : ''
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `读取目录失败: ${error.message}`,
+      completions: []
+    };
+  }
+}
+
+/**
+ * 查找字符串数组的公共前缀
+ * @param {string[]} strings - 字符串数组
+ * @returns {string} 公共前缀
+ */
+function findCommonPrefix(strings) {
+  if (strings.length === 0) return '';
+  if (strings.length === 1) return strings[0];
+  
+  let prefix = '';
+  const firstString = strings[0];
+  
+  for (let i = 0; i < firstString.length; i++) {
+    const char = firstString[i];
+    
+    if (strings.every(str => str[i] === char)) {
+      prefix += char;
+    } else {
+      break;
+    }
+  }
+  
+  return prefix;
+}
+
+/**
+ * 获取当前工作目录
+ * @returns {Object} 当前目录信息
+ */
+function getCurrentDirectory() {
+  console.debug('[CURRENT_DIR] 获取当前工作目录');
+  
+  try {
+    const currentDir = process.cwd();
+    
+    console.debug(`[CURRENT_DIR] 当前工作目录: ${currentDir}`);
+    
+    return {
+      success: true,
+      currentDirectory: currentDir,
+      message: '获取成功'
+    };
+  } catch (error) {
+    console.error(`[CURRENT_DIR] 获取当前目录失败:`, error);
+    return {
+      success: false,
+      message: `获取失败: ${error.message}`
+    };
+  }
+}
+
+/**
  * 清理 IPC 处理程序
  */
 export function cleanupIpcHandlers() {
@@ -737,6 +959,8 @@ export function cleanupIpcHandlers() {
   ipcMain.removeAllListeners('lens/get-position');
   ipcMain.removeAllListeners('window/get-info');
   ipcMain.removeAllListeners('storage/validate-fenestra-file');
+  ipcMain.removeAllListeners('terminal/get-file-completions');
+  ipcMain.removeAllListeners('terminal/get-current-directory');
   
   console.debug('[IPC] IPC处理程序已清理');
 }

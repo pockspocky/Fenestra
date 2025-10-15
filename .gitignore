@@ -47,3 +47,4 @@
 .kiro/hooks/docs-sync-hook.kiro.hook
 
 .kiro/hooks/doc-sync-hook.kiro.hook
+.kiro/hooks/test-cleanup-hook.kiro.hook

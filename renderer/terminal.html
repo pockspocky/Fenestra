@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -53,6 +54,22 @@
 
     .info {
       color: #ffffff;
+    }
+
+    .tip {
+      color: #ffaa00;
+    }
+
+    .command-help {
+      color: #00aaff;
+    }
+
+    .parameter {
+      color: #aa00ff;
+    }
+
+    .example {
+      color: #888888;
     }
 
     #input-line {
@@ -136,6 +153,7 @@
     }
   </style>
 </head>
+
 <body>
   <div id="terminal-container">
     <div id="output">
@@ -149,7 +167,7 @@
     <span id="prompt-symbol">></span>
     <input type="text" id="command-input" autocomplete="off" autofocus>
   </div>
-  
+
   <!-- Drag and drop feedback overlay -->
   <div id="drag-feedback" class="drag-feedback">
     Drop .fenestra file to restore window
@@ -167,10 +185,209 @@
       'get-title', 'set-title', 'set-size', 'set-position', 'set-resizable', 'set-visibility',
       'show', 'hide', 'reload-html',
       'create-picture', 'set-picture', 'set-fit-mode',
-      'create-content', 'create-lens', 'set-opacity', 'set-always-on-top', 
+      'create-content', 'create-lens', 'set-opacity', 'set-always-on-top',
       'update-blur', 'destroy-lens', 'list-lens', 'lens-list', 'lens-info',
       'save-window', 'restore-window', 'list-saved', 'delete-saved'
     ];
+
+    // AutoCompleter class for handling tab completion logic
+    class AutoCompleter {
+      constructor() {
+        this.currentDirectory = null;
+        this.initializeCurrentDirectory();
+      }
+
+      // Initialize current directory
+      async initializeCurrentDirectory() {
+        try {
+          const result = await window.electronAPI.getCurrentDirectory();
+          if (result.success) {
+            this.currentDirectory = result.currentDirectory;
+          }
+        } catch (error) {
+          console.error('Failed to get current directory:', error);
+        }
+      }
+
+      // Get file completions from backend
+      async getFileCompletions(partialPath) {
+        try {
+          const result = await window.electronAPI.getFileCompletions({
+            partialPath: partialPath,
+            currentDir: this.currentDirectory
+          });
+
+          if (result.success) {
+            return result.completions || [];
+          } else {
+            console.warn('File completion failed:', result.message);
+            return [];
+          }
+        } catch (error) {
+          console.error('Error getting file completions:', error);
+          return [];
+        }
+      }
+
+      // Determine if cursor is in a file path parameter position
+      isInFilePathPosition(inputValue, cursorPosition) {
+        const beforeCursor = inputValue.substring(0, cursorPosition);
+        const parts = parseCommand(beforeCursor);
+
+        if (parts.length === 0) return false;
+
+        const command = parts[0].toLowerCase();
+
+        // Commands that expect file paths as parameters
+        const filePathCommands = [
+          'reload-html', 'create-picture', 'set-picture', 'create-content',
+          'restore-window', 'save-window', 'delete-saved'
+        ];
+
+        // If it's a file path command and we're not on the first part (command name)
+        if (filePathCommands.includes(command) && parts.length > 1) {
+          return true;
+        }
+
+        // Check if we're in the middle of typing a command name (no space after command)
+        if (parts.length === 1 && !beforeCursor.endsWith(' ')) {
+          return false;
+        }
+
+        // Check if the current part looks like a file path
+        const currentPart = parts[parts.length - 1] || '';
+        
+        // File path indicators: contains path separators, starts with . or ~, or has file extension
+        if (currentPart.includes('/') || currentPart.includes('\\') || 
+            currentPart.startsWith('.') || currentPart.startsWith('~') ||
+            (currentPart.includes('.') && currentPart.lastIndexOf('.') > 0)) {
+          return true;
+        }
+
+        // If we have a space after the command and we're typing a parameter, 
+        // assume it could be a file path for certain commands
+        if (filePathCommands.includes(command) && beforeCursor.endsWith(' ')) {
+          return true;
+        }
+
+        return false;
+      }
+
+      // Get command completions
+      getCommandCompletions(partialCommand) {
+        return commands.filter(cmd =>
+          cmd.toLowerCase().startsWith(partialCommand.toLowerCase())
+        );
+      }
+
+      // Find common prefix among matches
+      findCommonPrefix(matches) {
+        if (matches.length === 0) return '';
+        if (matches.length === 1) return matches[0];
+
+        let prefix = matches[0];
+        for (let i = 1; i < matches.length; i++) {
+          let j = 0;
+          while (j < prefix.length && j < matches[i].length && 
+                 prefix[j].toLowerCase() === matches[i][j].toLowerCase()) {
+            j++;
+          }
+          prefix = prefix.substring(0, j);
+          if (prefix === '') break;
+        }
+        return prefix;
+      }
+
+      // Main completion method that handles both command and file completion
+      async completeCommand(inputValue, cursorPosition) {
+        const beforeCursor = inputValue.substring(0, cursorPosition);
+        const afterCursor = inputValue.substring(cursorPosition);
+        const parts = parseCommand(beforeCursor);
+
+        // If no input or cursor is at the beginning, complete commands
+        if (parts.length === 0 || (parts.length === 1 && !beforeCursor.endsWith(' '))) {
+          const partialCommand = parts[0] || '';
+          const commandMatches = this.getCommandCompletions(partialCommand);
+
+          if (commandMatches.length === 1) {
+            // Single command match - complete it
+            const completion = commandMatches[0];
+            const newValue = completion + ' ' + afterCursor;
+            return {
+              success: true,
+              completed: true,
+              newValue: newValue,
+              newCursorPosition: completion.length + 1
+            };
+          } else if (commandMatches.length > 1) {
+            // Multiple command matches - show them with common prefix
+            const commonPrefix = this.findCommonPrefix(commandMatches);
+            return {
+              success: true,
+              completed: false,
+              matches: commandMatches,
+              type: 'command',
+              commonPrefix: commonPrefix.length > partialCommand.length ? commonPrefix : ''
+            };
+          }
+        }
+
+        // Check if we should do file path completion
+        if (this.isInFilePathPosition(inputValue, cursorPosition)) {
+          // Extract the current file path being typed
+          const currentPart = parts[parts.length - 1] || '';
+          const fileMatches = await this.getFileCompletions(currentPart);
+
+          if (fileMatches.length === 1) {
+            // Single file match - complete it with proper directory handling
+            const match = fileMatches[0];
+            const partsBeforeCurrent = parts.slice(0, -1);
+            
+            // For directories, add trailing slash; for files, add space
+            let completedPath = match.name;
+            if (match.type === 'directory' && !completedPath.endsWith('/')) {
+              completedPath += '/';
+            }
+
+            // Rebuild the command with the completed path
+            const newParts = [...partsBeforeCurrent, completedPath];
+            const newValue = newParts.join(' ') + (match.type === 'directory' ? '' : ' ') + afterCursor;
+            const newCursorPosition = newParts.join(' ').length + (match.type === 'directory' ? 0 : 1);
+
+            return {
+              success: true,
+              completed: true,
+              newValue: newValue,
+              newCursorPosition: newCursorPosition
+            };
+          } else if (fileMatches.length > 1) {
+            // Multiple file matches - show them with common prefix and directory indicators
+            const matchNames = fileMatches.map(m => 
+              m.type === 'directory' && !m.name.endsWith('/') ? m.name + '/' : m.name
+            );
+            const commonPrefix = this.findCommonPrefix(matchNames);
+            
+            return {
+              success: true,
+              completed: false,
+              matches: matchNames,
+              type: 'file',
+              commonPrefix: commonPrefix.length > currentPart.length ? commonPrefix : ''
+            };
+          }
+        }
+
+        // No completions found
+        return {
+          success: false,
+          completed: false,
+          matches: []
+        };
+      }
+    }
+
+    // Create global autocompleter instance
+    const autoCompleter = new AutoCompleter();
 
     // Get elements
     const outputEl = document.getElementById('output');
@@ -182,10 +399,27 @@
       line.className = `output-line ${type}`;
       line.textContent = message;
       outputEl.appendChild(line);
-      
+
       // Auto scroll to bottom
       const container = document.getElementById('terminal-container');
       container.scrollTop = container.scrollHeight;
+    }
+
+    // Specialized print functions for colored output
+    function printTip(message) {
+      print(message, 'tip');
+    }
+
+    function printCommandHelp(message) {
+      print(message, 'command-help');
+    }
+
+    function printParameter(message) {
+      print(message, 'parameter');
+    }
+
+    function printExample(message) {
+      print(message, 'example');
     }
 
     // Execute command
@@ -239,7 +473,7 @@
 
       for (let i = 0; i < str.length; i++) {
         const char = str[i];
-        
+
         if ((char === '"' || char === "'") && (!inQuotes || char === quoteChar)) {
           if (inQuotes) {
             inQuotes = false;
@@ -329,17 +563,41 @@
       outputEl.innerHTML = '';
     }
 
-    // Auto completion
-    function autocomplete(input) {
-      const parts = input.trim().split(/\s+/);
-      
-      if (parts.length === 1) {
-        // Complete command
-        const matches = commands.filter(cmd => cmd.startsWith(parts[0].toLowerCase()));
-        return matches.length === 1 ? matches[0] : null;
-      } else {
-        // Complete window ID (needs to be obtained from main process)
-        return null;
+    // Display completion matches
+    function displayCompletionMatches(matches, type) {
+      if (matches.length === 0) return;
+
+      const matchType = type === 'command' ? 'commands' : 'files';
+      print(`Available ${matchType}:`, 'info');
+
+      // Sort matches: directories first (with /), then files
+      const sortedMatches = [...matches].sort((a, b) => {
+        const aIsDir = a.endsWith('/');
+        const bIsDir = b.endsWith('/');
+        
+        if (aIsDir && !bIsDir) return -1;
+        if (!aIsDir && bIsDir) return 1;
+        return a.localeCompare(b);
+      });
+
+      // Display matches in columns for better readability
+      const maxLength = Math.max(...sortedMatches.map(m => m.length));
+      const terminalWidth = 80;
+      const columns = Math.max(1, Math.floor(terminalWidth / (maxLength + 2)));
+
+      for (let i = 0; i < sortedMatches.length; i += columns) {
+        const row = sortedMatches.slice(i, i + columns);
+        const paddedRow = row.map(match => {
+          // Add visual indicator for directories
+          const displayMatch = match.endsWith('/') ? match : match;
+          return displayMatch.padEnd(maxLength + 2);
+        });
+        print(paddedRow.join(''), 'info');
+      }
+
+      // Show count if there are many matches
+      if (matches.length > 10) {
+        print(`(${matches.length} matches total)`, 'info');
       }
     }
 
@@ -354,9 +612,52 @@
       // Tab - auto completion
       else if (e.key === 'Tab') {
         e.preventDefault();
-        const completion = autocomplete(inputEl.value);
-        if (completion) {
-          inputEl.value = completion + ' ';
+
+        const cursorPosition = inputEl.selectionStart;
+        const inputValue = inputEl.value;
+
+        try {
+          const result = await autoCompleter.completeCommand(inputValue, cursorPosition);
+
+          if (result.success && result.completed) {
+            // Single completion found - apply it
+            inputEl.value = result.newValue;
+            inputEl.setSelectionRange(result.newCursorPosition, result.newCursorPosition);
+          } else if (result.success && result.matches && result.matches.length > 0) {
+            // Multiple completions found - display them and apply common prefix if available
+            displayCompletionMatches(result.matches, result.type);
+            
+            // Try to complete common prefix for multiple matches
+            if (result.commonPrefix && result.commonPrefix.length > 0) {
+              const beforeCursor = inputValue.substring(0, cursorPosition);
+              const afterCursor = inputValue.substring(cursorPosition);
+              const parts = parseCommand(beforeCursor);
+              
+              if (result.type === 'file') {
+                // Replace the current partial path with the common prefix
+                const partsBeforeCurrent = parts.slice(0, -1);
+                const newParts = [...partsBeforeCurrent, result.commonPrefix];
+                const newValue = newParts.join(' ') + afterCursor;
+                const newCursorPosition = newParts.join(' ').length;
+                
+                inputEl.value = newValue;
+                inputEl.setSelectionRange(newCursorPosition, newCursorPosition);
+              } else if (result.type === 'command' && parts.length <= 1) {
+                // Replace the partial command with the common prefix
+                const newValue = result.commonPrefix + afterCursor;
+                const newCursorPosition = result.commonPrefix.length;
+                
+                inputEl.value = newValue;
+                inputEl.setSelectionRange(newCursorPosition, newCursorPosition);
+              }
+            }
+          } else {
+            // No completions found
+            print('No completions available', 'info');
+          }
+        } catch (error) {
+          console.error('Auto-completion error:', error);
+          print('Auto-completion failed', 'error');
         }
       }
       // Up arrow - previous command
@@ -407,11 +708,11 @@
     terminalContainer.addEventListener('dragenter', (e) => {
       e.preventDefault();
       dragCounter++;
-      
+
       if (dragCounter === 1) {
         terminalContainer.classList.add('drag-over');
         dragFeedback.style.display = 'block';
-        
+
         // Check if the dragged item contains files
         const hasFiles = e.dataTransfer.types.includes('Files');
         if (!hasFiles) {
@@ -434,7 +735,7 @@
     terminalContainer.addEventListener('dragleave', (e) => {
       e.preventDefault();
       dragCounter--;
-      
+
       if (dragCounter === 0) {
         terminalContainer.classList.remove('drag-over');
         dragFeedback.style.display = 'none';
@@ -446,49 +747,49 @@
     terminalContainer.addEventListener('drop', async (e) => {
       e.preventDefault();
       dragCounter = 0;
-      
+
       // Remove visual feedback
       terminalContainer.classList.remove('drag-over');
       dragFeedback.style.display = 'none';
       dragFeedback.classList.remove('drag-error');
-      
+
       const files = Array.from(e.dataTransfer.files);
-      
+
       if (files.length === 0) {
         print('[ERROR] No files detected in drop operation', 'error');
         return;
       }
-      
+
       if (files.length > 1) {
         print('[ERROR] Please drop only one file at a time', 'error');
         return;
       }
-      
+
       const file = files[0];
-      
+
       // Validate file extension
       if (!file.name.toLowerCase().endsWith('.fenestra')) {
         print(`[ERROR] Invalid file type: ${file.name}. Only .fenestra files are supported`, 'error');
         return;
       }
-      
+
       // Extract file path and populate command input
       const filePath = file.path || file.name;
-      
+
       try {
         // Validate that the file is readable and contains valid JSON
         await validateFenestraFile(filePath);
-        
+
         // Populate the command input with restore command
         const restoreCommand = `restore-window "${filePath}"`;
         inputEl.value = restoreCommand;
-        
+
         print(`[INFO] File dropped: ${file.name}`, 'info');
         print('[INFO] Press Enter to restore the window, or edit the command as needed', 'info');
-        
+
         // Focus the input for immediate execution
         inputEl.focus();
-        
+
       } catch (error) {
         print(`[ERROR] Invalid .fenestra file: ${error.message}`, 'error');
       }
@@ -499,11 +800,11 @@
       try {
         // Use the electron API to read and validate the file
         const result = await window.electronAPI.validateFenestraFile(filePath);
-        
+
         if (!result.success) {
           throw new Error(result.message || 'File validation failed');
         }
-        
+
         return result.data;
       } catch (error) {
         // If the API doesn't exist yet, do basic validation
@@ -519,5 +820,5 @@
     print('', 'info');
   </script>
 </body>
-</html>
 
+</html>
