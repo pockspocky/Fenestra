@@ -911,6 +911,137 @@
       print(message, 'example');
     }
 
+    // Parse command with help detection
+    function parseCommandWithHelp(cmdStr) {
+      const parts = parseCommand(cmdStr);
+      const cmd = parts[0]?.toLowerCase();
+      const args = parts.slice(1);
+
+      // Check for help flags (--help or -h)
+      if (args.includes('--help') || args.includes('-h')) {
+        return { command: 'help', args: [cmd] };
+      }
+
+      // Check for help command with specific command
+      if (cmd === 'help' && args.length > 0) {
+        return { command: 'help', args: [args[0].toLowerCase()] };
+      }
+
+      return { command: cmd, args: args };
+    }
+
+    // Show help for a specific command
+    function showCommandHelp(commandName) {
+      const helpData = commandHelp[commandName];
+      
+      if (!helpData) {
+        print(`[ERROR] Unknown command: ${commandName}`, 'error');
+        print('', 'info');
+        
+        // Suggest similar commands using fuzzy matching
+        const suggestions = findSimilarCommands(commandName);
+        if (suggestions.length > 0) {
+          printTip('Did you mean one of these commands?');
+          suggestions.forEach(suggestion => {
+            print(`  ${suggestion}`, 'info');
+          });
+        } else {
+          printTip('Use "help" to see all available commands');
+        }
+        return;
+      }
+
+      // Display command help with colored formatting
+      printCommandHelp(`--- Help for "${commandName}" ---`);
+      print('', 'info');
+      
+      // Description
+      print(`Description: ${helpData.description}`, 'info');
+      print('', 'info');
+      
+      // Usage
+      printParameter(`Usage: ${helpData.usage}`);
+      print('', 'info');
+      
+      // Aliases (if any)
+      if (helpData.aliases && helpData.aliases.length > 0) {
+        printParameter(`Aliases: ${helpData.aliases.join(', ')}`);
+        print('', 'info');
+      }
+      
+      // Parameters
+      if (helpData.parameters && helpData.parameters.length > 0) {
+        printParameter('Parameters:');
+        helpData.parameters.forEach(param => {
+          const required = param.required ? '(required)' : '(optional)';
+          print(`  ${param.name} ${required} - ${param.description}`, 'info');
+        });
+        print('', 'info');
+      }
+      
+      // Examples
+      if (helpData.examples && helpData.examples.length > 0) {
+        printParameter('Examples:');
+        helpData.examples.forEach(example => {
+          printExample(`  ${example}`);
+        });
+        print('', 'info');
+      }
+      
+      // Tips
+      if (helpData.tips && helpData.tips.length > 0) {
+        printParameter('Tips:');
+        helpData.tips.forEach(tip => {
+          printTip(`  ${tip}`);
+        });
+      }
+    }
+
+    // Find similar commands using simple fuzzy matching
+    function findSimilarCommands(input) {
+      const allCommands = Object.keys(commandHelp);
+      const suggestions = [];
+      
+      // First, look for commands that start with the input
+      const startsWith = allCommands.filter(cmd => 
+        cmd.toLowerCase().startsWith(input.toLowerCase())
+      );
+      suggestions.push(...startsWith);
+      
+      // Then, look for commands that contain the input
+      if (suggestions.length < 3) {
+        const contains = allCommands.filter(cmd => 
+          cmd.toLowerCase().includes(input.toLowerCase()) && 
+          !startsWith.includes(cmd)
+        );
+        suggestions.push(...contains.slice(0, 3 - suggestions.length));
+      }
+      
+      // Finally, look for commands with similar length and some matching characters
+      if (suggestions.length < 3) {
+        const similar = allCommands.filter(cmd => {
+          if (startsWith.includes(cmd) || contains.includes(cmd)) return false;
+          
+          const cmdLower = cmd.toLowerCase();
+          const inputLower = input.toLowerCase();
+          
+          // Check if lengths are similar and have some common characters
+          const lengthDiff = Math.abs(cmdLower.length - inputLower.length);
+          if (lengthDiff > 3) return false;
+          
+          let commonChars = 0;
+          for (let char of inputLower) {
+            if (cmdLower.includes(char)) commonChars++;
+          }
+          
+          return commonChars >= Math.min(2, inputLower.length / 2);
+        });
+        suggestions.push(...similar.slice(0, 3 - suggestions.length));
+      }
+      
+      return suggestions.slice(0, 3);
+    }
+
     // Execute command
     async function executeCommand(cmdStr) {
       if (!cmdStr.trim()) return;
@@ -923,14 +1054,18 @@
       historyIndex = commandHistory.length;
       currentCommand = '';
 
-      // Parse command
-      const parts = parseCommand(cmdStr);
-      const cmd = parts[0]?.toLowerCase();
-      const args = parts.slice(1);
+      // Parse command with help detection
+      const parsed = parseCommandWithHelp(cmdStr);
+      const cmd = parsed.command;
+      const args = parsed.args;
 
       // Execute local commands
       if (cmd === 'help') {
-        showHelp();
+        if (args.length > 0) {
+          showCommandHelp(args[0]);
+        } else {
+          showHelp();
+        }
       } else if (cmd === 'clear') {
         clearTerminal();
       } else {
@@ -992,8 +1127,13 @@
     function showHelp() {
       print('--- Available Commands ---', 'info');
       print('', 'info');
-      print('Basic Commands:', 'info');
+      printCommandHelp('Getting Help:');
       print('  help                              - Show this help information', 'info');
+      print('  help [command]                    - Get detailed help for a specific command', 'info');
+      print('  [command] --help                  - Alternative way to get command help', 'info');
+      print('  [command] -h                      - Short form of --help flag', 'info');
+      print('', 'info');
+      print('Basic Commands:', 'info');
       print('  clear                             - Clear terminal', 'info');
       print('  list, ls                          - List all windows', 'info');
       print('  getWindows                        - Get detailed information for all windows', 'info');
@@ -1039,7 +1179,9 @@
       print('  delete-saved [filename]           - Delete saved window file', 'info');
       print('      example: delete-saved window1-20241014.fenestra', 'info');
       print('', 'info');
-      printTip('Tip: Use Tab key to autocomplete commands and window IDs');
+      printTip('Tip: Use "help [command]" to get detailed help for any specific command');
+      printTip('Tip: Commands support --help and -h flags (e.g., "set-title --help")');
+      printTip('Tip: Use Tab key to autocomplete commands and file paths');
       printTip('Tip: Use up/down arrows to browse command history');
       printTip('Tip: Image paths support both absolute and relative paths');
       printTip('Tip: Lens windows can display clear versions of blurred background content');

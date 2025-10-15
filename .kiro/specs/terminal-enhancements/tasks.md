@@ -36,7 +36,7 @@
   - Ensure help data covers all commands from basic operations to lens system and window storage
   - _Requirements: 3.4_
 
-- [ ] 6. Implement individual command help system
+- [x] 6. Implement individual command help system
   - Add support for `help [command_name]` syntax to display specific command help
   - Implement `--help` and `-h` flag support for individual commands
   - Modify command parser to detect and handle help requests
