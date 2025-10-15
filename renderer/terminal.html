@@ -194,6 +194,13 @@
     class AutoCompleter {
       constructor() {
         this.currentDirectory = null;
+        this.completionCache = new Map();
+        this.cacheTimeout = 30000; // 30 seconds cache timeout
+        this.performanceStats = {
+          totalRequests: 0,
+          cacheHits: 0,
+          averageResponseTime: 0
+        };
         this.initializeCurrentDirectory();
       }
 
@@ -209,43 +216,150 @@
         }
       }
 
-      // Get file completions from backend
+      // Get file completions from backend with enhanced error handling and caching
       async getFileCompletions(partialPath) {
+        const startTime = Date.now();
+        this.performanceStats.totalRequests++;
+        
+        // Create cache key
+        const cacheKey = `${this.currentDirectory}:${partialPath}`;
+        
+        // Check cache first
+        const cached = this.getCachedCompletion(cacheKey);
+        if (cached) {
+          this.performanceStats.cacheHits++;
+          console.debug(`[AUTO_COMPLETE] Cache hit for: ${partialPath}`);
+          return cached;
+        }
+        
         try {
           const result = await window.electronAPI.getFileCompletions({
             partialPath: partialPath,
             currentDir: this.currentDirectory
           });
 
+          const responseTime = Date.now() - startTime;
+          this.updatePerformanceStats(responseTime);
+
           if (result.success) {
-            return result.completions || [];
+            const completionResult = {
+              completions: result.completions || [],
+              totalMatches: result.totalMatches || 0,
+              message: result.message || '',
+              hasMore: result.totalMatches > result.completions.length,
+              responseTime
+            };
+            
+            // Cache successful results
+            this.setCachedCompletion(cacheKey, completionResult);
+            
+            // Handle performance warnings for large directories
+            if (result.totalMatches > 100) {
+              console.info(`[AUTO_COMPLETE] Large directory: ${result.totalMatches} matches found in ${responseTime}ms`);
+            }
+            
+            return completionResult;
           } else {
-            console.warn('File completion failed:', result.message);
-            return [];
+            // Handle specific error cases gracefully
+            const errorInfo = {
+              completions: [],
+              totalMatches: 0,
+              message: result.message || 'File completion failed',
+              error: result.error || 'UNKNOWN',
+              responseTime
+            };
+            
+            // Don't cache error results, but don't log permission errors as warnings
+            if (result.error !== 'EACCES') {
+              console.warn('File completion failed:', result.message);
+            }
+            
+            return errorInfo;
           }
         } catch (error) {
+          const responseTime = Date.now() - startTime;
+          this.updatePerformanceStats(responseTime);
+          
           console.error('Error getting file completions:', error);
-          return [];
+          return {
+            completions: [],
+            totalMatches: 0,
+            message: 'Network error during completion',
+            error: 'NETWORK_ERROR',
+            responseTime
+          };
         }
       }
 
-      // Determine if cursor is in a file path parameter position
+      // Cache management methods
+      getCachedCompletion(key) {
+        const cached = this.completionCache.get(key);
+        if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {
+          return cached.data;
+        }
+        if (cached) {
+          this.completionCache.delete(key);
+        }
+        return null;
+      }
+
+      setCachedCompletion(key, data) {
+        // Limit cache size to prevent memory issues
+        if (this.completionCache.size > 50) {
+          const oldestKey = this.completionCache.keys().next().value;
+          this.completionCache.delete(oldestKey);
+        }
+        
+        this.completionCache.set(key, {
+          data,
+          timestamp: Date.now()
+        });
+      }
+
+      updatePerformanceStats(responseTime) {
+        const stats = this.performanceStats;
+        stats.averageResponseTime = (stats.averageResponseTime * (stats.totalRequests - 1) + responseTime) / stats.totalRequests;
+        
+        // Log performance warnings
+        if (responseTime > 2000) {
+          console.warn(`[AUTO_COMPLETE] Slow completion response: ${responseTime}ms`);
+        }
+      }
+
+      // Get performance statistics
+      getPerformanceStats() {
+        const stats = this.performanceStats;
+        const cacheHitRate = stats.totalRequests > 0 ? (stats.cacheHits / stats.totalRequests * 100).toFixed(1) : 0;
+        
+        return {
+          ...stats,
+          cacheHitRate: `${cacheHitRate}%`,
+          cacheSize: this.completionCache.size
+        };
+      }
+
+      // Determine if cursor is in a file path parameter position (optimized)
       isInFilePathPosition(inputValue, cursorPosition) {
         const beforeCursor = inputValue.substring(0, cursorPosition);
+        
+        // Quick check for empty input
+        if (!beforeCursor.trim()) return false;
+        
         const parts = parseCommand(beforeCursor);
-
         if (parts.length === 0) return false;
 
         const command = parts[0].toLowerCase();
 
-        // Commands that expect file paths as parameters
-        const filePathCommands = [
-          'reload-html', 'create-picture', 'set-picture', 'create-content',
-          'restore-window', 'save-window', 'delete-saved'
-        ];
+        // Commands that expect file paths as parameters (cached set for performance)
+        if (!this.filePathCommands) {
+          this.filePathCommands = new Set([
+            'reload-html', 'create-picture', 'set-picture', 'create-content',
+            'restore-window', 'save-window', 'delete-saved'
+          ]);
+        }
 
         // If it's a file path command and we're not on the first part (command name)
-        if (filePathCommands.includes(command) && parts.length > 1) {
+        if (this.filePathCommands.has(command) && parts.length > 1) {
           return true;
         }
 
@@ -257,20 +371,39 @@
         // Check if the current part looks like a file path
         const currentPart = parts[parts.length - 1] || '';
         
-        // File path indicators: contains path separators, starts with . or ~, or has file extension
-        if (currentPart.includes('/') || currentPart.includes('\\') || 
-            currentPart.startsWith('.') || currentPart.startsWith('~') ||
-            (currentPart.includes('.') && currentPart.lastIndexOf('.') > 0)) {
+        // Optimized file path detection
+        if (this.looksLikeFilePath(currentPart)) {
           return true;
         }
 
         // If we have a space after the command and we're typing a parameter, 
         // assume it could be a file path for certain commands
-        if (filePathCommands.includes(command) && beforeCursor.endsWith(' ')) {
+        if (this.filePathCommands.has(command) && beforeCursor.endsWith(' ')) {
           return true;
         }
 
         return false;
+      }
+
+      // Optimized file path detection
+      looksLikeFilePath(part) {
+        if (!part) return false;
+        
+        // Cache regex patterns for performance
+        if (!this.pathPatterns) {
+          this.pathPatterns = {
+            pathSeparators: /[/\\]/,
+            startsWithSpecial: /^[.~]/,
+            hasExtension: /\.[a-zA-Z0-9]+$/,
+            quotedPath: /^["'].*["']$/
+          };
+        }
+        
+        // File path indicators: contains path separators, starts with . or ~, or has file extension
+        return this.pathPatterns.pathSeparators.test(part) ||
+               this.pathPatterns.startsWithSpecial.test(part) ||
+               this.pathPatterns.hasExtension.test(part) ||
+               this.pathPatterns.quotedPath.test(part);
       }
 
       // Get command completions
@@ -336,15 +469,30 @@
         if (this.isInFilePathPosition(inputValue, cursorPosition)) {
           // Extract the current file path being typed
           const currentPart = parts[parts.length - 1] || '';
-          const fileMatches = await this.getFileCompletions(currentPart);
+          const fileResult = await this.getFileCompletions(currentPart);
+
+          // Handle error cases gracefully
+          if (fileResult.error) {
+            return {
+              success: false,
+              completed: false,
+              matches: [],
+              message: fileResult.message,
+              error: fileResult.error
+            };
+          }
+
+          const fileMatches = fileResult.completions || [];
 
           if (fileMatches.length === 1) {
-            // Single file match - complete it with proper directory handling
+            // Single file match - complete it with proper directory and special character handling
             const match = fileMatches[0];
             const partsBeforeCurrent = parts.slice(0, -1);
             
-            // For directories, add trailing slash; for files, add space
-            let completedPath = match.name;
+            // Use escaped name for files with special characters
+            let completedPath = match.hasSpecialChars ? match.escapedName : match.name;
+            
+            // For directories, ensure trailing slash
             if (match.type === 'directory' && !completedPath.endsWith('/')) {
               completedPath += '/';
             }
@@ -372,7 +520,18 @@
               completed: false,
               matches: matchNames,
               type: 'file',
-              commonPrefix: commonPrefix.length > currentPart.length ? commonPrefix : ''
+              commonPrefix: commonPrefix.length > currentPart.length ? commonPrefix : '',
+              totalMatches: fileResult.totalMatches,
+              hasMore: fileResult.hasMore,
+              message: fileResult.message
+            };
+          } else {
+            // No matches found
+            return {
+              success: false,
+              completed: false,
+              matches: [],
+              message: fileResult.message || 'No matching files found'
             };
           }
         }
@@ -997,49 +1156,133 @@
       }
     }
 
-    // Find similar commands using simple fuzzy matching
+    // Find similar commands using enhanced fuzzy matching
     function findSimilarCommands(input) {
       const allCommands = Object.keys(commandHelp);
       const suggestions = [];
       
-      // First, look for commands that start with the input
-      const startsWith = allCommands.filter(cmd => 
-        cmd.toLowerCase().startsWith(input.toLowerCase())
-      );
-      suggestions.push(...startsWith);
+      // Calculate similarity scores for all commands
+      const scoredCommands = allCommands.map(cmd => ({
+        command: cmd,
+        score: calculateCommandSimilarity(input.toLowerCase(), cmd.toLowerCase())
+      }));
       
-      // Then, look for commands that contain the input
-      if (suggestions.length < 3) {
-        const contains = allCommands.filter(cmd => 
-          cmd.toLowerCase().includes(input.toLowerCase()) && 
-          !startsWith.includes(cmd)
-        );
-        suggestions.push(...contains.slice(0, 3 - suggestions.length));
+      // Sort by similarity score (higher is better)
+      scoredCommands.sort((a, b) => b.score - a.score);
+      
+      // Filter commands with reasonable similarity scores
+      const threshold = 0.3; // Minimum similarity threshold
+      const similarCommands = scoredCommands
+        .filter(item => item.score >= threshold)
+        .slice(0, 5) // Return top 5 suggestions
+        .map(item => item.command);
+      
+      return similarCommands;
+    }
+
+    // Calculate similarity between input and command using multiple algorithms
+    function calculateCommandSimilarity(input, command) {
+      if (input === command) return 1.0;
+      if (input.length === 0 || command.length === 0) return 0.0;
+      
+      let score = 0;
+      
+      // 1. Exact prefix match (highest weight)
+      if (command.startsWith(input)) {
+        score += 0.8;
       }
       
-      // Finally, look for commands with similar length and some matching characters
-      if (suggestions.length < 3) {
-        const similar = allCommands.filter(cmd => {
-          if (startsWith.includes(cmd) || contains.includes(cmd)) return false;
-          
-          const cmdLower = cmd.toLowerCase();
-          const inputLower = input.toLowerCase();
-          
-          // Check if lengths are similar and have some common characters
-          const lengthDiff = Math.abs(cmdLower.length - inputLower.length);
-          if (lengthDiff > 3) return false;
-          
-          let commonChars = 0;
-          for (let char of inputLower) {
-            if (cmdLower.includes(char)) commonChars++;
+      // 2. Contains match
+      if (command.includes(input)) {
+        score += 0.6;
+      }
+      
+      // 3. Levenshtein distance similarity
+      const levenshteinSimilarity = 1 - (levenshteinDistance(input, command) / Math.max(input.length, command.length));
+      score += levenshteinSimilarity * 0.4;
+      
+      // 4. Character frequency similarity
+      const charSimilarity = calculateCharacterSimilarity(input, command);
+      score += charSimilarity * 0.3;
+      
+      // 5. Length similarity bonus
+      const lengthDiff = Math.abs(input.length - command.length);
+      const maxLength = Math.max(input.length, command.length);
+      const lengthSimilarity = 1 - (lengthDiff / maxLength);
+      score += lengthSimilarity * 0.2;
+      
+      // 6. Common subsequence bonus
+      const subsequenceLength = longestCommonSubsequence(input, command);
+      const subsequenceSimilarity = subsequenceLength / Math.max(input.length, command.length);
+      score += subsequenceSimilarity * 0.3;
+      
+      // Normalize score to 0-1 range
+      return Math.min(score, 1.0);
+    }
+
+    // Calculate Levenshtein distance between two strings
+    function levenshteinDistance(str1, str2) {
+      const matrix = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null));
+      
+      for (let i = 0; i <= str1.length; i++) matrix[0][i] = i;
+      for (let j = 0; j <= str2.length; j++) matrix[j][0] = j;
+      
+      for (let j = 1; j <= str2.length; j++) {
+        for (let i = 1; i <= str1.length; i++) {
+          const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1;
+          matrix[j][i] = Math.min(
+            matrix[j][i - 1] + 1,     // deletion
+            matrix[j - 1][i] + 1,     // insertion
+            matrix[j - 1][i - 1] + indicator // substitution
+          );
+        }
+      }
+      
+      return matrix[str2.length][str1.length];
+    }
+
+    // Calculate character frequency similarity
+    function calculateCharacterSimilarity(str1, str2) {
+      const freq1 = {};
+      const freq2 = {};
+      
+      for (let char of str1) {
+        freq1[char] = (freq1[char] || 0) + 1;
+      }
+      
+      for (let char of str2) {
+        freq2[char] = (freq2[char] || 0) + 1;
+      }
+      
+      const allChars = new Set([...Object.keys(freq1), ...Object.keys(freq2)]);
+      let similarity = 0;
+      
+      for (let char of allChars) {
+        const f1 = freq1[char] || 0;
+        const f2 = freq2[char] || 0;
+        similarity += Math.min(f1, f2);
+      }
+      
+      return similarity / Math.max(str1.length, str2.length);
+    }
+
+    // Find longest common subsequence length
+    function longestCommonSubsequence(str1, str2) {
+      const m = str1.length;
+      const n = str2.length;
+      const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+      
+      for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+          if (str1[i - 1] === str2[j - 1]) {
+            dp[i][j] = dp[i - 1][j - 1] + 1;
+          } else {
+            dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
           }
-          
-          return commonChars >= Math.min(2, inputLower.length / 2);
-        });
-        suggestions.push(...similar.slice(0, 3 - suggestions.length));
+        }
       }
       
-      return suggestions.slice(0, 3);
+      return dp[m][n];
     }
 
     // Execute command
@@ -1125,7 +1368,7 @@
 
     // Display help information
     function showHelp() {
-      print('--- Available Commands ---', 'info');
+      printCommandHelp('--- Available Commands ---');
       print('', 'info');
       printCommandHelp('Getting Help:');
       print('  help                              - Show this help information', 'info');
@@ -1133,13 +1376,13 @@
       print('  [command] --help                  - Alternative way to get command help', 'info');
       print('  [command] -h                      - Short form of --help flag', 'info');
       print('', 'info');
-      print('Basic Commands:', 'info');
+      printCommandHelp('Basic Commands:');
       print('  clear                             - Clear terminal', 'info');
       print('  list, ls                          - List all windows', 'info');
       print('  getWindows                        - Get detailed information for all windows', 'info');
       print('  info [windowID]                   - View detailed window information', 'info');
       print('', 'info');
-      print('Window Operations:', 'info');
+      printCommandHelp('Window Operations:');
       print('  get-title [ID]                    - Get window title', 'info');
       print('  set-title [ID] "title"            - Set window title', 'info');
       print('  set-size [ID] [width] [height]    - Set window size', 'info');
@@ -1150,17 +1393,17 @@
       print('  hide [ID]                         - Hide window', 'info');
       print('  reload-html [ID] [htmlPath]       - Reload HTML file', 'info');
       print('', 'info');
-      print('Picture Window Commands:', 'info');
+      printCommandHelp('Picture Window Commands:');
       print('  create-picture [ID] [path] [mode] - Create picture window', 'info');
-      print('      modes: fill/contain/cover/scale-down/none', 'info');
+      printParameter('      modes: fill/contain/cover/scale-down/none');
       print('  set-picture [ID] [path] [mode]    - Change window displayed image', 'info');
       print('  set-fit-mode [ID] [mode]          - Change image scaling mode', 'info');
       print('', 'info');
-      print('Lens System Commands:', 'info');
+      printCommandHelp('Lens System Commands:');
       print('  create-content [ID] [type] [path] [blur] [shouldBlur]', 'info');
-      print('      - Create content window (text/image, blur 0-50)', 'info');
+      printParameter('      - Create content window (text/image, blur 0-50)');
       print('  create-lens [lensID] [targetID] [width] [height]', 'info');
-      print('      - Create lens window (maximum 3)', 'info');
+      printParameter('      - Create lens window (maximum 3)');
       print('  set-opacity [ID] [0-1]            - Set window opacity', 'info');
       print('  set-always-on-top [ID] [true/false] - Set window always on top', 'info');
       print('  update-blur [ID] [0-50]           - Update content blur level', 'info');
@@ -1168,16 +1411,16 @@
       print('  list-lens, lens-list              - List all lenses', 'info');
       print('  lens-info [lensID]                - View lens details', 'info');
       print('', 'info');
-      print('Window Storage Commands:', 'info');
+      printCommandHelp('Window Storage Commands:');
       print('  save-window [ID] [filename]       - Save window configuration to file', 'info');
-      print('      example: save-window window1 my-config', 'info');
-      print('      filename optional, defaults to timestamp naming', 'info');
+      printExample('      example: save-window window1 my-config');
+      printParameter('      filename optional, defaults to timestamp naming');
       print('  restore-window [filePath]         - Restore window from file', 'info');
-      print('      example: restore-window .fenestra-storage/window1.fenestra', 'info');
-      print('      supports dragging .fenestra files to terminal', 'info');
+      printExample('      example: restore-window .fenestra-storage/window1.fenestra');
+      printParameter('      supports dragging .fenestra files to terminal');
       print('  list-saved                        - List all saved window files', 'info');
       print('  delete-saved [filename]           - Delete saved window file', 'info');
-      print('      example: delete-saved window1-20241014.fenestra', 'info');
+      printExample('      example: delete-saved window1-20241014.fenestra');
       print('', 'info');
       printTip('Tip: Use "help [command]" to get detailed help for any specific command');
       printTip('Tip: Commands support --help and -h flags (e.g., "set-title --help")');
@@ -1194,8 +1437,8 @@
       outputEl.innerHTML = '';
     }
 
-    // Display completion matches
-    function displayCompletionMatches(matches, type) {
+    // Display completion matches with enhanced formatting
+    function displayCompletionMatches(matches, type, result = {}) {
       if (matches.length === 0) return;
 
       const matchType = type === 'command' ? 'commands' : 'files';
@@ -1208,27 +1451,54 @@
         
         if (aIsDir && !bIsDir) return -1;
         if (!aIsDir && bIsDir) return 1;
-        return a.localeCompare(b);
+        return a.localeCompare(b, undefined, { sensitivity: 'base' });
       });
 
       // Display matches in columns for better readability
       const maxLength = Math.max(...sortedMatches.map(m => m.length));
       const terminalWidth = 80;
-      const columns = Math.max(1, Math.floor(terminalWidth / (maxLength + 2)));
+      const columns = Math.max(1, Math.floor(terminalWidth / (maxLength + 3)));
 
       for (let i = 0; i < sortedMatches.length; i += columns) {
         const row = sortedMatches.slice(i, i + columns);
         const paddedRow = row.map(match => {
-          // Add visual indicator for directories
-          const displayMatch = match.endsWith('/') ? match : match;
-          return displayMatch.padEnd(maxLength + 2);
+          // Add visual indicators
+          let displayMatch = match;
+          
+          // Highlight directories with different color
+          if (match.endsWith('/')) {
+            // Directory indicator is already in the name
+            displayMatch = match;
+          }
+          
+          // Handle files with special characters
+          if (type === 'file' && /[\s'"\\&|<>(){}[\]$`!?*;]/.test(match)) {
+            // Add subtle indicator for files with special characters
+            displayMatch = match;
+          }
+          
+          return displayMatch.padEnd(maxLength + 3);
         });
         print(paddedRow.join(''), 'info');
       }
 
-      // Show count if there are many matches
-      if (matches.length > 10) {
+      // Show additional information
+      if (result.totalMatches && result.totalMatches > matches.length) {
+        print(`(Showing ${matches.length} of ${result.totalMatches} matches)`, 'info');
+        printTip('Type more characters to narrow down results');
+      } else if (matches.length > 10) {
         print(`(${matches.length} matches total)`, 'info');
+      }
+      
+      // Show performance or access messages
+      if (result.message && result.message.includes('大目录')) {
+        printTip('Large directory detected - completion may be slower');
+      }
+      
+      // Show tips for special characters
+      const hasSpecialChars = matches.some(match => /[\s'"\\&|<>(){}[\]$`!?*;]/.test(match));
+      if (hasSpecialChars && type === 'file') {
+        printTip('Files with spaces or special characters will be automatically quoted');
       }
     }
 
@@ -1256,7 +1526,12 @@
             inputEl.setSelectionRange(result.newCursorPosition, result.newCursorPosition);
           } else if (result.success && result.matches && result.matches.length > 0) {
             // Multiple completions found - display them and apply common prefix if available
-            displayCompletionMatches(result.matches, result.type);
+            displayCompletionMatches(result.matches, result.type, result);
+            
+            // Show additional info for large result sets
+            if (result.hasMore) {
+              print(`(Showing ${result.matches.length} of ${result.totalMatches} matches)`, 'info');
+            }
             
             // Try to complete common prefix for multiple matches
             if (result.commonPrefix && result.commonPrefix.length > 0) {
@@ -1283,12 +1558,34 @@
               }
             }
           } else {
-            // No completions found
-            print('No completions available', 'info');
+            // Handle different types of completion failures
+            if (result.error) {
+              // Specific error occurred
+              if (result.error === 'EACCES') {
+                print('Permission denied - cannot access directory', 'error');
+              } else if (result.error === 'ENOENT') {
+                print('Path does not exist', 'error');
+              } else if (result.error === 'ENOTDIR') {
+                print('Path is not a directory', 'error');
+              } else {
+                print(result.message || 'Auto-completion failed', 'error');
+              }
+            } else {
+              // No completions found
+              print(result.message || 'No completions available', 'info');
+            }
           }
         } catch (error) {
           console.error('Auto-completion error:', error);
-          print('Auto-completion failed', 'error');
+          
+          // Provide user-friendly error messages
+          if (error.message.includes('timeout')) {
+            print('Auto-completion timed out - directory may be too large', 'error');
+          } else if (error.message.includes('network')) {
+            print('Auto-completion service unavailable', 'error');
+          } else {
+            print('Auto-completion failed - please try again', 'error');
+          }
         }
       }
       // Up arrow - previous command

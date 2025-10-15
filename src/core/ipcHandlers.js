@@ -765,20 +765,23 @@ function getFileCompletions(partialPath, currentDir) {
       return getDirectoryContents(workingDir);
     }
     
+    // 处理特殊字符和转义序列
+    const normalizedPath = normalizePathForCompletion(partialPath);
+    
     // 确定搜索目录和文件名模式
     let searchDir, filePattern;
     
-    if (path.isAbsolute(partialPath)) {
+    if (path.isAbsolute(normalizedPath)) {
       // 绝对路径
-      const dirname = path.dirname(partialPath);
-      const basename = path.basename(partialPath);
+      const dirname = path.dirname(normalizedPath);
+      const basename = path.basename(normalizedPath);
       
       searchDir = dirname;
       filePattern = basename;
     } else {
       // 相对路径
-      const dirname = path.dirname(partialPath);
-      const basename = path.basename(partialPath);
+      const dirname = path.dirname(normalizedPath);
+      const basename = path.basename(normalizedPath);
       
       if (dirname === '.') {
         searchDir = workingDir;
@@ -790,74 +793,89 @@ function getFileCompletions(partialPath, currentDir) {
     
     console.debug(`[FILE_COMPLETION] 搜索目录: "${searchDir}", 文件模式: "${filePattern}"`);
     
-    // 检查搜索目录是否存在
-    if (!fs.existsSync(searchDir)) {
-      console.debug(`[FILE_COMPLETION] 搜索目录不存在: ${searchDir}`);
+    // 检查搜索目录是否存在和可访问
+    const dirAccessResult = checkDirectoryAccess(searchDir);
+    if (!dirAccessResult.success) {
       return {
         success: true,
         completions: [],
         commonPrefix: '',
-        message: '目录不存在'
+        message: dirAccessResult.message,
+        error: dirAccessResult.error
       };
     }
     
-    // 检查目录访问权限
-    try {
-      fs.accessSync(searchDir, fs.constants.R_OK);
-    } catch (accessError) {
-      console.debug(`[FILE_COMPLETION] 目录访问权限不足: ${searchDir}`);
+    // 读取目录内容（带性能优化）
+    const entries = readDirectoryWithOptimization(searchDir);
+    if (!entries.success) {
       return {
         success: true,
         completions: [],
         commonPrefix: '',
-        message: '权限不足'
+        message: entries.message
       };
     }
     
-    // 读取目录内容
-    const entries = fs.readdirSync(searchDir, { withFileTypes: true });
+    // 过滤匹配的条目（支持特殊字符）
+    const matchingEntries = filterMatchingEntries(entries.entries, filePattern);
     
-    // 过滤匹配的条目
-    const matchingEntries = entries.filter(entry => {
-      // 跳过隐藏文件（除非用户明确输入了点开头）
-      if (entry.name.startsWith('.') && !filePattern.startsWith('.')) {
-        return false;
-      }
-      
-      // 检查是否匹配模式
-      return entry.name.toLowerCase().startsWith(filePattern.toLowerCase());
-    });
-    
-    // 转换为补全格式
+    // 转换为补全格式（处理特殊字符）
     const completions = matchingEntries.map(entry => {
       const fullPath = path.join(searchDir, entry.name);
       const relativePath = path.relative(workingDir, fullPath);
       
+      // 处理包含空格和特殊字符的文件名
+      const displayName = entry.isDirectory() ? `${entry.name}/` : entry.name;
+      const escapedName = needsQuoting(entry.name) ? `"${entry.name}"` : entry.name;
+      
       return {
-        name: entry.isDirectory() ? `${entry.name}/` : entry.name,
+        name: displayName,
+        escapedName: entry.isDirectory() ? `${escapedName}/` : escapedName,
         type: entry.isDirectory() ? 'directory' : 'file',
-        path: relativePath || entry.name
+        path: relativePath || entry.name,
+        hasSpecialChars: needsQuoting(entry.name)
       };
     });
     
-    // 计算公共前缀
-    const commonPrefix = findCommonPrefix(completions.map(c => c.name));
+    // 计算公共前缀（考虑特殊字符）
+    const commonPrefix = findCommonPrefixWithSpecialChars(completions.map(c => c.name));
     
-    console.debug(`[FILE_COMPLETION] 找到 ${completions.length} 个匹配项`);
+    // 性能优化：限制返回数量
+    const maxResults = 100;
+    const limitedCompletions = completions.slice(0, maxResults);
+    
+    console.debug(`[FILE_COMPLETION] 找到 ${completions.length} 个匹配项，返回 ${limitedCompletions.length} 个`);
     
     return {
       success: true,
-      completions: completions.slice(0, 50), // 限制返回数量
+      completions: limitedCompletions,
       commonPrefix,
-      message: completions.length > 50 ? `显示前50个结果，共${completions.length}个匹配项` : ''
+      totalMatches: completions.length,
+      message: completions.length > maxResults ? 
+        `显示前${maxResults}个结果，共${completions.length}个匹配项` : 
+        (completions.length === 0 ? '没有找到匹配的文件' : '')
     };
     
   } catch (error) {
     console.error(`[FILE_COMPLETION] 补全处理失败:`, error);
+    
+    // 提供更详细的错误信息
+    let errorMessage = '补全失败';
+    if (error.code === 'ENOENT') {
+      errorMessage = '路径不存在';
+    } else if (error.code === 'EACCES') {
+      errorMessage = '权限不足';
+    } else if (error.code === 'ENOTDIR') {
+      errorMessage = '路径不是目录';
+    } else if (error.message) {
+      errorMessage = `补全失败: ${error.message}`;
+    }
+    
     return {
       success: false,
-      message: `补全失败: ${error.message}`,
-      completions: []
+      message: errorMessage,
+      completions: [],
+      error: error.code || 'UNKNOWN'
     };
   }
 }
@@ -873,24 +891,42 @@ function getDirectoryContents(dirPath) {
     
     const completions = entries
       .filter(entry => !entry.name.startsWith('.')) // 跳过隐藏文件
-      .map(entry => ({
-        name: entry.isDirectory() ? `${entry.name}/` : entry.name,
-        type: entry.isDirectory() ? 'directory' : 'file',
-        path: entry.name
-      }))
-      .slice(0, 50); // 限制数量
+      .map(entry => {
+        const displayName = entry.isDirectory() ? `${entry.name}/` : entry.name;
+        const escapedName = needsQuoting(entry.name) ? `"${entry.name}"` : entry.name;
+        
+        return {
+          name: displayName,
+          escapedName: entry.isDirectory() ? `${escapedName}/` : escapedName,
+          type: entry.isDirectory() ? 'directory' : 'file',
+          path: entry.name,
+          hasSpecialChars: needsQuoting(entry.name)
+        };
+      })
+      .slice(0, 100); // 增加限制数量
     
     return {
       success: true,
       completions,
       commonPrefix: '',
-      message: completions.length === 50 ? '显示前50个文件' : ''
+      totalMatches: completions.length,
+      message: completions.length === 100 ? '显示前100个文件' : ''
     };
   } catch (error) {
+    let errorMessage = '读取目录失败';
+    if (error.code === 'EACCES') {
+      errorMessage = '目录访问权限不足';
+    } else if (error.code === 'ENOENT') {
+      errorMessage = '目录不存在';
+    } else if (error.code === 'ENOTDIR') {
+      errorMessage = '路径不是目录';
+    }
+    
     return {
       success: false,
-      message: `读取目录失败: ${error.message}`,
-      completions: []
+      message: errorMessage,
+      completions: [],
+      error: error.code || 'UNKNOWN'
     };
   }
 }
@@ -918,6 +954,183 @@ function findCommonPrefix(strings) {
   }
   
   return prefix;
+}
+
+/**
+ * 查找字符串数组的公共前缀（处理特殊字符）
+ * @param {string[]} strings - 字符串数组
+ * @returns {string} 公共前缀
+ */
+function findCommonPrefixWithSpecialChars(strings) {
+  if (strings.length === 0) return '';
+  if (strings.length === 1) return strings[0];
+  
+  let prefix = '';
+  const firstString = strings[0];
+  
+  for (let i = 0; i < firstString.length; i++) {
+    const char = firstString[i];
+    
+    if (strings.every(str => str[i] && str[i].toLowerCase() === char.toLowerCase())) {
+      prefix += char;
+    } else {
+      break;
+    }
+  }
+  
+  return prefix;
+}
+
+/**
+ * 规范化路径用于补全（处理特殊字符和转义）
+ * @param {string} inputPath - 输入路径
+ * @returns {string} 规范化后的路径
+ */
+function normalizePathForCompletion(inputPath) {
+  let normalized = inputPath;
+  
+  // 处理引号包围的路径
+  if ((normalized.startsWith('"') && normalized.endsWith('"')) ||
+      (normalized.startsWith("'") && normalized.endsWith("'"))) {
+    normalized = normalized.slice(1, -1);
+  }
+  
+  // 处理转义字符
+  normalized = normalized.replace(/\\(.)/g, '$1');
+  
+  // 处理波浪号扩展
+  if (normalized.startsWith('~')) {
+    const os = require('os');
+    normalized = normalized.replace('~', os.homedir());
+  }
+  
+  return normalized;
+}
+
+/**
+ * 检查文件名是否需要引号包围
+ * @param {string} filename - 文件名
+ * @returns {boolean} 是否需要引号
+ */
+function needsQuoting(filename) {
+  // 检查是否包含空格、特殊字符或需要转义的字符
+  return /[\s'"\\&|<>(){}[\]$`!?*;]/.test(filename);
+}
+
+/**
+ * 检查目录访问权限
+ * @param {string} dirPath - 目录路径
+ * @returns {Object} 检查结果
+ */
+function checkDirectoryAccess(dirPath) {
+  try {
+    // 检查路径是否存在
+    if (!fs.existsSync(dirPath)) {
+      return {
+        success: false,
+        message: '目录不存在',
+        error: 'ENOENT'
+      };
+    }
+    
+    // 检查是否是目录
+    const stats = fs.statSync(dirPath);
+    if (!stats.isDirectory()) {
+      return {
+        success: false,
+        message: '路径不是目录',
+        error: 'ENOTDIR'
+      };
+    }
+    
+    // 检查读取权限
+    fs.accessSync(dirPath, fs.constants.R_OK);
+    
+    return { success: true };
+    
+  } catch (error) {
+    let message = '目录访问失败';
+    if (error.code === 'EACCES') {
+      message = '目录访问权限不足';
+    } else if (error.code === 'EPERM') {
+      message = '操作权限不足';
+    }
+    
+    return {
+      success: false,
+      message,
+      error: error.code || 'UNKNOWN'
+    };
+  }
+}
+
+/**
+ * 优化的目录读取（处理大目录）
+ * @param {string} dirPath - 目录路径
+ * @returns {Object} 读取结果
+ */
+function readDirectoryWithOptimization(dirPath) {
+  try {
+    const startTime = Date.now();
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    const readTime = Date.now() - startTime;
+    
+    // 如果读取时间过长，记录警告
+    if (readTime > 1000) {
+      console.warn(`[FILE_COMPLETION] 目录读取耗时较长: ${readTime}ms, 路径: ${dirPath}`);
+    }
+    
+    // 如果文件数量过多，记录信息
+    if (entries.length > 1000) {
+      console.info(`[FILE_COMPLETION] 大目录检测: ${entries.length} 个条目, 路径: ${dirPath}`);
+    }
+    
+    return {
+      success: true,
+      entries,
+      readTime,
+      totalEntries: entries.length
+    };
+    
+  } catch (error) {
+    return {
+      success: false,
+      message: `读取目录失败: ${error.message}`,
+      error: error.code || 'UNKNOWN'
+    };
+  }
+}
+
+/**
+ * 过滤匹配的条目（支持特殊字符）
+ * @param {Array} entries - 目录条目
+ * @param {string} pattern - 匹配模式
+ * @returns {Array} 匹配的条目
+ */
+function filterMatchingEntries(entries, pattern) {
+  const normalizedPattern = pattern.toLowerCase();
+  
+  return entries.filter(entry => {
+    // 跳过隐藏文件（除非用户明确输入了点开头）
+    if (entry.name.startsWith('.') && !pattern.startsWith('.')) {
+      return false;
+    }
+    
+    // 基本前缀匹配
+    if (entry.name.toLowerCase().startsWith(normalizedPattern)) {
+      return true;
+    }
+    
+    // 如果基本匹配失败，尝试处理特殊字符的匹配
+    const normalizedName = entry.name.toLowerCase();
+    
+    // 处理包含空格的文件名
+    if (normalizedName.replace(/\s+/g, '').startsWith(normalizedPattern.replace(/\s+/g, ''))) {
+      return true;
+    }
+    
+    return false;
+  });
 }
 
 /**
