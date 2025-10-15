@@ -58,7 +58,7 @@
   - Add performance optimizations for large directory completions
   - _Requirements: 1.4, 4.3, 4.4_
 
-- [ ] 9. Write unit tests for auto-completion functionality
+- [x] 9. Write unit tests for auto-completion functionality
   - Test file completion with various directory structures
   - Test command completion with partial command names
   - Test edge cases like empty directories and permission-denied paths
