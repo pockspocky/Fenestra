@@ -342,6 +342,7 @@ export function saveWindowToFile(windowId, customPath = null) {
 
     // Write file with proper formatting
     const jsonString = JSON.stringify(serializedData, null, 2);
+    filePath += ".fenestra";
     fs.writeFileSync(filePath, jsonString, 'utf8');
 
     console.log(`[STORAGE] Successfully saved window ${windowId} to: ${filePath}`);
