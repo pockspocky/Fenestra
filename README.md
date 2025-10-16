@@ -118,7 +118,7 @@ setKeyDoorMaxOverlap(0.4); // 40% maximum overlap allowed
 ### Logging Levels
 ```javascript
 import { setLogLevel } from './src/core/loggerConfig.js';
-setLogLevel("debug"); // debug, log, warn, error, none
+setLogLevel("debug"); // debug (default), log, warn, error, none
 ```
 
 ## File Structure

@@ -4,7 +4,7 @@
  */
 
 // 设置日志级别
-global.logLevel = "log"; // 可以改为 "debug", "log", "warn", "error", "none"
+global.logLevel = "debug"; // 可以改为 "debug", "log", "warn", "error", "none"
 
 /**
  * 设置日志级别
