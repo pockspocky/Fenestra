@@ -186,7 +186,7 @@ function executeTerminalCommand(command, args) {
       return { 
         success: true, 
         message: `找到 ${windows.length} 个窗口`,
-        data: windows 
+        data: null
       };
     }
     
