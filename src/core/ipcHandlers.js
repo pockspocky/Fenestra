@@ -565,13 +565,13 @@ function executeTerminalCommand(command, args) {
         const date = file.modified.toLocaleDateString();
         const time = file.modified.toLocaleTimeString();
         const sizeKB = Math.round(file.size / 1024 * 100) / 100;
-        return `${file.filename} (${sizeKB}KB, ${date} ${time})`;
+        return `${file.filename} (${sizeKB}KB, ${date})`;
+        // return `${file.filename} (${sizeKB}KB, ${date} ${time})`;
       }).join('\n');
       
       return {
         success: true,
-        message: `找到 ${listResult.files.length} 个已保存的窗口:\n${fileList}`,
-        data: listResult.files
+        message: `找到 ${listResult.files.length} 个已保存的窗口:\n${fileList}`
       };
     }
     
