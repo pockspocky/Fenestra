@@ -12,12 +12,12 @@
  * - Comprehensive logging system
  */
 
-import { app, BrowserWindow, globalShortcut } from 'electron';
-import './logger.js'; // 导入日志系统
-import { setLogLevel, getLogLevel } from './src/core/loggerConfig.js'; // 导入日志配置
+const { app, BrowserWindow, globalShortcut } = require('electron');
+require('./logger.js'); // 导入日志系统
+const { setLogLevel, getLogLevel } = require('./src/core/loggerConfig.js'); // 导入日志配置
 
 // 导入核心模块
-import { 
+const { 
   setWindowCloseCallback, 
   createDesktop, 
   createVideo,
@@ -26,29 +26,29 @@ import {
   getWindowOffset,
   setKeyDoorMaxOverlap,
   getKeyDoorMaxOverlap
-} from './src/core/windowManager.js';
+} = require('./src/core/windowManager.js');
 
-import { 
+const { 
   initializeGameLogic, 
   handleVideoWindowClosed, 
   createDemoDoorsAndKeys,
   getGameState
-} from './src/core/gameLogic.js';
+} = require('./src/core/gameLogic.js');
 
-import { 
+const { 
   initializeWorker, 
   startOverlapLoop, 
   cleanupWorker 
-} from './src/core/workerManager.js';
+} = require('./src/core/workerManager.js');
 
-import { 
+const { 
   initializeIpcHandlers, 
   cleanupIpcHandlers 
-} from './src/core/ipcHandlers.js';
+} = require('./src/core/ipcHandlers.js');
 
-import { 
+const { 
   getRelationsDebugInfo 
-} from './src/core/doorKeySystem.js';
+} = require('./src/core/doorKeySystem.js');
 
 // 设置日志级别
 setLogLevel("log"); // 可以根据需要调整
@@ -180,7 +180,7 @@ function registerGlobalShortcuts() {
 }
 
 // 导出主要功能供外部使用（如果需要）
-export {
+module.exports = {
   getGameState,
   getRelationsDebugInfo
 };
