@@ -3,17 +3,23 @@
   "version": "0.2.0",
   "description": "An Electron-based window puzzle game featuring dynamic window management, lens systems, and interactive door-key mechanics",
   "main": "main.js",
-  "type": "module",
-  "keywords": ["electron", "puzzle", "game", "window-management", "lens-system", "interactive"],
+  "keywords": [
+    "electron",
+    "puzzle",
+    "game",
+    "window-management",
+    "lens-system",
+    "interactive"
+  ],
   "author": "Fenestra Development Team",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "dev": "electron .",
-    "test": "node test-key-overlap.js && node test-window-offset.js"
+    "dev": "electron ."
   },
   "devDependencies": {
-    "electron": "^30.0.0"
+    "electron": "^30.0.0",
+    "jsdom": "^27.0.0"
   },
   "engines": {
     "node": ">=16.0.0"
