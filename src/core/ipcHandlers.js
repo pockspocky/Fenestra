@@ -186,7 +186,7 @@ function executeTerminalCommand(command, args) {
       return { 
         success: true, 
         message: `找到 ${windows.length} 个窗口`,
-        data: null
+        data: windows 
       };
     }
     
@@ -570,9 +570,8 @@ function executeTerminalCommand(command, args) {
       
       return {
         success: true,
-        message: `找到 ${listResult.files.length} 个已保存的窗口:\n${fileList}`,
-        data: listResult.files
-      };
+        message: `找到 ${listResult.files.length} 个已保存的窗口:\n${fileList}`
+            };
     }
     
     case 'delete-saved': {
@@ -1130,8 +1129,6 @@ function filterMatchingEntries(entries, pattern) {
     }
     
     return false;
-  });
-}
 
 /**
  * 获取当前工作目录
