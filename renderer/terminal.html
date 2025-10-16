@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>终端</title>
+  <title>Terminal</title>
   <style>
     * {
       margin: 0;
@@ -55,6 +56,22 @@
       color: #ffffff;
     }
 
+    .tip {
+      color: #ffaa00;
+    }
+
+    .command-help {
+      color: #00aaff;
+    }
+
+    .parameter {
+      color: #aa00ff;
+    }
+
+    .example {
+      color: #888888;
+    }
+
     #input-line {
       display: flex;
       padding: 10px;
@@ -82,7 +99,7 @@
       color: #000000;
     }
 
-    /* 自定义滚动条 */
+    /* Custom scrollbar */
     ::-webkit-scrollbar {
       width: 8px;
     }
@@ -105,14 +122,44 @@
       position: absolute;
       pointer-events: none;
     }
+
+    /* Drag and drop styles */
+    .drag-over {
+      background-color: #001100;
+      border: 2px dashed #00ff00;
+    }
+
+    .drag-feedback {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background-color: rgba(0, 255, 0, 0.1);
+      border: 2px solid #00ff00;
+      padding: 20px;
+      border-radius: 8px;
+      color: #00ff00;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 16px;
+      pointer-events: none;
+      z-index: 1000;
+      display: none;
+    }
+
+    .drag-error {
+      color: #ff0000;
+      border-color: #ff0000;
+      background-color: rgba(255, 0, 0, 0.1);
+    }
   </style>
 </head>
+
 <body>
   <div id="terminal-container">
     <div id="output">
       <div class="output-line info">Fenestra Terminal v1.0</div>
-      <div class="output-line info">输入 'help' 查看可用命令</div>
-      <div class="output-line info">按 Ctrl+~ 关闭终端</div>
+      <div class="output-line info">Type 'help' to see available commands</div>
+      <div class="output-line info">Press Ctrl+~ to close terminal</div>
       <div class="output-line info">---</div>
     </div>
   </div>
@@ -121,62 +168,1151 @@
     <input type="text" id="command-input" autocomplete="off" autofocus>
   </div>
 
+  <!-- Drag and drop feedback overlay -->
+  <div id="drag-feedback" class="drag-feedback">
+    Drop .fenestra file to restore window
+  </div>
+
   <script>
-    // 命令历史
+    // Command history
     let commandHistory = [];
     let historyIndex = -1;
     let currentCommand = '';
 
-    // 可用命令列表
+    // Available commands list
     const commands = [
       'help', 'clear', 'list', 'ls', 'getWindows', 'info',
       'get-title', 'set-title', 'set-size', 'set-position', 'set-resizable', 'set-visibility',
       'show', 'hide', 'reload-html',
       'create-picture', 'set-picture', 'set-fit-mode',
-      'create-content', 'create-lens', 'set-opacity', 'set-always-on-top', 
-      'update-blur', 'destroy-lens', 'list-lens', 'lens-list', 'lens-info'
+      'create-content', 'create-lens', 'set-opacity', 'set-always-on-top',
+      'update-blur', 'destroy-lens', 'list-lens', 'lens-list', 'lens-info',
+      'save-window', 'restore-window', 'list-saved', 'delete-saved'
     ];
 
-    // 获取元素
+    // AutoCompleter class for handling tab completion logic
+    class AutoCompleter {
+      constructor() {
+        this.currentDirectory = null;
+        this.completionCache = new Map();
+        this.cacheTimeout = 30000; // 30 seconds cache timeout
+        this.performanceStats = {
+          totalRequests: 0,
+          cacheHits: 0,
+          averageResponseTime: 0
+        };
+        this.initializeCurrentDirectory();
+      }
+
+      // Initialize current directory
+      async initializeCurrentDirectory() {
+        try {
+          const result = await window.electronAPI.getCurrentDirectory();
+          if (result.success) {
+            this.currentDirectory = result.currentDirectory;
+          }
+        } catch (error) {
+          console.error('Failed to get current directory:', error);
+        }
+      }
+
+      // Get file completions from backend with enhanced error handling and caching
+      async getFileCompletions(partialPath) {
+        const startTime = Date.now();
+        this.performanceStats.totalRequests++;
+        
+        // Create cache key
+        const cacheKey = `${this.currentDirectory}:${partialPath}`;
+        
+        // Check cache first
+        const cached = this.getCachedCompletion(cacheKey);
+        if (cached) {
+          this.performanceStats.cacheHits++;
+          console.debug(`[AUTO_COMPLETE] Cache hit for: ${partialPath}`);
+          return cached;
+        }
+        
+        try {
+          const result = await window.electronAPI.getFileCompletions({
+            partialPath: partialPath,
+            currentDir: this.currentDirectory
+          });
+
+          const responseTime = Date.now() - startTime;
+          this.updatePerformanceStats(responseTime);
+
+          if (result.success) {
+            const completionResult = {
+              completions: result.completions || [],
+              totalMatches: result.totalMatches || 0,
+              message: result.message || '',
+              hasMore: result.totalMatches > result.completions.length,
+              responseTime
+            };
+            
+            // Cache successful results
+            this.setCachedCompletion(cacheKey, completionResult);
+            
+            // Handle performance warnings for large directories
+            if (result.totalMatches > 100) {
+              console.info(`[AUTO_COMPLETE] Large directory: ${result.totalMatches} matches found in ${responseTime}ms`);
+            }
+            
+            return completionResult;
+          } else {
+            // Handle specific error cases gracefully
+            const errorInfo = {
+              completions: [],
+              totalMatches: 0,
+              message: result.message || 'File completion failed',
+              error: result.error || 'UNKNOWN',
+              responseTime
+            };
+            
+            // Don't cache error results, but don't log permission errors as warnings
+            if (result.error !== 'EACCES') {
+              console.warn('File completion failed:', result.message);
+            }
+            
+            return errorInfo;
+          }
+        } catch (error) {
+          const responseTime = Date.now() - startTime;
+          this.updatePerformanceStats(responseTime);
+          
+          console.error('Error getting file completions:', error);
+          return {
+            completions: [],
+            totalMatches: 0,
+            message: 'Network error during completion',
+            error: 'NETWORK_ERROR',
+            responseTime
+          };
+        }
+      }
+
+      // Cache management methods
+      getCachedCompletion(key) {
+        const cached = this.completionCache.get(key);
+        if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {
+          return cached.data;
+        }
+        if (cached) {
+          this.completionCache.delete(key);
+        }
+        return null;
+      }
+
+      setCachedCompletion(key, data) {
+        // Limit cache size to prevent memory issues
+        if (this.completionCache.size > 50) {
+          const oldestKey = this.completionCache.keys().next().value;
+          this.completionCache.delete(oldestKey);
+        }
+        
+        this.completionCache.set(key, {
+          data,
+          timestamp: Date.now()
+        });
+      }
+
+      updatePerformanceStats(responseTime) {
+        const stats = this.performanceStats;
+        stats.averageResponseTime = (stats.averageResponseTime * (stats.totalRequests - 1) + responseTime) / stats.totalRequests;
+        
+        // Log performance warnings
+        if (responseTime > 2000) {
+          console.warn(`[AUTO_COMPLETE] Slow completion response: ${responseTime}ms`);
+        }
+      }
+
+      // Get performance statistics
+      getPerformanceStats() {
+        const stats = this.performanceStats;
+        const cacheHitRate = stats.totalRequests > 0 ? (stats.cacheHits / stats.totalRequests * 100).toFixed(1) : 0;
+        
+        return {
+          ...stats,
+          cacheHitRate: `${cacheHitRate}%`,
+          cacheSize: this.completionCache.size
+        };
+      }
+
+      // Determine if cursor is in a file path parameter position (optimized)
+      isInFilePathPosition(inputValue, cursorPosition) {
+        const beforeCursor = inputValue.substring(0, cursorPosition);
+        
+        // Quick check for empty input
+        if (!beforeCursor.trim()) return false;
+        
+        const parts = parseCommand(beforeCursor);
+        if (parts.length === 0) return false;
+
+        const command = parts[0].toLowerCase();
+
+        // Commands that expect file paths as parameters (cached set for performance)
+        if (!this.filePathCommands) {
+          this.filePathCommands = new Set([
+            'reload-html', 'create-picture', 'set-picture', 'create-content',
+            'restore-window', 'save-window', 'delete-saved'
+          ]);
+        }
+
+        // If it's a file path command and we're not on the first part (command name)
+        if (this.filePathCommands.has(command) && parts.length > 1) {
+          return true;
+        }
+
+        // Check if we're in the middle of typing a command name (no space after command)
+        if (parts.length === 1 && !beforeCursor.endsWith(' ')) {
+          return false;
+        }
+
+        // Check if the current part looks like a file path
+        const currentPart = parts[parts.length - 1] || '';
+        
+        // Optimized file path detection
+        if (this.looksLikeFilePath(currentPart)) {
+          return true;
+        }
+
+        // If we have a space after the command and we're typing a parameter, 
+        // assume it could be a file path for certain commands
+        if (this.filePathCommands.has(command) && beforeCursor.endsWith(' ')) {
+          return true;
+        }
+
+        return false;
+      }
+
+      // Optimized file path detection
+      looksLikeFilePath(part) {
+        if (!part) return false;
+        
+        // Cache regex patterns for performance
+        if (!this.pathPatterns) {
+          this.pathPatterns = {
+            pathSeparators: /[/\\]/,
+            startsWithSpecial: /^[.~]/,
+            hasExtension: /\.[a-zA-Z0-9]+$/,
+            quotedPath: /^["'].*["']$/
+          };
+        }
+        
+        // File path indicators: contains path separators, starts with . or ~, or has file extension
+        return this.pathPatterns.pathSeparators.test(part) ||
+               this.pathPatterns.startsWithSpecial.test(part) ||
+               this.pathPatterns.hasExtension.test(part) ||
+               this.pathPatterns.quotedPath.test(part);
+      }
+
+      // Get command completions
+      getCommandCompletions(partialCommand) {
+        return commands.filter(cmd =>
+          cmd.toLowerCase().startsWith(partialCommand.toLowerCase())
+        );
+      }
+
+      // Find common prefix among matches
+      findCommonPrefix(matches) {
+        if (matches.length === 0) return '';
+        if (matches.length === 1) return matches[0];
+
+        let prefix = matches[0];
+        for (let i = 1; i < matches.length; i++) {
+          let j = 0;
+          while (j < prefix.length && j < matches[i].length && 
+                 prefix[j].toLowerCase() === matches[i][j].toLowerCase()) {
+            j++;
+          }
+          prefix = prefix.substring(0, j);
+          if (prefix === '') break;
+        }
+        return prefix;
+      }
+
+      // Main completion method that handles both command and file completion
+      async completeCommand(inputValue, cursorPosition) {
+        const beforeCursor = inputValue.substring(0, cursorPosition);
+        const afterCursor = inputValue.substring(cursorPosition);
+        const parts = parseCommand(beforeCursor);
+
+        // If no input or cursor is at the beginning, complete commands
+        if (parts.length === 0 || (parts.length === 1 && !beforeCursor.endsWith(' '))) {
+          const partialCommand = parts[0] || '';
+          const commandMatches = this.getCommandCompletions(partialCommand);
+
+          if (commandMatches.length === 1) {
+            // Single command match - complete it
+            const completion = commandMatches[0];
+            const newValue = completion + ' ' + afterCursor;
+            return {
+              success: true,
+              completed: true,
+              newValue: newValue,
+              newCursorPosition: completion.length + 1
+            };
+          } else if (commandMatches.length > 1) {
+            // Multiple command matches - show them with common prefix
+            const commonPrefix = this.findCommonPrefix(commandMatches);
+            return {
+              success: true,
+              completed: false,
+              matches: commandMatches,
+              type: 'command',
+              commonPrefix: commonPrefix.length > partialCommand.length ? commonPrefix : ''
+            };
+          }
+        }
+
+        // Check if we should do file path completion
+        if (this.isInFilePathPosition(inputValue, cursorPosition)) {
+          // Extract the current file path being typed
+          const currentPart = parts[parts.length - 1] || '';
+          const fileResult = await this.getFileCompletions(currentPart);
+
+          // Handle error cases gracefully
+          if (fileResult.error) {
+            return {
+              success: false,
+              completed: false,
+              matches: [],
+              message: fileResult.message,
+              error: fileResult.error
+            };
+          }
+
+          const fileMatches = fileResult.completions || [];
+
+          if (fileMatches.length === 1) {
+            // Single file match - complete it with proper directory and special character handling
+            const match = fileMatches[0];
+            const partsBeforeCurrent = parts.slice(0, -1);
+            
+            // Use escaped name for files with special characters
+            let completedPath = match.hasSpecialChars ? match.escapedName : match.name;
+            
+            // For directories, ensure trailing slash
+            if (match.type === 'directory' && !completedPath.endsWith('/')) {
+              completedPath += '/';
+            }
+
+            // Rebuild the command with the completed path
+            const newParts = [...partsBeforeCurrent, completedPath];
+            const newValue = newParts.join(' ') + (match.type === 'directory' ? '' : ' ') + afterCursor;
+            const newCursorPosition = newParts.join(' ').length + (match.type === 'directory' ? 0 : 1);
+
+            return {
+              success: true,
+              completed: true,
+              newValue: newValue,
+              newCursorPosition: newCursorPosition
+            };
+          } else if (fileMatches.length > 1) {
+            // Multiple file matches - show them with common prefix and directory indicators
+            const matchNames = fileMatches.map(m => 
+              m.type === 'directory' && !m.name.endsWith('/') ? m.name + '/' : m.name
+            );
+            const commonPrefix = this.findCommonPrefix(matchNames);
+            
+            return {
+              success: true,
+              completed: false,
+              matches: matchNames,
+              type: 'file',
+              commonPrefix: commonPrefix.length > currentPart.length ? commonPrefix : '',
+              totalMatches: fileResult.totalMatches,
+              hasMore: fileResult.hasMore,
+              message: fileResult.message
+            };
+          } else {
+            // No matches found
+            return {
+              success: false,
+              completed: false,
+              matches: [],
+              message: fileResult.message || 'No matching files found'
+            };
+          }
+        }
+
+        // No completions found
+        return {
+          success: false,
+          completed: false,
+          matches: []
+        };
+      }
+    }
+
+    // Create global autocompleter instance
+    const autoCompleter = new AutoCompleter();
+
+    // Command help data structure
+    const commandHelp = {
+      'help': {
+        description: 'Display help information for commands',
+        usage: 'help [command_name]',
+        parameters: [
+          { name: 'command_name', description: 'Optional: specific command to get help for', required: false }
+        ],
+        examples: [
+          'help',
+          'help set-title',
+          'help create-lens'
+        ],
+        tips: [
+          'Use "help [command]" to get detailed help for a specific command',
+          'Commands also support --help and -h flags for individual help'
+        ]
+      },
+      'clear': {
+        description: 'Clear the terminal screen',
+        usage: 'clear',
+        parameters: [],
+        examples: ['clear'],
+        tips: ['Clears all previous output from the terminal display']
+      },
+      'list': {
+        description: 'List all open windows with their IDs and titles',
+        usage: 'list',
+        aliases: ['ls'],
+        parameters: [],
+        examples: ['list', 'ls'],
+        tips: [
+          'Shows a simple list of window ID and title pairs',
+          'Use "getWindows" for more detailed information'
+        ]
+      },
+      'ls': {
+        description: 'Alias for list command - list all open windows',
+        usage: 'ls',
+        aliases: ['list'],
+        parameters: [],
+        examples: ['ls', 'list'],
+        tips: ['This is an alias for the "list" command']
+      },
+      'getwindows': {
+        description: 'Get detailed information for all open windows',
+        usage: 'getWindows',
+        parameters: [],
+        examples: ['getWindows'],
+        tips: [
+          'Provides comprehensive details about all windows',
+          'Use "list" for a simpler overview'
+        ]
+      },
+      'info': {
+        description: 'View detailed information about a specific window',
+        usage: 'info [windowID]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the window to inspect', required: true }
+        ],
+        examples: [
+          'info window1',
+          'info main-window',
+          'info picture-viewer'
+        ],
+        tips: [
+          'Shows position, size, visibility, and other window properties',
+          'Use "list" first to see available window IDs'
+        ]
+      },
+      'get-title': {
+        description: 'Get the current title of a window',
+        usage: 'get-title [windowID]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the target window', required: true }
+        ],
+        examples: [
+          'get-title window1',
+          'get-title main-window'
+        ],
+        tips: ['Returns the current title text of the specified window']
+      },
+      'set-title': {
+        description: 'Set the title of a window',
+        usage: 'set-title [windowID] "title"',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the target window', required: true },
+          { name: 'title', description: 'The new title text (use quotes for spaces)', required: true }
+        ],
+        examples: [
+          'set-title window1 "My Window"',
+          'set-title main-window "Updated Title"',
+          'set-title viewer "Image Viewer - Photo.jpg"'
+        ],
+        tips: [
+          'Use quotes around titles that contain spaces',
+          'Title changes are immediately visible in the window title bar'
+        ]
+      },
+      'set-size': {
+        description: 'Set the size of a window',
+        usage: 'set-size [windowID] [width] [height]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the target window', required: true },
+          { name: 'width', description: 'Width in pixels', required: true },
+          { name: 'height', description: 'Height in pixels', required: true }
+        ],
+        examples: [
+          'set-size window1 800 600',
+          'set-size viewer 1920 1080',
+          'set-size lens1 300 200'
+        ],
+        tips: [
+          'Width and height must be positive integers',
+          'Very small sizes may be limited by system constraints'
+        ]
+      },
+      'set-position': {
+        description: 'Set the position of a window on screen',
+        usage: 'set-position [windowID] [x] [y]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the target window', required: true },
+          { name: 'x', description: 'X coordinate in pixels from left edge', required: true },
+          { name: 'y', description: 'Y coordinate in pixels from top edge', required: true }
+        ],
+        examples: [
+          'set-position window1 100 100',
+          'set-position viewer 0 0',
+          'set-position lens1 500 300'
+        ],
+        tips: [
+          'Coordinates are relative to the primary display',
+          'Negative values may position windows off-screen'
+        ]
+      },
+      'set-resizable': {
+        description: 'Set whether a window can be resized by the user',
+        usage: 'set-resizable [windowID] [true/false]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the target window', required: true },
+          { name: 'resizable', description: 'true to allow resizing, false to prevent it', required: true }
+        ],
+        examples: [
+          'set-resizable window1 true',
+          'set-resizable viewer false',
+          'set-resizable lens1 false'
+        ],
+        tips: [
+          'Non-resizable windows cannot be resized by dragging edges',
+          'This affects user interaction, not programmatic resizing'
+        ]
+      },
+      'set-visibility': {
+        description: 'Set the visibility state of a window',
+        usage: 'set-visibility [windowID] [true/false]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the target window', required: true },
+          { name: 'visible', description: 'true to show, false to hide', required: true }
+        ],
+        examples: [
+          'set-visibility window1 true',
+          'set-visibility viewer false',
+          'set-visibility lens1 true'
+        ],
+        tips: [
+          'Hidden windows remain in memory but are not visible',
+          'Use "show" and "hide" commands as shortcuts'
+        ]
+      },
+      'show': {
+        description: 'Show a hidden window',
+        usage: 'show [windowID]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the window to show', required: true }
+        ],
+        examples: [
+          'show window1',
+          'show viewer',
+          'show lens1'
+        ],
+        tips: [
+          'Shortcut for "set-visibility [windowID] true"',
+          'Brings the window to the foreground if it was hidden'
+        ]
+      },
+      'hide': {
+        description: 'Hide a visible window',
+        usage: 'hide [windowID]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the window to hide', required: true }
+        ],
+        examples: [
+          'hide window1',
+          'hide viewer',
+          'hide lens1'
+        ],
+        tips: [
+          'Shortcut for "set-visibility [windowID] false"',
+          'Window remains in memory but becomes invisible'
+        ]
+      },
+      'reload-html': {
+        description: 'Reload a window with new HTML content from a file',
+        usage: 'reload-html [windowID] [htmlPath]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the target window', required: true },
+          { name: 'htmlPath', description: 'Path to the HTML file to load', required: true }
+        ],
+        examples: [
+          'reload-html window1 renderer/index.html',
+          'reload-html viewer renderer/pictureViewer.html',
+          'reload-html terminal renderer/terminal.html'
+        ],
+        tips: [
+          'Supports both absolute and relative file paths',
+          'Use Tab completion to navigate to HTML files',
+          'Window content will be completely replaced'
+        ]
+      },
+      'create-picture': {
+        description: 'Create a new picture window to display an image',
+        usage: 'create-picture [windowID] [imagePath] [fitMode]',
+        parameters: [
+          { name: 'windowID', description: 'Unique ID for the new picture window', required: true },
+          { name: 'imagePath', description: 'Path to the image file to display', required: true },
+          { name: 'fitMode', description: 'How to scale the image: fill/contain/cover/scale-down/none', required: false }
+        ],
+        examples: [
+          'create-picture viewer1 doors/Door.png',
+          'create-picture photo doors/Squirrel.jpg contain',
+          'create-picture wallpaper /path/to/image.png cover'
+        ],
+        tips: [
+          'Default fit mode is "fill" if not specified',
+          'Supported formats: PNG, JPG, JPEG, GIF, WebP, SVG, BMP',
+          'Use Tab completion to navigate to image files'
+        ]
+      },
+      'set-picture': {
+        description: 'Change the image displayed in an existing picture window',
+        usage: 'set-picture [windowID] [imagePath] [fitMode]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the picture window', required: true },
+          { name: 'imagePath', description: 'Path to the new image file', required: true },
+          { name: 'fitMode', description: 'Optional: new scaling mode', required: false }
+        ],
+        examples: [
+          'set-picture viewer1 doors/Squirrel.jpg',
+          'set-picture photo /new/path/image.png contain',
+          'set-picture wallpaper background.jpg cover'
+        ],
+        tips: [
+          'Window must already exist as a picture window',
+          'If fitMode is omitted, current scaling mode is preserved'
+        ]
+      },
+      'set-fit-mode': {
+        description: 'Change the image scaling mode of a picture window',
+        usage: 'set-fit-mode [windowID] [fitMode]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the picture window', required: true },
+          { name: 'fitMode', description: 'Scaling mode: fill/contain/cover/scale-down/none', required: true }
+        ],
+        examples: [
+          'set-fit-mode viewer1 contain',
+          'set-fit-mode photo cover',
+          'set-fit-mode wallpaper none'
+        ],
+        tips: [
+          'fill: stretch to fill window, contain: fit within window, cover: fill window cropping if needed',
+          'scale-down: like contain but never scale up, none: original size'
+        ]
+      },
+      'create-content': {
+        description: 'Create a content window with text or image content and optional blur effect',
+        usage: 'create-content [windowID] [type] [path] [blurAmount] [shouldBlur]',
+        parameters: [
+          { name: 'windowID', description: 'Unique ID for the new content window', required: true },
+          { name: 'type', description: 'Content type: "text" or "image"', required: true },
+          { name: 'path', description: 'Path to content file (optional for text type)', required: false },
+          { name: 'blurAmount', description: 'Blur intensity from 0-50 (default: 10)', required: false },
+          { name: 'shouldBlur', description: 'Whether to apply blur: true/false (default: true)', required: false }
+        ],
+        examples: [
+          'create-content bg1 text',
+          'create-content bg2 image doors/Door.png 20',
+          'create-content bg3 text "" 15 true'
+        ],
+        tips: [
+          'Content windows are designed to work with the lens system',
+          'Blur effect creates a background that lens windows can reveal clearly',
+          'Higher blur values create more pronounced effects'
+        ]
+      },
+      'create-lens': {
+        description: 'Create a lens window that shows clear content from a blurred background window',
+        usage: 'create-lens [lensID] [targetWindowID] [width] [height]',
+        parameters: [
+          { name: 'lensID', description: 'Unique ID for the new lens window', required: true },
+          { name: 'targetWindowID', description: 'ID of the content window to create lens for', required: true },
+          { name: 'width', description: 'Lens width in pixels (default: 300)', required: false },
+          { name: 'height', description: 'Lens height in pixels (default: 200)', required: false }
+        ],
+        examples: [
+          'create-lens lens1 bg1',
+          'create-lens magnifier bg2 400 300',
+          'create-lens viewer bg3 500 400'
+        ],
+        tips: [
+          'Maximum of 3 lens windows can exist simultaneously',
+          'Lens windows show unblurred content from the target window',
+          'Target window should be a content window with blur applied'
+        ]
+      },
+      'set-opacity': {
+        description: 'Set the opacity (transparency) of a window',
+        usage: 'set-opacity [windowID] [opacity]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the target window', required: true },
+          { name: 'opacity', description: 'Opacity value from 0 (transparent) to 1 (opaque)', required: true }
+        ],
+        examples: [
+          'set-opacity window1 0.8',
+          'set-opacity lens1 0.5',
+          'set-opacity viewer 1.0'
+        ],
+        tips: [
+          '0.0 makes the window completely transparent',
+          '1.0 makes the window completely opaque',
+          'Values between create various transparency levels'
+        ]
+      },
+      'set-always-on-top': {
+        description: 'Set whether a window stays above all other windows',
+        usage: 'set-always-on-top [windowID] [true/false] [level]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the target window', required: true },
+          { name: 'alwaysOnTop', description: 'true to keep on top, false to allow normal layering', required: true },
+          { name: 'level', description: 'Optional: stacking level (normal, floating, torn-off-menu, modal-panel, main-menu, status, pop-up-menu, screen-saver)', required: false }
+        ],
+        examples: [
+          'set-always-on-top lens1 true',
+          'set-always-on-top window1 false',
+          'set-always-on-top overlay true floating'
+        ],
+        tips: [
+          'Always-on-top windows remain visible above other applications',
+          'Default level is "normal" if not specified',
+          'Use carefully to avoid blocking user interaction'
+        ]
+      },
+      'update-blur': {
+        description: 'Update the blur amount of a content window',
+        usage: 'update-blur [windowID] [blurAmount]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the content window', required: true },
+          { name: 'blurAmount', description: 'New blur intensity from 0-50', required: true }
+        ],
+        examples: [
+          'update-blur bg1 25',
+          'update-blur content1 0',
+          'update-blur bg2 50'
+        ],
+        tips: [
+          'Only works on content windows created with create-content',
+          '0 removes blur completely, 50 is maximum blur',
+          'Changes affect the background that lens windows reveal'
+        ]
+      },
+      'destroy-lens': {
+        description: 'Destroy a lens system and close the lens window',
+        usage: 'destroy-lens [lensID]',
+        parameters: [
+          { name: 'lensID', description: 'The ID of the lens window to destroy', required: true }
+        ],
+        examples: [
+          'destroy-lens lens1',
+          'destroy-lens magnifier',
+          'destroy-lens viewer'
+        ],
+        tips: [
+          'Completely removes the lens window and its tracking system',
+          'Target content window remains unaffected',
+          'Frees up lens slot for creating new lens windows'
+        ]
+      },
+      'list-lens': {
+        description: 'List all active lens systems',
+        usage: 'list-lens',
+        aliases: ['lens-list'],
+        parameters: [],
+        examples: ['list-lens', 'lens-list'],
+        tips: [
+          'Shows lens ID, target window, and tracking status',
+          'Maximum of 3 lens systems can be active',
+          'Use "lens-info" for detailed information about a specific lens'
+        ]
+      },
+      'lens-list': {
+        description: 'Alias for list-lens - list all active lens systems',
+        usage: 'lens-list',
+        aliases: ['list-lens'],
+        parameters: [],
+        examples: ['lens-list', 'list-lens'],
+        tips: ['This is an alias for the "list-lens" command']
+      },
+      'lens-info': {
+        description: 'View detailed information about a specific lens system',
+        usage: 'lens-info [lensID]',
+        parameters: [
+          { name: 'lensID', description: 'The ID of the lens to inspect', required: true }
+        ],
+        examples: [
+          'lens-info lens1',
+          'lens-info magnifier',
+          'lens-info viewer'
+        ],
+        tips: [
+          'Shows lens properties, target window, and tracking details',
+          'Use "list-lens" first to see available lens IDs'
+        ]
+      },
+      'save-window': {
+        description: 'Save window configuration to a .fenestra file for later restoration',
+        usage: 'save-window [windowID] [filename]',
+        parameters: [
+          { name: 'windowID', description: 'The ID of the window to save', required: true },
+          { name: 'filename', description: 'Optional: custom filename (without extension)', required: false }
+        ],
+        examples: [
+          'save-window window1',
+          'save-window viewer my-config',
+          'save-window lens1 lens-setup'
+        ],
+        tips: [
+          'Files are saved in .fenestra-storage directory',
+          'If no filename provided, uses timestamp naming',
+          'Saves position, size, content, and other window properties'
+        ]
+      },
+      'restore-window': {
+        description: 'Restore a window from a saved .fenestra file',
+        usage: 'restore-window [filePath]',
+        parameters: [
+          { name: 'filePath', description: 'Path to the .fenestra file to restore', required: true }
+        ],
+        examples: [
+          'restore-window .fenestra-storage/window1.fenestra',
+          'restore-window my-config.fenestra',
+          'restore-window "/path/to/saved/window.fenestra"'
+        ],
+        tips: [
+          'Supports both absolute and relative file paths',
+          'Use Tab completion to navigate to .fenestra files',
+          'You can also drag .fenestra files to the terminal',
+          'Recreates window with saved position, size, and content'
+        ]
+      },
+      'list-saved': {
+        description: 'List all saved window configuration files',
+        usage: 'list-saved',
+        parameters: [],
+        examples: ['list-saved'],
+        tips: [
+          'Shows filename, size, and modification date',
+          'Files are stored in .fenestra-storage directory',
+          'Use "restore-window" to load any of these configurations'
+        ]
+      },
+      'delete-saved': {
+        description: 'Delete a saved window configuration file',
+        usage: 'delete-saved [filename]',
+        parameters: [
+          { name: 'filename', description: 'Name of the .fenestra file to delete', required: true }
+        ],
+        examples: [
+          'delete-saved window1.fenestra',
+          'delete-saved my-config.fenestra',
+          'delete-saved old-setup-20241014.fenestra'
+        ],
+        tips: [
+          'Only provide the filename, not the full path',
+          'Files are deleted from .fenestra-storage directory',
+          'Use "list-saved" to see available files to delete',
+          'This action cannot be undone'
+        ]
+      }
+    };
+
+    // Get elements
     const outputEl = document.getElementById('output');
     const inputEl = document.getElementById('command-input');
 
-    // 输出消息到终端
+    // Output message to terminal
     function print(message, type = 'info') {
       const line = document.createElement('div');
       line.className = `output-line ${type}`;
       line.textContent = message;
       outputEl.appendChild(line);
-      
-      // 自动滚动到底部
+
+      // Auto scroll to bottom
       const container = document.getElementById('terminal-container');
       container.scrollTop = container.scrollHeight;
     }
 
-    // 执行命令
-    async function executeCommand(cmdStr) {
-      if (!cmdStr.trim()) return;
+    // Specialized print functions for colored output
+    function printTip(message) {
+      print(message, 'tip');
+    }
 
-      // 显示执行的命令
-      print(`> ${cmdStr}`, 'prompt');
+    function printCommandHelp(message) {
+      print(message, 'command-help');
+    }
 
-      // 添加到历史
-      commandHistory.push(cmdStr);
-      historyIndex = commandHistory.length;
-      currentCommand = '';
+    function printParameter(message) {
+      print(message, 'parameter');
+    }
 
-      // 解析命令
+    function printExample(message) {
+      print(message, 'example');
+    }
+
+    // Parse command with help detection
+    function parseCommandWithHelp(cmdStr) {
       const parts = parseCommand(cmdStr);
       const cmd = parts[0]?.toLowerCase();
       const args = parts.slice(1);
 
-      // 执行本地命令
+      // Check for help flags (--help or -h)
+      if (args.includes('--help') || args.includes('-h')) {
+        return { command: 'help', args: [cmd] };
+      }
+
+      // Check for help command with specific command
+      if (cmd === 'help' && args.length > 0) {
+        return { command: 'help', args: [args[0].toLowerCase()] };
+      }
+
+      return { command: cmd, args: args };
+    }
+
+    // Show help for a specific command
+    function showCommandHelp(commandName) {
+      const helpData = commandHelp[commandName];
+      
+      if (!helpData) {
+        print(`[ERROR] Unknown command: ${commandName}`, 'error');
+        print('', 'info');
+        
+        // Suggest similar commands using fuzzy matching
+        const suggestions = findSimilarCommands(commandName);
+        if (suggestions.length > 0) {
+          printTip('Did you mean one of these commands?');
+          suggestions.forEach(suggestion => {
+            print(`  ${suggestion}`, 'info');
+          });
+        } else {
+          printTip('Use "help" to see all available commands');
+        }
+        return;
+      }
+
+      // Display command help with colored formatting
+      printCommandHelp(`--- Help for "${commandName}" ---`);
+      print('', 'info');
+      
+      // Description
+      print(`Description: ${helpData.description}`, 'info');
+      print('', 'info');
+      
+      // Usage
+      printParameter(`Usage: ${helpData.usage}`);
+      print('', 'info');
+      
+      // Aliases (if any)
+      if (helpData.aliases && helpData.aliases.length > 0) {
+        printParameter(`Aliases: ${helpData.aliases.join(', ')}`);
+        print('', 'info');
+      }
+      
+      // Parameters
+      if (helpData.parameters && helpData.parameters.length > 0) {
+        printParameter('Parameters:');
+        helpData.parameters.forEach(param => {
+          const required = param.required ? '(required)' : '(optional)';
+          print(`  ${param.name} ${required} - ${param.description}`, 'info');
+        });
+        print('', 'info');
+      }
+      
+      // Examples
+      if (helpData.examples && helpData.examples.length > 0) {
+        printParameter('Examples:');
+        helpData.examples.forEach(example => {
+          printExample(`  ${example}`);
+        });
+        print('', 'info');
+      }
+      
+      // Tips
+      if (helpData.tips && helpData.tips.length > 0) {
+        printParameter('Tips:');
+        helpData.tips.forEach(tip => {
+          printTip(`  ${tip}`);
+        });
+      }
+    }
+
+    // Find similar commands using enhanced fuzzy matching
+    function findSimilarCommands(input) {
+      const allCommands = Object.keys(commandHelp);
+      const suggestions = [];
+      
+      // Calculate similarity scores for all commands
+      const scoredCommands = allCommands.map(cmd => ({
+        command: cmd,
+        score: calculateCommandSimilarity(input.toLowerCase(), cmd.toLowerCase())
+      }));
+      
+      // Sort by similarity score (higher is better)
+      scoredCommands.sort((a, b) => b.score - a.score);
+      
+      // Filter commands with reasonable similarity scores
+      const threshold = 0.3; // Minimum similarity threshold
+      const similarCommands = scoredCommands
+        .filter(item => item.score >= threshold)
+        .slice(0, 5) // Return top 5 suggestions
+        .map(item => item.command);
+      
+      return similarCommands;
+    }
+
+    // Calculate similarity between input and command using multiple algorithms
+    function calculateCommandSimilarity(input, command) {
+      if (input === command) return 1.0;
+      if (input.length === 0 || command.length === 0) return 0.0;
+      
+      let score = 0;
+      
+      // 1. Exact prefix match (highest weight)
+      if (command.startsWith(input)) {
+        score += 0.8;
+      }
+      
+      // 2. Contains match
+      if (command.includes(input)) {
+        score += 0.6;
+      }
+      
+      // 3. Levenshtein distance similarity
+      const levenshteinSimilarity = 1 - (levenshteinDistance(input, command) / Math.max(input.length, command.length));
+      score += levenshteinSimilarity * 0.4;
+      
+      // 4. Character frequency similarity
+      const charSimilarity = calculateCharacterSimilarity(input, command);
+      score += charSimilarity * 0.3;
+      
+      // 5. Length similarity bonus
+      const lengthDiff = Math.abs(input.length - command.length);
+      const maxLength = Math.max(input.length, command.length);
+      const lengthSimilarity = 1 - (lengthDiff / maxLength);
+      score += lengthSimilarity * 0.2;
+      
+      // 6. Common subsequence bonus
+      const subsequenceLength = longestCommonSubsequence(input, command);
+      const subsequenceSimilarity = subsequenceLength / Math.max(input.length, command.length);
+      score += subsequenceSimilarity * 0.3;
+      
+      // Normalize score to 0-1 range
+      return Math.min(score, 1.0);
+    }
+
+    // Calculate Levenshtein distance between two strings
+    function levenshteinDistance(str1, str2) {
+      const matrix = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null));
+      
+      for (let i = 0; i <= str1.length; i++) matrix[0][i] = i;
+      for (let j = 0; j <= str2.length; j++) matrix[j][0] = j;
+      
+      for (let j = 1; j <= str2.length; j++) {
+        for (let i = 1; i <= str1.length; i++) {
+          const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1;
+          matrix[j][i] = Math.min(
+            matrix[j][i - 1] + 1,     // deletion
+            matrix[j - 1][i] + 1,     // insertion
+            matrix[j - 1][i - 1] + indicator // substitution
+          );
+        }
+      }
+      
+      return matrix[str2.length][str1.length];
+    }
+
+    // Calculate character frequency similarity
+    function calculateCharacterSimilarity(str1, str2) {
+      const freq1 = {};
+      const freq2 = {};
+      
+      for (let char of str1) {
+        freq1[char] = (freq1[char] || 0) + 1;
+      }
+      
+      for (let char of str2) {
+        freq2[char] = (freq2[char] || 0) + 1;
+      }
+      
+      const allChars = new Set([...Object.keys(freq1), ...Object.keys(freq2)]);
+      let similarity = 0;
+      
+      for (let char of allChars) {
+        const f1 = freq1[char] || 0;
+        const f2 = freq2[char] || 0;
+        similarity += Math.min(f1, f2);
+      }
+      
+      return similarity / Math.max(str1.length, str2.length);
+    }
+
+    // Find longest common subsequence length
+    function longestCommonSubsequence(str1, str2) {
+      const m = str1.length;
+      const n = str2.length;
+      const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+      
+      for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+          if (str1[i - 1] === str2[j - 1]) {
+            dp[i][j] = dp[i - 1][j - 1] + 1;
+          } else {
+            dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+          }
+        }
+      }
+      
+      return dp[m][n];
+    }
+
+    // Execute command
+    async function executeCommand(cmdStr) {
+      if (!cmdStr.trim()) return;
+
+      // Display executed command
+      print(`> ${cmdStr}`, 'prompt');
+
+      // Add to history
+      commandHistory.push(cmdStr);
+      historyIndex = commandHistory.length;
+      currentCommand = '';
+
+      // Parse command with help detection
+      const parsed = parseCommandWithHelp(cmdStr);
+      const cmd = parsed.command;
+      const args = parsed.args;
+
+      // Execute local commands
       if (cmd === 'help') {
-        showHelp();
+        if (args.length > 0) {
+          showCommandHelp(args[0]);
+        } else {
+          showHelp();
+        }
       } else if (cmd === 'clear') {
         clearTerminal();
       } else {
-        // 发送到主进程处理
+        // Send to main process for handling
         try {
           const result = await window.electronAPI.executeTerminalCommand(cmd, args);
           if (result.success) {
@@ -195,7 +1331,7 @@
       }
     }
 
-    // 解析命令（支持引号）
+    // Parse command (supports quotes)
     function parseCommand(str) {
       const parts = [];
       let current = '';
@@ -204,7 +1340,7 @@
 
       for (let i = 0; i < str.length; i++) {
         const char = str[i];
-        
+
         if ((char === '"' || char === "'") && (!inQuotes || char === quoteChar)) {
           if (inQuotes) {
             inQuotes = false;
@@ -230,88 +1366,229 @@
       return parts;
     }
 
-    // 显示帮助信息
+    // Display help information
     function showHelp() {
-      print('--- 可用命令 ---', 'info');
+      printCommandHelp('--- Available Commands ---');
       print('', 'info');
-      print('基础命令:', 'info');
-      print('  help                              - 显示此帮助信息', 'info');
-      print('  clear                             - 清空终端', 'info');
-      print('  list, ls                          - 列出所有窗口', 'info');
-      print('  getWindows                        - 获取所有窗口详细信息', 'info');
-      print('  info [窗口ID]                     - 查看窗口详细信息', 'info');
+      printCommandHelp('Getting Help:');
+      print('  help                              - Show this help information', 'info');
+      print('  help [command]                    - Get detailed help for a specific command', 'info');
+      print('  [command] --help                  - Alternative way to get command help', 'info');
+      print('  [command] -h                      - Short form of --help flag', 'info');
       print('', 'info');
-      print('窗口操作命令:', 'info');
-      print('  get-title [ID]                    - 获取窗口标题', 'info');
-      print('  set-title [ID] "标题"             - 设置窗口标题', 'info');
-      print('  set-size [ID] [宽度] [高度]       - 设置窗口大小', 'info');
-      print('  set-position [ID] [x] [y]         - 设置窗口位置', 'info');
-      print('  set-resizable [ID] [true/false]   - 设置是否可调整大小', 'info');
-      print('  set-visibility [ID] [true/false]  - 设置窗口可见性', 'info');
-      print('  show [ID]                         - 显示窗口', 'info');
-      print('  hide [ID]                         - 隐藏窗口', 'info');
-      print('  reload-html [ID] [htmlPath]       - 重新加载HTML文件', 'info');
+      printCommandHelp('Basic Commands:');
+      print('  clear                             - Clear terminal', 'info');
+      print('  list, ls                          - List all windows', 'info');
+      print('  getWindows                        - Get detailed information for all windows', 'info');
+      print('  info [windowID]                   - View detailed window information', 'info');
       print('', 'info');
-      print('图片窗口命令:', 'info');
-      print('  create-picture [ID] [路径] [模式] - 创建图片窗口', 'info');
-      print('      模式: fill/contain/cover/scale-down/none', 'info');
-      print('  set-picture [ID] [路径] [模式]    - 更改窗口显示的图片', 'info');
-      print('  set-fit-mode [ID] [模式]          - 更改图片缩放模式', 'info');
+      printCommandHelp('Window Operations:');
+      print('  get-title [ID]                    - Get window title', 'info');
+      print('  set-title [ID] "title"            - Set window title', 'info');
+      print('  set-size [ID] [width] [height]    - Set window size', 'info');
+      print('  set-position [ID] [x] [y]         - Set window position', 'info');
+      print('  set-resizable [ID] [true/false]   - Set whether window is resizable', 'info');
+      print('  set-visibility [ID] [true/false]  - Set window visibility', 'info');
+      print('  show [ID]                         - Show window', 'info');
+      print('  hide [ID]                         - Hide window', 'info');
+      print('  reload-html [ID] [htmlPath]       - Reload HTML file', 'info');
       print('', 'info');
-      print('镜头系统命令:', 'info');
-      print('  create-content [ID] [类型] [路径] [模糊度] [是否模糊]', 'info');
-      print('      - 创建内容窗口（text/image，模糊度0-50）', 'info');
-      print('  create-lens [镜头ID] [目标ID] [宽] [高]', 'info');
-      print('      - 创建镜头窗口（最多3个）', 'info');
-      print('  set-opacity [ID] [0-1]            - 设置窗口透明度', 'info');
-      print('  set-always-on-top [ID] [true/false] - 设置窗口置顶', 'info');
-      print('  update-blur [ID] [0-50]           - 更新内容模糊度', 'info');
-      print('  destroy-lens [镜头ID]             - 销毁镜头系统', 'info');
-      print('  list-lens, lens-list              - 列出所有镜头', 'info');
-      print('  lens-info [镜头ID]                - 查看镜头详情', 'info');
+      printCommandHelp('Picture Window Commands:');
+      print('  create-picture [ID] [path] [mode] - Create picture window', 'info');
+      printParameter('      modes: fill/contain/cover/scale-down/none');
+      print('  set-picture [ID] [path] [mode]    - Change window displayed image', 'info');
+      print('  set-fit-mode [ID] [mode]          - Change image scaling mode', 'info');
       print('', 'info');
-      print('提示: 使用 Tab 键自动补全命令和窗口ID', 'info');
-      print('提示: 使用上下箭头浏览命令历史', 'info');
-      print('提示: 图片路径支持绝对路径和相对路径', 'info');
-      print('提示: 镜头窗口可显示底层模糊内容的清晰版本', 'info');
+      printCommandHelp('Lens System Commands:');
+      print('  create-content [ID] [type] [path] [blur] [shouldBlur]', 'info');
+      printParameter('      - Create content window (text/image, blur 0-50)');
+      print('  create-lens [lensID] [targetID] [width] [height]', 'info');
+      printParameter('      - Create lens window (maximum 3)');
+      print('  set-opacity [ID] [0-1]            - Set window opacity', 'info');
+      print('  set-always-on-top [ID] [true/false] - Set window always on top', 'info');
+      print('  update-blur [ID] [0-50]           - Update content blur level', 'info');
+      print('  destroy-lens [lensID]             - Destroy lens system', 'info');
+      print('  list-lens, lens-list              - List all lenses', 'info');
+      print('  lens-info [lensID]                - View lens details', 'info');
+      print('', 'info');
+      printCommandHelp('Window Storage Commands:');
+      print('  save-window [ID] [filename]       - Save window configuration to file', 'info');
+      printExample('      example: save-window window1 my-config');
+      printParameter('      filename optional, defaults to timestamp naming');
+      print('  restore-window [filePath]         - Restore window from file', 'info');
+      printExample('      example: restore-window .fenestra-storage/window1.fenestra');
+      printParameter('      supports dragging .fenestra files to terminal');
+      print('  list-saved                        - List all saved window files', 'info');
+      print('  delete-saved [filename]           - Delete saved window file', 'info');
+      printExample('      example: delete-saved window1-20241014.fenestra');
+      print('', 'info');
+      printTip('Tip: Use "help [command]" to get detailed help for any specific command');
+      printTip('Tip: Commands support --help and -h flags (e.g., "set-title --help")');
+      printTip('Tip: Use Tab key to autocomplete commands and file paths');
+      printTip('Tip: Use up/down arrows to browse command history');
+      printTip('Tip: Image paths support both absolute and relative paths');
+      printTip('Tip: Lens windows can display clear versions of blurred background content');
+      printTip('Tip: Window configuration files are saved in .fenestra-storage directory');
+      printTip('Tip: You can drag .fenestra files to terminal for quick window restoration');
     }
 
-    // 清空终端
+    // Clear terminal
     function clearTerminal() {
       outputEl.innerHTML = '';
     }
 
-    // 自动补全
-    function autocomplete(input) {
-      const parts = input.trim().split(/\s+/);
+    // Display completion matches with enhanced formatting
+    function displayCompletionMatches(matches, type, result = {}) {
+      if (matches.length === 0) return;
+
+      const matchType = type === 'command' ? 'commands' : 'files';
+      print(`Available ${matchType}:`, 'info');
+
+      // Sort matches: directories first (with /), then files
+      const sortedMatches = [...matches].sort((a, b) => {
+        const aIsDir = a.endsWith('/');
+        const bIsDir = b.endsWith('/');
+        
+        if (aIsDir && !bIsDir) return -1;
+        if (!aIsDir && bIsDir) return 1;
+        return a.localeCompare(b, undefined, { sensitivity: 'base' });
+      });
+
+      // Display matches in columns for better readability
+      const maxLength = Math.max(...sortedMatches.map(m => m.length));
+      const terminalWidth = 80;
+      const columns = Math.max(1, Math.floor(terminalWidth / (maxLength + 3)));
+
+      for (let i = 0; i < sortedMatches.length; i += columns) {
+        const row = sortedMatches.slice(i, i + columns);
+        const paddedRow = row.map(match => {
+          // Add visual indicators
+          let displayMatch = match;
+          
+          // Highlight directories with different color
+          if (match.endsWith('/')) {
+            // Directory indicator is already in the name
+            displayMatch = match;
+          }
+          
+          // Handle files with special characters
+          if (type === 'file' && /[\s'"\\&|<>(){}[\]$`!?*;]/.test(match)) {
+            // Add subtle indicator for files with special characters
+            displayMatch = match;
+          }
+          
+          return displayMatch.padEnd(maxLength + 3);
+        });
+        print(paddedRow.join(''), 'info');
+      }
+
+      // Show additional information
+      if (result.totalMatches && result.totalMatches > matches.length) {
+        print(`(Showing ${matches.length} of ${result.totalMatches} matches)`, 'info');
+        printTip('Type more characters to narrow down results');
+      } else if (matches.length > 10) {
+        print(`(${matches.length} matches total)`, 'info');
+      }
       
-      if (parts.length === 1) {
-        // 补全命令
-        const matches = commands.filter(cmd => cmd.startsWith(parts[0].toLowerCase()));
-        return matches.length === 1 ? matches[0] : null;
-      } else {
-        // 补全窗口ID（需要从主进程获取）
-        return null;
+      // Show performance or access messages
+      if (result.message && result.message.includes('大目录')) {
+        printTip('Large directory detected - completion may be slower');
+      }
+      
+      // Show tips for special characters
+      const hasSpecialChars = matches.some(match => /[\s'"\\&|<>(){}[\]$`!?*;]/.test(match));
+      if (hasSpecialChars && type === 'file') {
+        printTip('Files with spaces or special characters will be automatically quoted');
       }
     }
 
-    // 输入事件监听
+    // Input event listeners
     inputEl.addEventListener('keydown', async (e) => {
-      // Enter - 执行命令
+      // Enter - execute command
       if (e.key === 'Enter') {
         const cmd = inputEl.value;
         inputEl.value = '';
         await executeCommand(cmd);
       }
-      // Tab - 自动补全
+      // Tab - auto completion
       else if (e.key === 'Tab') {
         e.preventDefault();
-        const completion = autocomplete(inputEl.value);
-        if (completion) {
-          inputEl.value = completion + ' ';
+
+        const cursorPosition = inputEl.selectionStart;
+        const inputValue = inputEl.value;
+
+        try {
+          const result = await autoCompleter.completeCommand(inputValue, cursorPosition);
+
+          if (result.success && result.completed) {
+            // Single completion found - apply it
+            inputEl.value = result.newValue;
+            inputEl.setSelectionRange(result.newCursorPosition, result.newCursorPosition);
+          } else if (result.success && result.matches && result.matches.length > 0) {
+            // Multiple completions found - display them and apply common prefix if available
+            displayCompletionMatches(result.matches, result.type, result);
+            
+            // Show additional info for large result sets
+            if (result.hasMore) {
+              print(`(Showing ${result.matches.length} of ${result.totalMatches} matches)`, 'info');
+            }
+            
+            // Try to complete common prefix for multiple matches
+            if (result.commonPrefix && result.commonPrefix.length > 0) {
+              const beforeCursor = inputValue.substring(0, cursorPosition);
+              const afterCursor = inputValue.substring(cursorPosition);
+              const parts = parseCommand(beforeCursor);
+              
+              if (result.type === 'file') {
+                // Replace the current partial path with the common prefix
+                const partsBeforeCurrent = parts.slice(0, -1);
+                const newParts = [...partsBeforeCurrent, result.commonPrefix];
+                const newValue = newParts.join(' ') + afterCursor;
+                const newCursorPosition = newParts.join(' ').length;
+                
+                inputEl.value = newValue;
+                inputEl.setSelectionRange(newCursorPosition, newCursorPosition);
+              } else if (result.type === 'command' && parts.length <= 1) {
+                // Replace the partial command with the common prefix
+                const newValue = result.commonPrefix + afterCursor;
+                const newCursorPosition = result.commonPrefix.length;
+                
+                inputEl.value = newValue;
+                inputEl.setSelectionRange(newCursorPosition, newCursorPosition);
+              }
+            }
+          } else {
+            // Handle different types of completion failures
+            if (result.error) {
+              // Specific error occurred
+              if (result.error === 'EACCES') {
+                print('Permission denied - cannot access directory', 'error');
+              } else if (result.error === 'ENOENT') {
+                print('Path does not exist', 'error');
+              } else if (result.error === 'ENOTDIR') {
+                print('Path is not a directory', 'error');
+              } else {
+                print(result.message || 'Auto-completion failed', 'error');
+              }
+            } else {
+              // No completions found
+              print(result.message || 'No completions available', 'info');
+            }
+          }
+        } catch (error) {
+          console.error('Auto-completion error:', error);
+          
+          // Provide user-friendly error messages
+          if (error.message.includes('timeout')) {
+            print('Auto-completion timed out - directory may be too large', 'error');
+          } else if (error.message.includes('network')) {
+            print('Auto-completion service unavailable', 'error');
+          } else {
+            print('Auto-completion failed - please try again', 'error');
+          }
         }
       }
-      // 上箭头 - 上一条命令
+      // Up arrow - previous command
       else if (e.key === 'ArrowUp') {
         e.preventDefault();
         if (historyIndex > 0) {
@@ -322,7 +1599,7 @@
           inputEl.value = commandHistory[historyIndex];
         }
       }
-      // 下箭头 - 下一条命令
+      // Down arrow - next command
       else if (e.key === 'ArrowDown') {
         e.preventDefault();
         if (historyIndex < commandHistory.length) {
@@ -336,14 +1613,140 @@
       }
     });
 
-    // 保持焦点在输入框
+    // Keep focus on input box
     document.addEventListener('click', () => {
       inputEl.focus();
     });
 
-    // 欢迎信息
+    // Drag and drop functionality
+    const terminalContainer = document.getElementById('terminal-container');
+    const dragFeedback = document.getElementById('drag-feedback');
+    let dragCounter = 0;
+
+    // Prevent default drag behaviors on the entire document
+    document.addEventListener('dragover', (e) => {
+      e.preventDefault();
+    });
+
+    document.addEventListener('drop', (e) => {
+      e.preventDefault();
+    });
+
+    // Handle drag enter
+    terminalContainer.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      dragCounter++;
+
+      if (dragCounter === 1) {
+        terminalContainer.classList.add('drag-over');
+        dragFeedback.style.display = 'block';
+
+        // Check if the dragged item contains files
+        const hasFiles = e.dataTransfer.types.includes('Files');
+        if (!hasFiles) {
+          dragFeedback.textContent = 'Only files are supported';
+          dragFeedback.classList.add('drag-error');
+        } else {
+          dragFeedback.textContent = 'Drop .fenestra file to restore window';
+          dragFeedback.classList.remove('drag-error');
+        }
+      }
+    });
+
+    // Handle drag over
+    terminalContainer.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    });
+
+    // Handle drag leave
+    terminalContainer.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      dragCounter--;
+
+      if (dragCounter === 0) {
+        terminalContainer.classList.remove('drag-over');
+        dragFeedback.style.display = 'none';
+        dragFeedback.classList.remove('drag-error');
+      }
+    });
+
+    // Handle file drop
+    terminalContainer.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dragCounter = 0;
+
+      // Remove visual feedback
+      terminalContainer.classList.remove('drag-over');
+      dragFeedback.style.display = 'none';
+      dragFeedback.classList.remove('drag-error');
+
+      const files = Array.from(e.dataTransfer.files);
+
+      if (files.length === 0) {
+        print('[ERROR] No files detected in drop operation', 'error');
+        return;
+      }
+
+      if (files.length > 1) {
+        print('[ERROR] Please drop only one file at a time', 'error');
+        return;
+      }
+
+      const file = files[0];
+
+      // Validate file extension
+      if (!file.name.toLowerCase().endsWith('.fenestra')) {
+        print(`[ERROR] Invalid file type: ${file.name}. Only .fenestra files are supported`, 'error');
+        return;
+      }
+
+      // Extract file path and populate command input
+      const filePath = file.path || file.name;
+
+      try {
+        // Validate that the file is readable and contains valid JSON
+        await validateFenestraFile(filePath);
+
+        // Populate the command input with restore command
+        const restoreCommand = `restore-window "${filePath}"`;
+        inputEl.value = restoreCommand;
+
+        print(`[INFO] File dropped: ${file.name}`, 'info');
+        print('[INFO] Press Enter to restore the window, or edit the command as needed', 'info');
+
+        // Focus the input for immediate execution
+        inputEl.focus();
+
+      } catch (error) {
+        print(`[ERROR] Invalid .fenestra file: ${error.message}`, 'error');
+      }
+    });
+
+    // Function to validate .fenestra file
+    async function validateFenestraFile(filePath) {
+      try {
+        // Use the electron API to read and validate the file
+        const result = await window.electronAPI.validateFenestraFile(filePath);
+
+        if (!result.success) {
+          throw new Error(result.message || 'File validation failed');
+        }
+
+        return result.data;
+      } catch (error) {
+        // If the API doesn't exist yet, do basic validation
+        if (error.message.includes('validateFenestraFile is not a function')) {
+          // Basic file extension check already done above
+          return true;
+        }
+        throw error;
+      }
+    }
+
+    // Welcome message
     print('', 'info');
   </script>
 </body>
-</html>
 
+</html>

@@ -2,7 +2,7 @@ import { Worker, workerData, parentPort } from 'worker_threads';
 import './logger.js'; // 导入日志系统
 
 // 设置日志级别
-// global.logLevel = "info"; // 可以改为 "log", "warn", "error", "none"
+// global.logLevel = "debug"; // 可以改为 "debug", "log", "warn", "error", "none"
 
 // 重叠计算函数
 function rectOverlapRatio(a, b) {
