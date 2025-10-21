@@ -1,0 +1,46 @@
+{
+  "version": "1.0",
+  "timestamp": "2025-10-16T17:36:12.290Z",
+  "metadata": {
+    "originalId": "door3",
+    "windowType": "door",
+    "description": "door window: Back Door (locked)"
+  },
+  "windowConfig": {
+    "id": "door3",
+    "title": "Back Door (locked)",
+    "bounds": {
+      "x": 160,
+      "y": 160,
+      "width": 220,
+      "height": 320
+    },
+    "properties": {
+      "resizable": true,
+      "transparent": false,
+      "alwaysOnTop": false,
+      "opacity": 1,
+      "visible": true,
+      "minimized": false,
+      "maximized": false
+    }
+  },
+  "contentConfig": {
+    "htmlName": "pictureViewer.html",
+    "otherContents": {
+      "fitMode": "fill"
+    },
+    "type": "text",
+    "path": "doors/Door.png",
+    "surfaceContent": "",
+    "hiddenContent": "",
+    "blurAmount": 0,
+    "blurred": false
+  },
+  "specialConfig": {
+    "pictureSettings": {
+      "imagePath": "doors/Door.png",
+      "fitMode": "fill"
+    }
+  }
+}

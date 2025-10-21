@@ -1,0 +1,21 @@
+{
+  "enabled": true,
+  "name": "Auto Git Commit",
+  "description": "Use the MCP Server Given. Automatically commits code changes to GitHub. If on 'initial' branch, creates a new branch first. Otherwise commits to current branch.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "*.js",
+      "*.mjs",
+      "*.html",
+      "*.md",
+      "*.json",
+      "src/**/*"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Check the current git branch. If the branch is 'initial', create a new branch with a descriptive name based on the changes made, then commit the changes to that new branch. If the branch is not 'initial', commit the changes directly to the current branch. Use appropriate commit messages that describe the changes made."
+  }
+}

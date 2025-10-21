@@ -387,20 +387,37 @@ export function createVideo() {
  * @param {string} doorId - 门ID
  * @param {string} title - 门标题
  * @param {boolean} encrypt - 是否加密
+ * @param {string} otherContents - 自定义HTML内容（可选）
  * @returns {BrowserWindow} 门窗口
  */
-export function createDoor(doorId = 'door', title = null, encrypt = false) {
+export function createDoor(doorId = 'door', title = null, encrypt = false, otherContents = null) {
   const doorTitle = title || (encrypt ? `Door (encrypted)` : `Door (unlocked)`);
   console.log(`[WINDOW] 创建门窗口（${encrypt ? '加密' : '普通'}状态）`);
   
+  // 确定要使用的HTML内容，保持向后兼容性
+  const htmlContent = otherContents || "pictureViewer.html?imagePath=doors/Door.png&fitMode=fill";
+  
+  // 如果使用自定义内容，需要通过查询参数传递doorId
+  let finalContent;
+  if (otherContents) {
+    // 检查是否已包含查询参数
+    if (otherContents.includes('?')) {
+      finalContent = `${otherContents}&doorId=${encodeURIComponent(doorId)}`;
+    } else {
+      finalContent = `${otherContents}?doorId=${encodeURIComponent(doorId)}`;
+    }
+  } else {
+    // 使用默认内容，已包含所需参数
+    finalContent = htmlContent;
+  }
+  
   // 使用自动偏移，不指定固定位置
-  // 使用 pictureViewer.html 并传递默认门图片路径
   const win = createWindow(doorId, { 
     width: 220, 
     height: 320, 
     title: doorTitle,
     resizable: true,
-    otherContents: "pictureViewer.html?imagePath=doors/Door.png&fitMode=fill",
+    otherContents: finalContent,
   });
   
   console.log('[WINDOW] 门窗口创建完成 ' + win.getContentSize());
@@ -507,11 +524,10 @@ export function setFitMode(windowId, fitMode) {
  * @param {string} title - 钥匙标题
  * @param {boolean} encrypt - 是否加密
  * @param {Array} relatedDoors - 关联的门ID数组
- * @param {boolean} resizable - 是否可调整大小
- * @param {string} otherContents - 其他内容
+ * @param {string} otherContents - 自定义HTML内容（可选）
  * @returns {BrowserWindow} 钥匙窗口
  */
-export function createKey(keyId = 'key', title = null, encrypt = false, relatedDoors = []) {
+export function createKey(keyId = 'key', title = null, encrypt = false, relatedDoors = [], otherContents = null) {
   const keyTitle = title || (encrypt ? `Key (encrypted)` : `Key (master)`);
   console.log(`[WINDOW] 创建钥匙窗口（${encrypt ? '加密' : '普通'}）`);
   
@@ -521,12 +537,30 @@ export function createKey(keyId = 'key', title = null, encrypt = false, relatedD
 
   const suitablePosition = findSuitablePositionForKey(keyId, keyWidth, keyHeight, keyDoorMaxOverlap);
   
+  // 确定要使用的HTML内容，保持向后兼容性
+  const htmlContent = otherContents || "index.html";
+  
+  // 如果使用自定义内容，需要通过查询参数传递keyId
+  let finalContent;
+  if (otherContents) {
+    // 检查是否已包含查询参数
+    if (otherContents.includes('?')) {
+      finalContent = `${otherContents}&keyId=${encodeURIComponent(keyId)}`;
+    } else {
+      finalContent = `${otherContents}?keyId=${encodeURIComponent(keyId)}`;
+    }
+  } else {
+    // 使用默认内容，通过createWindow的机制自动传递id参数
+    finalContent = htmlContent;
+  }
+  
   const win = createWindow(keyId, { 
     width: keyWidth, 
     height: keyHeight, 
     x: suitablePosition.x,
     y: suitablePosition.y,
-    title: keyTitle 
+    title: keyTitle,
+    otherContents: finalContent
   });
   
   console.log('[WINDOW] 钥匙窗口创建完成');
