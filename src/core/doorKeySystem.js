@@ -8,6 +8,11 @@ const keyDoorRelations = new Map(); // keyId -> Set of doorIds
 const encryptedItems = new Set(); // 存储加密的物品ID
 const doorStates = new Map(); // doorId -> { isOpen: boolean, lastKeyUsed: string }
 
+// 消息配置系统
+const globalMessages = new Map(); // messageType -> template
+const doorMessages = new Map(); // doorId -> Map(messageType -> template)
+const keyMessages = new Map(); // keyId -> Map(messageType -> template)
+
 /**
  * 建立双向关系
  * @param {string} doorId - 门ID
@@ -62,11 +67,31 @@ export function handleFailedOpen(doorId, keyId) {
   const keyWin = getWindow(keyId);
   
   if (doorWin) {
+    // 确定拒绝原因
+    const isDoorEncrypted = encryptedItems.has(doorId);
+    const isKeyEncrypted = encryptedItems.has(keyId);
+    let reason = 'insufficient permissions';
+    
+    if (!isDoorEncrypted) {
+      reason = 'door is not encrypted but access still denied';
+    } else if (!isKeyEncrypted) {
+      reason = 'key is not encrypted for encrypted door';
+    } else {
+      const authorizedKeys = doorKeyRelations.get(doorId);
+      if (!authorizedKeys || !authorizedKeys.has(keyId)) {
+        reason = 'key is not authorized for this door';
+      }
+    }
+    
+    // 获取自定义访问拒绝消息
+    const variables = { doorId, keyId, reason };
+    const accessDeniedMessage = getFormattedMessage('access_denied', variables, 'This key cannot open this door!');
+    
     dialog.showMessageBox(doorWin, {
       type: 'error',
-      title: '开门失败',
-      message: '这把钥匙无法打开这扇门！',
-      detail: '钥匙和门不匹配，或者权限不足。'
+      title: 'Access Denied',
+      message: accessDeniedMessage,
+      detail: 'The key and door do not match, or insufficient permissions.'
     });
   }
   
@@ -178,9 +203,13 @@ export function handleDoorToggle(doorId, keyId) {
     // 更新状态
     doorStates.set(doorId, { isOpen: true, lastKeyUsed: keyId });
     
+    // 获取自定义开门消息
+    const variables = { doorId, keyId };
+    const openMessage = getFormattedMessage('door_opened', variables, 'Door opened!');
+    
     dialog.showMessageBox(doorWin, { 
       type: 'info', 
-      message: 'Door opened!' 
+      message: openMessage 
     }).then(() => {
       // 成功对话框已关闭
     });
@@ -190,9 +219,14 @@ export function handleDoorToggle(doorId, keyId) {
     // 关门
     doorWin.setTitle(currentTitle.replace('(opened)', '(locked)').replace('(opened)', '(encrypted)'));
     doorStates.set(doorId, { isOpen: false, lastKeyUsed: keyId });
+    
+    // 获取自定义关门消息
+    const variables = { doorId, keyId };
+    const closeMessage = getFormattedMessage('door_closed', variables, 'Door closed!');
+    
     dialog.showMessageBox(doorWin, {
       type: 'info',
-      message: 'Door closed!'
+      message: closeMessage
     });
     console.log(`[DOOR] ${doorId} 已关闭`);
   }
@@ -252,5 +286,249 @@ export function getRelationsDebugInfo() {
     encryptedItems: Array.from(encryptedItems),
     doorStates: Object.fromEntries(doorStates)
   };
+}
+
+// ==================== 消息配置系统 ====================
+
+/**
+ * 解析消息模板并替换变量
+ * @param {string} template - 消息模板
+ * @param {Object} variables - 变量对象
+ * @returns {string} 解析后的消息
+ */
+function parseMessageTemplate(template, variables = {}) {
+  if (!template || typeof template !== 'string') {
+    console.warn('[MESSAGE] Invalid template provided:', template);
+    return template || '';
+  }
+  
+  try {
+    return template.replace(/\{(\w+)\}/g, (match, varName) => {
+      if (variables.hasOwnProperty(varName)) {
+        return variables[varName];
+      }
+      console.warn(`[MESSAGE] Variable '${varName}' not found in template: ${template}`);
+      return match; // 保留原始占位符
+    });
+  } catch (error) {
+    console.error('[MESSAGE] Error parsing template:', template, error);
+    return template;
+  }
+}
+
+/**
+ * 获取消息模板（按优先级：key > door > global）
+ * @param {string} messageType - 消息类型
+ * @param {string} doorId - 门ID
+ * @param {string} keyId - 钥匙ID
+ * @returns {string|null} 消息模板或null
+ */
+function getMessageTemplate(messageType, doorId = null, keyId = null) {
+  // 优先级1: 钥匙特定消息
+  if (keyId && keyMessages.has(keyId)) {
+    const keyMsgMap = keyMessages.get(keyId);
+    if (keyMsgMap.has(messageType)) {
+      return keyMsgMap.get(messageType);
+    }
+  }
+  
+  // 优先级2: 门特定消息
+  if (doorId && doorMessages.has(doorId)) {
+    const doorMsgMap = doorMessages.get(doorId);
+    if (doorMsgMap.has(messageType)) {
+      return doorMsgMap.get(messageType);
+    }
+  }
+  
+  // 优先级3: 全局消息
+  if (globalMessages.has(messageType)) {
+    return globalMessages.get(messageType);
+  }
+  
+  return null;
+}
+
+/**
+ * 获取格式化的消息
+ * @param {string} messageType - 消息类型
+ * @param {Object} variables - 变量对象
+ * @param {string} defaultMessage - 默认消息
+ * @returns {string} 格式化后的消息
+ */
+function getFormattedMessage(messageType, variables = {}, defaultMessage = '') {
+  const template = getMessageTemplate(messageType, variables.doorId, variables.keyId);
+  
+  if (template) {
+    return parseMessageTemplate(template, variables);
+  }
+  
+  return defaultMessage;
+}
+
+/**
+ * 验证消息模板
+ * @param {string} template - 消息模板
+ * @returns {boolean} 是否有效
+ */
+function validateMessageTemplate(template) {
+  if (!template || typeof template !== 'string') {
+    return false;
+  }
+  
+  // 检查是否包含有效的变量占位符格式
+  const validVariables = ['doorId', 'keyId', 'progress', 'total', 'nextKey', 'reason'];
+  const variableMatches = template.match(/\{(\w+)\}/g);
+  
+  if (variableMatches) {
+    for (const match of variableMatches) {
+      const varName = match.slice(1, -1); // 移除大括号
+      if (!validVariables.includes(varName)) {
+        console.warn(`[MESSAGE] Unknown variable '${varName}' in template: ${template}`);
+        console.warn(`[MESSAGE] Valid variables are: ${validVariables.join(', ')}`);
+      }
+    }
+  }
+  
+  return true;
+}
+
+/**
+ * 设置全局消息模板
+ * @param {string} messageType - 消息类型
+ * @param {string} template - 消息模板
+ */
+export function setGlobalMessage(messageType, template) {
+  if (!messageType || typeof messageType !== 'string') {
+    console.error('[MESSAGE] Invalid messageType provided to setGlobalMessage:', messageType);
+    return;
+  }
+  
+  if (!validateMessageTemplate(template)) {
+    console.error('[MESSAGE] Invalid template provided to setGlobalMessage:', template);
+    return;
+  }
+  
+  globalMessages.set(messageType, template);
+  console.log(`[MESSAGE] Global message set for '${messageType}': ${template}`);
+}
+
+/**
+ * 设置门特定消息模板
+ * @param {string} doorId - 门ID
+ * @param {string} messageType - 消息类型
+ * @param {string} template - 消息模板
+ */
+export function setDoorMessage(doorId, messageType, template) {
+  if (!doorId || typeof doorId !== 'string') {
+    console.error('[MESSAGE] Invalid doorId provided to setDoorMessage:', doorId);
+    return;
+  }
+  
+  if (!messageType || typeof messageType !== 'string') {
+    console.error('[MESSAGE] Invalid messageType provided to setDoorMessage:', messageType);
+    return;
+  }
+  
+  if (!validateMessageTemplate(template)) {
+    console.error('[MESSAGE] Invalid template provided to setDoorMessage:', template);
+    return;
+  }
+  
+  if (!doorMessages.has(doorId)) {
+    doorMessages.set(doorId, new Map());
+  }
+  
+  doorMessages.get(doorId).set(messageType, template);
+  console.log(`[MESSAGE] Door message set for '${doorId}.${messageType}': ${template}`);
+}
+
+/**
+ * 设置钥匙特定消息模板
+ * @param {string} keyId - 钥匙ID
+ * @param {string} messageType - 消息类型
+ * @param {string} template - 消息模板
+ */
+export function setKeyMessage(keyId, messageType, template) {
+  if (!keyId || typeof keyId !== 'string') {
+    console.error('[MESSAGE] Invalid keyId provided to setKeyMessage:', keyId);
+    return;
+  }
+  
+  if (!messageType || typeof messageType !== 'string') {
+    console.error('[MESSAGE] Invalid messageType provided to setKeyMessage:', messageType);
+    return;
+  }
+  
+  if (!validateMessageTemplate(template)) {
+    console.error('[MESSAGE] Invalid template provided to setKeyMessage:', template);
+    return;
+  }
+  
+  if (!keyMessages.has(keyId)) {
+    keyMessages.set(keyId, new Map());
+  }
+  
+  keyMessages.get(keyId).set(messageType, template);
+  console.log(`[MESSAGE] Key message set for '${keyId}.${messageType}': ${template}`);
+}
+
+/**
+ * 清除消息模板
+ * @param {string} scope - 作用域 ('global', 'door', 'key')
+ * @param {string} id - ID (门ID或钥匙ID，global时可为null)
+ * @param {string} messageType - 消息类型 (可选，不提供则清除所有)
+ */
+export function clearMessages(scope, id = null, messageType = null) {
+  if (!scope || typeof scope !== 'string') {
+    console.error('[MESSAGE] Invalid scope provided to clearMessages:', scope);
+    return;
+  }
+  
+  switch (scope) {
+    case 'global':
+      if (messageType) {
+        globalMessages.delete(messageType);
+        console.log(`[MESSAGE] Cleared global message for '${messageType}'`);
+      } else {
+        globalMessages.clear();
+        console.log('[MESSAGE] Cleared all global messages');
+      }
+      break;
+      
+    case 'door':
+      if (!id) {
+        console.error('[MESSAGE] Door ID required when clearing door messages');
+        return;
+      }
+      if (doorMessages.has(id)) {
+        if (messageType) {
+          doorMessages.get(id).delete(messageType);
+          console.log(`[MESSAGE] Cleared door message for '${id}.${messageType}'`);
+        } else {
+          doorMessages.delete(id);
+          console.log(`[MESSAGE] Cleared all messages for door '${id}'`);
+        }
+      }
+      break;
+      
+    case 'key':
+      if (!id) {
+        console.error('[MESSAGE] Key ID required when clearing key messages');
+        return;
+      }
+      if (keyMessages.has(id)) {
+        if (messageType) {
+          keyMessages.get(id).delete(messageType);
+          console.log(`[MESSAGE] Cleared key message for '${id}.${messageType}'`);
+        } else {
+          keyMessages.delete(id);
+          console.log(`[MESSAGE] Cleared all messages for key '${id}'`);
+        }
+      }
+      break;
+      
+    default:
+      console.error('[MESSAGE] Invalid scope. Use "global", "door", or "key"');
+  }
 }
 

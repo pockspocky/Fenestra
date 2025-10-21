@@ -6,14 +6,14 @@
   - Create exported functions for setting and clearing custom messages
   - _Requirements: 1.2, 2.2, 3.2, 5.1, 5.2, 5.3, 5.4_
 
-- [ ] 2. Implement customizable dialog messages
-- [ ] 2.1 Update handleDoorToggle function for custom open/close messages
+- [x] 2. Implement customizable dialog messages
+- [x] 2.1 Update handleDoorToggle function for custom open/close messages
   - Modify existing dialog.showMessageBox calls to use custom message templates
   - Implement message template variable substitution for doorId and keyId
   - Maintain backward compatibility with existing hardcoded messages as defaults
   - _Requirements: 1.1, 1.3, 1.4, 1.5, 2.1, 2.3, 2.4, 2.5_
 
-- [ ] 2.2 Update handleFailedOpen function for custom access denied messages
+- [x] 2.2 Update handleFailedOpen function for custom access denied messages
   - Replace hardcoded Chinese error message with configurable English template
   - Implement message template variable substitution including denial reason
   - Maintain existing dialog.showMessageBox error type and window reference pattern
