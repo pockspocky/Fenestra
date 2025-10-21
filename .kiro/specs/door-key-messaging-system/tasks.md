@@ -19,19 +19,19 @@
   - Maintain existing dialog.showMessageBox error type and window reference pattern
   - _Requirements: 3.1, 3.3, 3.4, 3.5_
 
-- [ ] 3. Implement one-time use key system
-- [ ] 3.1 Add one-time key data structures and configuration functions
+- [x] 3. Implement one-time use key system
+- [x] 3.1 Add one-time key data structures and configuration functions
   - Add oneTimeKeys, usedKeys, and closeAfterUse Sets to doorKeySystem.js
   - Implement setKeyOneTimeUse, isKeyUsable, resetKeyUsage, and setKeyCloseAfterUse functions
   - Add validation and error handling using existing console logging patterns
   - _Requirements: 6.1, 6.4_
 
-- [ ] 3.2 Update canOpenDoor function to check key usage status
+- [x] 3.2 Update canOpenDoor function to check key usage status
   - Add usedKeys Set check before existing permission validation
   - Maintain existing return value behavior for workerManager.js compatibility
   - _Requirements: 6.3, 4.2, 4.3_
 
-- [ ] 3.3 Update handleDoorToggle function for key consumption and closing
+- [x] 3.3 Update handleDoorToggle function for key consumption and closing
   - Add key to usedKeys Set when oneTimeKeys contains the keyId
   - Implement key window closing using existing getWindow pattern when closeAfterUse is true
   - Add custom message display for key consumption and closing events
