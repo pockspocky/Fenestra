@@ -13,6 +13,11 @@ const globalMessages = new Map(); // messageType -> template
 const doorMessages = new Map(); // doorId -> Map(messageType -> template)
 const keyMessages = new Map(); // keyId -> Map(messageType -> template)
 
+// 一次性钥匙系统
+const oneTimeKeys = new Set(); // keyId - 配置为一次性使用的钥匙
+const usedKeys = new Set(); // keyId - 已经使用过的钥匙
+const closeAfterUse = new Set(); // keyId - 使用后应该关闭的钥匙
+
 /**
  * 建立双向关系
  * @param {string} doorId - 门ID
@@ -39,6 +44,12 @@ export function establishRelation(doorId, keyId) {
  * @returns {boolean} 是否有权限开门
  */
 export function canOpenDoor(doorId, keyId) {
+  // 首先检查钥匙是否可用（一次性钥匙使用状态检查）
+  if (!isKeyUsable(keyId)) {
+    console.log(`[DOOR_ACCESS] Key '${keyId}' is not usable (already used)`);
+    return false;
+  }
+  
   const isDoorEncrypted = encryptedItems.has(doorId);
   const isKeyEncrypted = encryptedItems.has(keyId);
   
@@ -203,6 +214,38 @@ export function handleDoorToggle(doorId, keyId) {
     // 更新状态
     doorStates.set(doorId, { isOpen: true, lastKeyUsed: keyId });
     
+    // 处理一次性钥匙消费
+    if (oneTimeKeys.has(keyId)) {
+      usedKeys.add(keyId);
+      console.log(`[ONE_TIME_KEY] Key '${keyId}' consumed and marked as used`);
+      
+      // 显示钥匙消费消息
+      const keyUsedVariables = { doorId, keyId };
+      const keyUsedMessage = getFormattedMessage('key_used', keyUsedVariables, `Key ${keyId} consumed and can no longer be used.`);
+      
+      // 检查是否需要关闭钥匙窗口
+      if (closeAfterUse.has(keyId) && keyWin) {
+        const keyClosingVariables = { doorId, keyId };
+        const keyClosingMessage = getFormattedMessage('key_closing', keyClosingVariables, `Key ${keyId} used successfully. Closing key window.`);
+        
+        // 先显示关闭消息，然后关闭窗口
+        dialog.showMessageBox(keyWin, {
+          type: 'info',
+          message: keyClosingMessage
+        }).then(() => {
+          // 关闭钥匙窗口
+          keyWin.close();
+          console.log(`[ONE_TIME_KEY] Key window '${keyId}' closed after use`);
+        });
+      } else {
+        // 只显示钥匙消费消息
+        dialog.showMessageBox(doorWin, {
+          type: 'info',
+          message: keyUsedMessage
+        });
+      }
+    }
+    
     // 获取自定义开门消息
     const variables = { doorId, keyId };
     const openMessage = getFormattedMessage('door_opened', variables, 'Door opened!');
@@ -286,6 +329,110 @@ export function getRelationsDebugInfo() {
     encryptedItems: Array.from(encryptedItems),
     doorStates: Object.fromEntries(doorStates)
   };
+}
+
+// ==================== 一次性钥匙系统 ====================
+
+/**
+ * 设置钥匙为一次性使用
+ * @param {string} keyId - 钥匙ID
+ * @param {boolean} isOneTime - 是否为一次性使用
+ * @param {boolean} shouldCloseAfterUse - 使用后是否关闭窗口
+ */
+export function setKeyOneTimeUse(keyId, isOneTime = true, shouldCloseAfterUse = false) {
+  if (!keyId || typeof keyId !== 'string') {
+    console.error('[ONE_TIME_KEY] Invalid keyId provided to setKeyOneTimeUse:', keyId);
+    return;
+  }
+  
+  if (typeof isOneTime !== 'boolean') {
+    console.error('[ONE_TIME_KEY] isOneTime must be a boolean:', isOneTime);
+    return;
+  }
+  
+  if (typeof shouldCloseAfterUse !== 'boolean') {
+    console.error('[ONE_TIME_KEY] shouldCloseAfterUse must be a boolean:', shouldCloseAfterUse);
+    return;
+  }
+  
+  if (isOneTime) {
+    oneTimeKeys.add(keyId);
+    console.log(`[ONE_TIME_KEY] Key '${keyId}' set as one-time use`);
+    
+    if (shouldCloseAfterUse) {
+      closeAfterUse.add(keyId);
+      console.log(`[ONE_TIME_KEY] Key '${keyId}' will close after use`);
+    }
+  } else {
+    oneTimeKeys.delete(keyId);
+    closeAfterUse.delete(keyId);
+    console.log(`[ONE_TIME_KEY] Key '${keyId}' set as reusable`);
+  }
+}
+
+/**
+ * 检查钥匙是否可用
+ * @param {string} keyId - 钥匙ID
+ * @returns {boolean} 钥匙是否可用
+ */
+export function isKeyUsable(keyId) {
+  if (!keyId || typeof keyId !== 'string') {
+    console.warn('[ONE_TIME_KEY] Invalid keyId provided to isKeyUsable:', keyId);
+    return false;
+  }
+  
+  // 如果钥匙不是一次性的，总是可用
+  if (!oneTimeKeys.has(keyId)) {
+    return true;
+  }
+  
+  // 如果是一次性钥匙，检查是否已使用
+  const isUsable = !usedKeys.has(keyId);
+  console.log(`[ONE_TIME_KEY] Key '${keyId}' usability check: ${isUsable}`);
+  return isUsable;
+}
+
+/**
+ * 重置钥匙使用状态
+ * @param {string} keyId - 钥匙ID
+ */
+export function resetKeyUsage(keyId) {
+  if (!keyId || typeof keyId !== 'string') {
+    console.error('[ONE_TIME_KEY] Invalid keyId provided to resetKeyUsage:', keyId);
+    return;
+  }
+  
+  if (usedKeys.has(keyId)) {
+    usedKeys.delete(keyId);
+    console.log(`[ONE_TIME_KEY] Key '${keyId}' usage reset - now available for use`);
+  } else {
+    console.log(`[ONE_TIME_KEY] Key '${keyId}' was not used, no reset needed`);
+  }
+}
+
+/**
+ * 设置钥匙使用后是否关闭
+ * @param {string} keyId - 钥匙ID
+ * @param {boolean} shouldClose - 是否应该关闭
+ */
+export function setKeyCloseAfterUse(keyId, shouldClose = true) {
+  if (!keyId || typeof keyId !== 'string') {
+    console.error('[ONE_TIME_KEY] Invalid keyId provided to setKeyCloseAfterUse:', keyId);
+    return;
+  }
+  
+  if (typeof shouldClose !== 'boolean') {
+    console.error('[ONE_TIME_KEY] shouldClose must be a boolean:', shouldClose);
+    return;
+  }
+  
+  if (shouldClose) {
+    closeAfterUse.add(keyId);
+    console.log(`[ONE_TIME_KEY] Key '${keyId}' will close after use`);
+  } else {
+    closeAfterUse.delete(keyId);
+    console.log(`[ONE_TIME_KEY] Key '${keyId}' will not close after use`);
+  }
 }
 
 // ==================== 消息配置系统 ====================
