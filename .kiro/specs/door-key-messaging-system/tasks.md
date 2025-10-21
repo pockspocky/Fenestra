@@ -60,14 +60,15 @@
   - Display sequence reset messages using existing dialog.showMessageBox pattern
   - _Requirements: 7.4, 8.4_
 
-- [ ] 5. Extend window creation functions with custom HTML support
-- [ ] 5.1 Update createDoor function to accept otherContents parameter
+- [x] 5. Extend window creation functions with custom HTML support
+
+- [x] 5.1 Update createDoor function to accept otherContents parameter
   - Add optional otherContents parameter while maintaining existing function signature
   - Implement backward compatibility with existing pictureViewer.html default
   - Pass doorId through query parameters using existing createWindow mechanism
   - _Requirements: 9.1, 9.3, 9.4_
 
-- [ ] 5.2 Update createKey function to accept otherContents parameter
+- [x] 5.2 Update createKey function to accept otherContents parameter
   - Add optional otherContents parameter while maintaining existing function signature
   - Implement backward compatibility with existing index.html default
   - Pass keyId through query parameters using existing createWindow mechanism
