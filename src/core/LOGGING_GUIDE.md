@@ -141,11 +141,15 @@ if (global.logLevel === 'debug') {
 console.debug('计算结果:', () => expensiveCalculation());
 ```
 
+## 默认配置
+
+系统默认使用 `debug` 级别，显示所有日志信息，适合开发和调试。
+
 ## 配置建议
 
 ### 开发环境
 ```javascript
-setLogLevel("debug"); // 显示所有日志
+setLogLevel("debug"); // 显示所有日志（默认设置）
 ```
 
 ### 生产环境

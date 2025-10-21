@@ -1,3 +1,17 @@
+/**
+ * Fenestra - Window Puzzle Game
+ * Version: 0.2.0
+ * 
+ * Features:
+ * - Dynamic window management with smart positioning
+ * - Lens system for visual decryption puzzles
+ * - Door-key permission system with overlap detection
+ * - Complete window storage and restoration system
+ * - Interactive terminal with drag-drop support
+ * - Multi-threaded overlap detection
+ * - Comprehensive logging system
+ */
+
 import { app, BrowserWindow, globalShortcut } from 'electron';
 import './logger.js'; // 导入日志系统
 import { setLogLevel, getLogLevel } from './src/core/loggerConfig.js'; // 导入日志配置

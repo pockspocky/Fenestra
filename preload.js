@@ -10,7 +10,10 @@ const whitelist = [
   'terminal/execute-command',
   'picture/load',
   'lens/get-position',
-  'window/get-info'
+  'window/get-info',
+  'terminal/get-file-completions',
+  'terminal/get-current-directory',
+  'storage/validate-fenestra-file'
 ];
 
 console.log('[PRELOAD] IPC白名单:', whitelist);
@@ -105,6 +108,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
       console.log(`[PRELOAD] 收到镜头位置更新事件:`, data);
       callback(data);
     });
+  },
+  // Window storage validation API
+  validateFenestraFile: (filePath) => {
+    console.log(`[PRELOAD] 验证.fenestra文件: ${filePath}`);
+    return ipcRenderer.invoke('storage/validate-fenestra-file', filePath);
+  },
+  // File completion APIs
+  getFileCompletions: (params) => {
+    console.log(`[PRELOAD] 获取文件补全:`, params);
+    return ipcRenderer.invoke('terminal/get-file-completions', params);
+  },
+  getCurrentDirectory: () => {
+    console.log(`[PRELOAD] 获取当前工作目录`);
+    return ipcRenderer.invoke('terminal/get-current-directory');
   }
 });
 
