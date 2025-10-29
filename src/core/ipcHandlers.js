@@ -857,7 +857,7 @@ function getFileCompletions(partialPath, currentDir) {
     }
 
     // 过滤匹配的条目（支持特殊字符）
-    const matchingEntries = filterMatchingEntries(entries.entries, filePattern);
+    const matchingEntries = filterMatchingEntries(entries.entries, filePattern, searchDir);
 
     // 转换为补全格式（处理特殊字符）
     const completions = matchingEntries.map(entry => {
@@ -928,9 +928,22 @@ function getFileCompletions(partialPath, currentDir) {
 function getDirectoryContents(dirPath) {
   try {
     const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    
+    // 检查是否在 .fenestra-storage 目录中
+    const isStorageDir = dirPath.includes('.fenestra-storage');
 
     const completions = entries
-      .filter(entry => !entry.name.startsWith('.')) // 跳过隐藏文件
+      .filter(entry => {
+        // 跳过隐藏文件
+        if (entry.name.startsWith('.')) return false;
+        
+        // 如果在存储目录中，优先显示 .fenestra 文件
+        if (isStorageDir && !entry.isDirectory()) {
+          return entry.name.endsWith('.fenestra');
+        }
+        
+        return true;
+      })
       .map(entry => {
         const displayName = entry.isDirectory() ? `${entry.name}/` : entry.name;
         const escapedName = needsQuoting(entry.name) ? `"${entry.name}"` : entry.name;
@@ -1147,12 +1160,18 @@ function readDirectoryWithOptimization(dirPath) {
  * @param {string} pattern - 匹配模式
  * @returns {Array} 匹配的条目
  */
-function filterMatchingEntries(entries, pattern) {
+function filterMatchingEntries(entries, pattern, searchDir) {
   const normalizedPattern = pattern.toLowerCase();
+  const isStorageDir = searchDir && searchDir.includes('.fenestra-storage');
 
   return entries.filter(entry => {
     // 跳过隐藏文件（除非用户明确输入了点开头）
     if (entry.name.startsWith('.') && !pattern.startsWith('.')) {
+      return false;
+    }
+
+    // 如果在存储目录中，优先显示 .fenestra 文件
+    if (isStorageDir && !entry.isDirectory() && !entry.name.endsWith('.fenestra')) {
       return false;
     }
 
