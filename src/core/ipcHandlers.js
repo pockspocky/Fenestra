@@ -534,13 +534,40 @@ function executeTerminalCommand(command, args) {
         // Deserialize and recreate window
         const restoreResult = deserializeWindow(loadResult.data, { forceNewId: false });
 
-        if (restoreResult.success && restoreResult.warnings && restoreResult.warnings.length > 0) {
-          // Include warnings in the success message
-          return {
-            success: true,
-            message: `${restoreResult.message}\n警告: ${restoreResult.warnings.join(', ')}`,
-            windowId: restoreResult.windowId
-          };
+        // If window restoration was successful, delete the .fenestra file
+        if (restoreResult.success) {
+          try {
+            // Extract filename from the full path for deletion
+            const filename = path.basename(loadResult.filePath);
+            const deleteResult = deleteStoredWindow(filename);
+            
+            let successMessage = restoreResult.message;
+            
+            if (deleteResult.success) {
+              successMessage += `\n.fenestra文件已自动删除: ${filename}`;
+              console.log(`[TERMINAL] .fenestra文件已在窗口恢复后删除: ${filename}`);
+            } else {
+              successMessage += `\n警告: 无法删除.fenestra文件: ${deleteResult.message}`;
+              console.warn(`[TERMINAL] 无法删除.fenestra文件: ${deleteResult.message}`);
+            }
+
+            if (restoreResult.warnings && restoreResult.warnings.length > 0) {
+              successMessage += `\n警告: ${restoreResult.warnings.join(', ')}`;
+            }
+
+            return {
+              success: true,
+              message: successMessage,
+              windowId: restoreResult.windowId
+            };
+          } catch (deleteError) {
+            console.error(`[TERMINAL] 删除.fenestra文件时发生错误:`, deleteError);
+            return {
+              success: true,
+              message: `${restoreResult.message}\n警告: 删除.fenestra文件失败: ${deleteError.message}`,
+              windowId: restoreResult.windowId
+            };
+          }
         }
 
         return restoreResult;
