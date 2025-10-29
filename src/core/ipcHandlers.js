@@ -786,7 +786,7 @@ function getFileCompletions(partialPath, currentDir) {
   try {
     // 如果没有提供当前目录，默认使用 .fenestra-storage 目录
     let workingDir;
-    if (currentDir) {
+    if (currentDir && partialPath != "restore-window") {
       workingDir = currentDir;
     } else {
       // 默认使用 .fenestra-storage 目录
