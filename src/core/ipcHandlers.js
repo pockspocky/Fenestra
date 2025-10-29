@@ -784,8 +784,21 @@ function getFileCompletions(partialPath, currentDir) {
   console.debug(`[FILE_COMPLETION] 处理补全请求: "${partialPath}", 当前目录: "${currentDir}"`);
 
   try {
-    // 如果没有提供当前目录，使用进程工作目录
-    const workingDir = currentDir || process.cwd();
+    // 如果没有提供当前目录，默认使用 .fenestra-storage 目录
+    let workingDir;
+    if (currentDir) {
+      workingDir = currentDir;
+    } else {
+      // 默认使用 .fenestra-storage 目录
+      const storageDir = path.join(process.cwd(), '.fenestra-storage');
+      if (fs.existsSync(storageDir)) {
+        workingDir = storageDir;
+        console.debug(`[FILE_COMPLETION] 使用默认存储目录: ${storageDir}`);
+      } else {
+        workingDir = process.cwd();
+        console.debug(`[FILE_COMPLETION] 存储目录不存在，使用项目根目录: ${workingDir}`);
+      }
+    }
 
     // 处理空输入
     if (!partialPath || partialPath.trim() === '') {
