@@ -534,13 +534,40 @@ function executeTerminalCommand(command, args) {
         // Deserialize and recreate window
         const restoreResult = deserializeWindow(loadResult.data, { forceNewId: false });
 
-        if (restoreResult.success && restoreResult.warnings && restoreResult.warnings.length > 0) {
-          // Include warnings in the success message
-          return {
-            success: true,
-            message: `${restoreResult.message}\n警告: ${restoreResult.warnings.join(', ')}`,
-            windowId: restoreResult.windowId
-          };
+        // If window restoration was successful, delete the .fenestra file
+        if (restoreResult.success) {
+          try {
+            // Extract filename from the full path for deletion
+            const filename = path.basename(loadResult.filePath);
+            const deleteResult = deleteStoredWindow(filename);
+            
+            let successMessage = restoreResult.message;
+            
+            if (deleteResult.success) {
+              successMessage += `\n.fenestra文件已自动删除: ${filename}`;
+              console.log(`[TERMINAL] .fenestra文件已在窗口恢复后删除: ${filename}`);
+            } else {
+              successMessage += `\n警告: 无法删除.fenestra文件: ${deleteResult.message}`;
+              console.warn(`[TERMINAL] 无法删除.fenestra文件: ${deleteResult.message}`);
+            }
+
+            if (restoreResult.warnings && restoreResult.warnings.length > 0) {
+              successMessage += `\n警告: ${restoreResult.warnings.join(', ')}`;
+            }
+
+            return {
+              success: true,
+              message: successMessage,
+              windowId: restoreResult.windowId
+            };
+          } catch (deleteError) {
+            console.error(`[TERMINAL] 删除.fenestra文件时发生错误:`, deleteError);
+            return {
+              success: true,
+              message: `${restoreResult.message}\n警告: 删除.fenestra文件失败: ${deleteError.message}`,
+              windowId: restoreResult.windowId
+            };
+          }
         }
 
         return restoreResult;
@@ -757,8 +784,23 @@ function getFileCompletions(partialPath, currentDir) {
   console.debug(`[FILE_COMPLETION] 处理补全请求: "${partialPath}", 当前目录: "${currentDir}"`);
 
   try {
-    // 如果没有提供当前目录，使用进程工作目录
-    const workingDir = currentDir || process.cwd();
+    // 如果没有提供当前目录，默认使用 .fenestra-storage 目录
+    let workingDir;
+    if (currentDir && partialPath != "restore-window") {
+      workingDir = currentDir;
+    } else {
+      // 默认使用 .fenestra-storage 目录
+      const storageDir = path.join(process.cwd(), '.fenestra-storage');
+      if (fs.existsSync(storageDir)) {
+        workingDir = storageDir;
+        console.debug(`[FILE_COMPLETION] 使用默认存储目录: ${storageDir}`);
+      } else {
+        workingDir = process.cwd();
+        console.debug(`[FILE_COMPLETION] 存储目录不存在，使用项目根目录: ${workingDir}`);
+      }
+    }
+
+    if (partialPath == 'restore-window') partialPath = '';
 
     // 处理空输入
     if (!partialPath || partialPath.trim() === '') {
@@ -817,7 +859,7 @@ function getFileCompletions(partialPath, currentDir) {
     }
 
     // 过滤匹配的条目（支持特殊字符）
-    const matchingEntries = filterMatchingEntries(entries.entries, filePattern);
+    const matchingEntries = filterMatchingEntries(entries.entries, filePattern, searchDir);
 
     // 转换为补全格式（处理特殊字符）
     const completions = matchingEntries.map(entry => {
@@ -888,9 +930,22 @@ function getFileCompletions(partialPath, currentDir) {
 function getDirectoryContents(dirPath) {
   try {
     const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    
+    // 检查是否在 .fenestra-storage 目录中
+    const isStorageDir = dirPath.includes('.fenestra-storage');
 
     const completions = entries
-      .filter(entry => !entry.name.startsWith('.')) // 跳过隐藏文件
+      .filter(entry => {
+        // 跳过隐藏文件
+        if (entry.name.startsWith('.')) return false;
+        
+        // 如果在存储目录中，优先显示 .fenestra 文件
+        if (isStorageDir && !entry.isDirectory()) {
+          return entry.name.endsWith('.fenestra');
+        }
+        
+        return true;
+      })
       .map(entry => {
         const displayName = entry.isDirectory() ? `${entry.name}/` : entry.name;
         const escapedName = needsQuoting(entry.name) ? `"${entry.name}"` : entry.name;
@@ -1107,12 +1162,18 @@ function readDirectoryWithOptimization(dirPath) {
  * @param {string} pattern - 匹配模式
  * @returns {Array} 匹配的条目
  */
-function filterMatchingEntries(entries, pattern) {
+function filterMatchingEntries(entries, pattern, searchDir) {
   const normalizedPattern = pattern.toLowerCase();
+  const isStorageDir = searchDir && searchDir.includes('.fenestra-storage');
 
   return entries.filter(entry => {
     // 跳过隐藏文件（除非用户明确输入了点开头）
     if (entry.name.startsWith('.') && !pattern.startsWith('.')) {
+      return false;
+    }
+
+    // 如果在存储目录中，优先显示 .fenestra 文件
+    if (isStorageDir && !entry.isDirectory() && !entry.name.endsWith('.fenestra')) {
       return false;
     }
 
