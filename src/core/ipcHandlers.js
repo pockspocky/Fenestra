@@ -783,8 +783,6 @@ function validateFenestraFile(filePath) {
 function getFileCompletions(partialPath, currentDir) {
   console.debug(`[FILE_COMPLETION] 处理补全请求: "${partialPath}", 当前目录: "${currentDir}"`);
 
-  
-
   try {
     // 如果没有提供当前目录，默认使用 .fenestra-storage 目录
     let workingDir;
