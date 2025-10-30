@@ -800,6 +800,8 @@ function getFileCompletions(partialPath, currentDir) {
       }
     }
 
+    if (partialPath == 'restore-window') partialPath = '';
+
     // 处理空输入
     if (!partialPath || partialPath.trim() === '') {
       return getDirectoryContents(workingDir);
