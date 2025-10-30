@@ -788,6 +788,7 @@ function getFileCompletions(partialPath, currentDir) {
     let workingDir;
     if (currentDir && partialPath != "restore-window") {
       workingDir = currentDir;
+      partialPath = ''
     } else {
       // 默认使用 .fenestra-storage 目录
       const storageDir = path.join(process.cwd(), '.fenestra-storage');
@@ -799,8 +800,6 @@ function getFileCompletions(partialPath, currentDir) {
         console.debug(`[FILE_COMPLETION] 存储目录不存在，使用项目根目录: ${workingDir}`);
       }
     }
-
-    if (partialPath == 'restore-window') partialPath = '';
 
     // 处理空输入
     if (!partialPath || partialPath.trim() === '') {
