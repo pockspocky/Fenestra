@@ -5,7 +5,7 @@
 
 import { globalShortcut } from 'electron';
 import '../../logger.js';
-import { createWindow, getWindow } from './windowManager.js';
+import { createWindow } from './windowManager.js';
 import { 
   initializeEmailStorage, 
   watchInboxDirectory, 
