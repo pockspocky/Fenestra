@@ -187,7 +187,8 @@
       'create-picture', 'set-picture', 'set-fit-mode',
       'create-content', 'create-lens', 'set-opacity', 'set-always-on-top',
       'update-blur', 'destroy-lens', 'list-lens', 'lens-list', 'lens-info',
-      'save-window', 'restore-window', 'list-saved', 'delete-saved'
+      'save-window', 'restore-window', 'list-saved', 'delete-saved',
+      'cd', 'pwd', 'dir', 'config'
     ];
 
     // AutoCompleter class for handling tab completion logic
@@ -207,7 +208,7 @@
       // Initialize current directory
       async initializeCurrentDirectory() {
         try {
-          const result = await window.electronAPI.getCurrentDirectory();
+          const result = await window.electronAPI.getWorkingDirectory();
           if (result.success) {
             this.currentDirectory = result.currentDirectory;
           }
@@ -358,8 +359,20 @@
           ]);
         }
 
+        // Commands that expect directory paths as parameters
+        if (!this.directoryPathCommands) {
+          this.directoryPathCommands = new Set([
+            'cd', 'dir'
+          ]);
+        }
+
         // If it's a file path command and we're not on the first part (command name)
         if (this.filePathCommands.has(command) && parts.length > 1) {
+          return true;
+        }
+
+        // If it's a directory path command and we're not on the first part (command name)
+        if (this.directoryPathCommands.has(command) && parts.length > 1) {
           return true;
         }
 
@@ -378,7 +391,7 @@
 
         // If we have a space after the command and we're typing a parameter, 
         // assume it could be a file path for certain commands
-        if (this.filePathCommands.has(command) && beforeCursor.endsWith(' ')) {
+        if ((this.filePathCommands.has(command) || this.directoryPathCommands.has(command)) && beforeCursor.endsWith(' ')) {
           return true;
         }
 
@@ -1034,6 +1047,84 @@
           'Use "list-saved" to see available files to delete',
           'This action cannot be undone'
         ]
+      },
+      'cd': {
+        description: 'Change the current working directory within the game data scope',
+        usage: 'cd [directory]',
+        parameters: [
+          { name: 'directory', description: 'Target directory path (relative or absolute within game scope)', required: false }
+        ],
+        examples: [
+          'cd',
+          'cd .fenestra-storage',
+          'cd ..',
+          'cd ~/subdirectory',
+          'cd ./doors'
+        ],
+        tips: [
+          'Use "cd" without arguments to go to the game data root directory',
+          'Use "cd .." to go to the parent directory',
+          'Use "cd ~" to go to the game data root directory',
+          'All paths are restricted to the game data directory for security',
+          'Use Tab completion to navigate to directories',
+          'Locked directories require appropriate keys to access'
+        ]
+      },
+      'pwd': {
+        description: 'Print the current working directory path',
+        usage: 'pwd',
+        parameters: [],
+        examples: ['pwd'],
+        tips: [
+          'Shows the full path of the current working directory',
+          'Displays relative path from game data root when applicable',
+          'Warns if current directory is outside the game data scope'
+        ]
+      },
+      'dir': {
+        description: 'List contents of the current or specified directory',
+        usage: 'dir [directory] [-a|--all]',
+        parameters: [
+          { name: 'directory', description: 'Directory to list (optional, defaults to current directory)', required: false },
+          { name: '-a, --all', description: 'Show hidden files and directories', required: false }
+        ],
+        examples: [
+          'dir',
+          'dir .fenestra-storage',
+          'dir -a',
+          'dir ./doors --all',
+          'dir .. -a'
+        ],
+        tips: [
+          'Shows directories and files separately for better readability',
+          'Directories are marked with "/" and show lock status if applicable',
+          'Files show size information when available',
+          'Use -a or --all flag to show hidden files (starting with .)',
+          'Locked directories are indicated and require keys to access',
+          'Use Tab completion to navigate to directories'
+        ]
+      },
+      'config': {
+        description: 'Manage application configuration settings',
+        usage: 'config [get|set|reset] [parameters...]',
+        parameters: [
+          { name: 'get', description: 'Display current configuration or specific setting', required: false },
+          { name: 'set', description: 'Set a configuration value', required: false },
+          { name: 'reset', description: 'Reset configuration to default values', required: false }
+        ],
+        examples: [
+          'config get',
+          'config get game-data-dir',
+          'config set game-data-dir ./my-game-data',
+          'config reset'
+        ],
+        tips: [
+          'Use "config get" to see all current settings',
+          'Use "config get game-data-dir" to see the current game data directory',
+          'Use "config set game-data-dir [path]" to change the game data directory',
+          'Use "config reset" to restore all settings to defaults',
+          'Configuration changes may require restarting the application'
+        ]
       }
     };
 
@@ -1311,6 +1402,59 @@
         }
       } else if (cmd === 'clear') {
         clearTerminal();
+      } else if (cmd === 'cd') {
+        // Handle directory change command
+        try {
+          const targetPath = args.length > 0 ? args.join(' ') : '';
+          const result = await window.electronAPI.changeDirectory({ 
+            targetPath, 
+            currentDir: autoCompleter.currentDirectory 
+          });
+          
+          if (result.success) {
+            // Update the autocompleter's current directory
+            if (result.newDirectory) {
+              autoCompleter.currentDirectory = result.newDirectory;
+            }
+            print(result.message, 'success');
+          } else {
+            print(`[ERROR] ${result.message}`, 'error');
+          }
+        } catch (error) {
+          print(`[ERROR] ${error.message}`, 'error');
+        }
+      } else if (cmd === 'pwd') {
+        // Handle print working directory command
+        try {
+          const result = await window.electronAPI.getWorkingDirectory();
+          
+          if (result.success) {
+            print(result.message, 'success');
+          } else {
+            print(`[ERROR] ${result.message}`, 'error');
+          }
+        } catch (error) {
+          print(`[ERROR] ${error.message}`, 'error');
+        }
+      } else if (cmd === 'dir') {
+        // Handle directory listing command
+        try {
+          const showHidden = args.includes('-a') || args.includes('--all');
+          const dirPath = args.filter(arg => !arg.startsWith('-')).join(' ') || '';
+          
+          const result = await window.electronAPI.listDirectory({ 
+            dirPath, 
+            showHidden 
+          });
+          
+          if (result.success) {
+            print(result.message, 'success');
+          } else {
+            print(`[ERROR] ${result.message}`, 'error');
+          }
+        } catch (error) {
+          print(`[ERROR] ${error.message}`, 'error');
+        }
       } else {
         // Send to main process for handling
         try {
@@ -1382,6 +1526,12 @@
       print('  getWindows                        - Get detailed information for all windows', 'info');
       print('  info [windowID]                   - View detailed window information', 'info');
       print('', 'info');
+      printCommandHelp('Directory Navigation:');
+      print('  cd [directory]                    - Change current directory', 'info');
+      print('  pwd                               - Show current directory path', 'info');
+      print('  dir [directory] [-a]              - List directory contents', 'info');
+      printParameter('      -a, --all: show hidden files');
+      print('', 'info');
       printCommandHelp('Window Operations:');
       print('  get-title [ID]                    - Get window title', 'info');
       print('  set-title [ID] "title"            - Set window title', 'info');
@@ -1422,10 +1572,19 @@
       print('  delete-saved [filename]           - Delete saved window file', 'info');
       printExample('      example: delete-saved window1-20241014.fenestra');
       print('', 'info');
+      printCommandHelp('Configuration Commands:');
+      print('  config get                        - Show current configuration', 'info');
+      print('  config get game-data-dir          - Show game data directory', 'info');
+      print('  config set game-data-dir [path]   - Set game data directory', 'info');
+      print('  config reset                      - Reset configuration to defaults', 'info');
+      print('', 'info');
       printTip('Tip: Use "help [command]" to get detailed help for any specific command');
       printTip('Tip: Commands support --help and -h flags (e.g., "set-title --help")');
       printTip('Tip: Use Tab key to autocomplete commands and file paths');
       printTip('Tip: Use up/down arrows to browse command history');
+      printTip('Tip: Use cd, pwd, and dir commands to navigate directories like a traditional terminal');
+      printTip('Tip: Directory navigation is restricted to the game data directory for security');
+      printTip('Tip: Some directories may be locked and require keys from game progression');
       printTip('Tip: Image paths support both absolute and relative paths');
       printTip('Tip: Lens windows can display clear versions of blurred background content');
       printTip('Tip: Window configuration files are saved in .fenestra-storage directory');

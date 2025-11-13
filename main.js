@@ -51,7 +51,7 @@ import {
 } from './src/core/doorKeySystem.js';
 
 // 设置日志级别
-setLogLevel("debug"); // 可以根据需要调整
+setLogLevel("warning"); // 可以根据需要调整
 console.log(`[MAIN] 当前日志级别: ${getLogLevel()}`);
 
 // 全局变量

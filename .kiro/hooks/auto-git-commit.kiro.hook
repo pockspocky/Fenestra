@@ -1,18 +1,10 @@
 {
-  "enabled": true,
+  "enabled": false,
   "name": "Auto Git Commit",
   "description": "Use the MCP Server Given. Automatically commits code changes to GitHub. If on 'initial' branch, creates a new branch first. Otherwise commits to current branch.",
   "version": "1",
   "when": {
-    "type": "fileEdited",
-    "patterns": [
-      "*.js",
-      "*.mjs",
-      "*.html",
-      "*.md",
-      "*.json",
-      "src/**/*"
-    ]
+    "type": "userTriggered"
   },
   "then": {
     "type": "askAgent",

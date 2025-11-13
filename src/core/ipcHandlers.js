@@ -28,6 +28,27 @@ import {
   deleteStoredWindow,
   validateWindowData
 } from './windowStorage.js';
+import { validateAndResolvePath, getDefaultGameDataDirectory, isWithinGameScope } from './utils/pathSecurityValidator.js';
+import { 
+  navigateToDirectory, 
+  getDirectoryContents, 
+  findCommonPrefix, 
+  findCommonPrefixWithSpecialChars,
+  normalizePathForCompletion,
+  escapeFilenameForShell,
+  unescapeFilenameFromShell,
+  validatePathCharacters
+} from './utils/directoryNavigator.js';
+import { checkDirectoryAccess, filterAccessibleDirectories } from './doorKeySystem.js';
+import { 
+  FileCompletionError, 
+  ERROR_CODES, 
+  createErrorResponse, 
+  createSuccessResponse,
+  withErrorHandling,
+  validateInput,
+  logError 
+} from './utils/errorHandler.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import '../../logger.js'; // 导入日志系统
@@ -136,25 +157,180 @@ export function initializeIpcHandlers() {
   });
 
   // File system auto-completion handlers
-  ipcMain.handle('terminal/get-file-completions', (_e, { partialPath, currentDir }) => {
+  ipcMain.handle('terminal/get-file-completions', async (_e, { partialPath, currentDir }) => {
     console.debug(`[IPC] 获取文件补全: ${partialPath}, 当前目录: ${currentDir}`);
 
     try {
-      return getFileCompletions(partialPath, currentDir);
+      return await getFileCompletions(partialPath, currentDir);
     } catch (error) {
       console.error('[IPC] 文件补全错误:', error);
-      return { success: false, message: error.message, completions: [] };
+      
+      // Create standardized error response
+      return createErrorResponse(
+        ERROR_CODES.INTERNAL_ERROR,
+        `File completion failed: ${error.message}`,
+        { partialPath, currentDir, originalError: error.message }
+      );
     }
   });
 
-  ipcMain.handle('terminal/get-current-directory', (_e) => {
+  ipcMain.handle('terminal/get-current-directory', async (_e) => {
     console.debug('[IPC] 获取当前工作目录');
 
     try {
-      return getCurrentDirectory();
+      return await getCurrentDirectory();
     } catch (error) {
       console.error('[IPC] 获取当前目录错误:', error);
-      return { success: false, message: error.message };
+      
+      return createErrorResponse(
+        ERROR_CODES.INTERNAL_ERROR,
+        `Failed to get current directory: ${error.message}`,
+        { originalError: error.message }
+      );
+    }
+  });
+
+  // Directory navigation handlers
+  ipcMain.handle('terminal/change-directory', async (_e, { targetPath, currentDir }) => {
+    console.debug(`[IPC] 更改目录: ${targetPath}, 当前目录: ${currentDir}`);
+
+    try {
+      return await changeDirectory(targetPath, currentDir);
+    } catch (error) {
+      console.error('[IPC] 更改目录错误:', error);
+      
+      return createErrorResponse(
+        ERROR_CODES.INTERNAL_ERROR,
+        `Failed to change directory: ${error.message}`,
+        { targetPath, currentDir, originalError: error.message }
+      );
+    }
+  });
+
+  ipcMain.handle('terminal/list-directory', async (_e, { dirPath, showHidden }) => {
+    console.debug(`[IPC] 列出目录内容: ${dirPath}, 显示隐藏文件: ${showHidden}`);
+
+    try {
+      return await listDirectoryContents(dirPath, showHidden);
+    } catch (error) {
+      console.error('[IPC] 列出目录内容错误:', error);
+      
+      return createErrorResponse(
+        ERROR_CODES.INTERNAL_ERROR,
+        `Failed to list directory: ${error.message}`,
+        { dirPath, showHidden, originalError: error.message }
+      );
+    }
+  });
+
+  ipcMain.handle('terminal/get-working-directory', async (_e) => {
+    console.debug('[IPC] 获取当前工作目录');
+
+    try {
+      return await getWorkingDirectory();
+    } catch (error) {
+      console.error('[IPC] 获取工作目录错误:', error);
+      
+      return createErrorResponse(
+        ERROR_CODES.INTERNAL_ERROR,
+        `Failed to get working directory: ${error.message}`,
+        { originalError: error.message }
+      );
+    }
+  });
+
+  // Configuration management handlers
+  ipcMain.handle('config/get-game-data-directory', async (_e) => {
+    console.debug('[IPC] 获取游戏数据目录配置');
+    
+    try {
+      const { getGameDataDirectory } = await import('./config.js');
+      const gameDataDir = getGameDataDirectory();
+      
+      console.debug(`[IPC] 游戏数据目录: ${gameDataDir}`);
+      
+      return {
+        success: true,
+        gameDataDirectory: gameDataDir
+      };
+      
+    } catch (error) {
+      console.error('[IPC] 获取游戏数据目录失败:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  });
+
+  ipcMain.handle('config/set-game-data-directory', async (_e, { path: newPath }) => {
+    console.debug(`[IPC] 设置游戏数据目录: ${newPath}`);
+    
+    try {
+      const { setGameDataDirectory } = await import('./config.js');
+      const result = setGameDataDirectory(newPath);
+      
+      if (result.success) {
+        console.log(`[IPC] 游戏数据目录已更新: ${result.path}`);
+      } else {
+        console.warn(`[IPC] 游戏数据目录设置失败: ${result.error}`);
+      }
+      
+      return result;
+      
+    } catch (error) {
+      console.error('[IPC] 设置游戏数据目录失败:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  });
+
+  ipcMain.handle('config/get-config', async (_e) => {
+    console.debug('[IPC] 获取完整配置');
+    
+    try {
+      const { getConfig } = await import('./config.js');
+      const config = getConfig();
+      
+      console.debug('[IPC] 配置获取成功');
+      
+      return {
+        success: true,
+        config
+      };
+      
+    } catch (error) {
+      console.error('[IPC] 获取配置失败:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  });
+
+  ipcMain.handle('config/reset-to-defaults', async (_e) => {
+    console.debug('[IPC] 重置配置为默认值');
+    
+    try {
+      const { resetConfigToDefaults } = await import('./config.js');
+      const result = resetConfigToDefaults();
+      
+      if (result.success) {
+        console.log('[IPC] 配置已重置为默认值');
+      } else {
+        console.warn(`[IPC] 配置重置失败: ${result.error}`);
+      }
+      
+      return result;
+      
+    } catch (error) {
+      console.error('[IPC] 重置配置失败:', error);
+      return {
+        success: false,
+        error: error.message
+      };
     }
   });
 
@@ -611,6 +787,177 @@ function executeTerminalCommand(command, args) {
       return deleteStoredWindow(filename);
     }
 
+    // Directory navigation commands
+    case 'cd': {
+      const targetPath = args.length > 0 ? args.join(' ') : '';
+      
+      try {
+        const result = changeDirectory(targetPath);
+        return result;
+      } catch (error) {
+        return {
+          success: false,
+          message: `目录切换失败: ${error.message}`
+        };
+      }
+    }
+
+    case 'pwd': {
+      try {
+        const result = getWorkingDirectory();
+        return result;
+      } catch (error) {
+        return {
+          success: false,
+          message: `获取当前目录失败: ${error.message}`
+        };
+      }
+    }
+
+    case 'dir': {
+      const showHidden = args.includes('-a') || args.includes('--all');
+      const targetPath = args.filter(arg => !arg.startsWith('-')).join(' ') || '';
+      
+      try {
+        const result = listDirectoryContents(targetPath, showHidden);
+        return result;
+      } catch (error) {
+        return {
+          success: false,
+          message: `列出目录内容失败: ${error.message}`
+        };
+      }
+    }
+
+    case 'config': {
+      if (args.length === 0) {
+        return { 
+          success: false, 
+          message: '用法: config [get|set|reset] [参数...]\n' +
+                   '  config get - 显示当前配置\n' +
+                   '  config get game-data-dir - 显示游戏数据目录\n' +
+                   '  config set game-data-dir [路径] - 设置游戏数据目录\n' +
+                   '  config reset - 重置配置为默认值'
+        };
+      }
+
+      const subCommand = args[0];
+
+      switch (subCommand) {
+        case 'get': {
+          if (args.length === 1) {
+            // Show full configuration
+            try {
+              const { getConfig } = require('./config.js');
+              const config = getConfig();
+              const configStr = JSON.stringify(config, null, 2);
+              return {
+                success: true,
+                message: `当前配置:\n${configStr}`
+              };
+            } catch (error) {
+              return {
+                success: false,
+                message: `获取配置失败: ${error.message}`
+              };
+            }
+          } else if (args[1] === 'game-data-dir') {
+            // Show game data directory
+            try {
+              const { getGameDataDirectory } = require('./config.js');
+              const gameDataDir = getGameDataDirectory();
+              return {
+                success: true,
+                message: `游戏数据目录: ${gameDataDir}`
+              };
+            } catch (error) {
+              return {
+                success: false,
+                message: `获取游戏数据目录失败: ${error.message}`
+              };
+            }
+          } else {
+            return {
+              success: false,
+              message: `未知配置项: ${args[1]}\n可用配置项: game-data-dir`
+            };
+          }
+        }
+
+        case 'set': {
+          if (args.length < 3) {
+            return {
+              success: false,
+              message: '用法: config set [配置项] [值]\n可用配置项: game-data-dir'
+            };
+          }
+
+          const configKey = args[1];
+          const configValue = args.slice(2).join(' ');
+
+          if (configKey === 'game-data-dir') {
+            try {
+              const { setGameDataDirectory } = require('./config.js');
+              const result = setGameDataDirectory(configValue);
+              
+              if (result.success) {
+                return {
+                  success: true,
+                  message: `游戏数据目录已设置为: ${result.path}`
+                };
+              } else {
+                return {
+                  success: false,
+                  message: `设置游戏数据目录失败: ${result.error}`
+                };
+              }
+            } catch (error) {
+              return {
+                success: false,
+                message: `设置游戏数据目录失败: ${error.message}`
+              };
+            }
+          } else {
+            return {
+              success: false,
+              message: `未知配置项: ${configKey}\n可用配置项: game-data-dir`
+            };
+          }
+        }
+
+        case 'reset': {
+          try {
+            const { resetConfigToDefaults } = require('./config.js');
+            const result = resetConfigToDefaults();
+            
+            if (result.success) {
+              return {
+                success: true,
+                message: '配置已重置为默认值'
+              };
+            } else {
+              return {
+                success: false,
+                message: `重置配置失败: ${result.error}`
+              };
+            }
+          } catch (error) {
+            return {
+              success: false,
+              message: `重置配置失败: ${error.message}`
+            };
+          }
+        }
+
+        default: {
+          return {
+            success: false,
+            message: `未知子命令: ${subCommand}\n可用子命令: get, set, reset`
+          };
+        }
+      }
+    }
+
     default:
       return {
         success: false,
@@ -780,287 +1127,505 @@ function validateFenestraFile(filePath) {
  * @param {string} currentDir - 当前工作目录
  * @returns {Object} 补全结果
  */
-function getFileCompletions(partialPath, currentDir) {
-  console.debug(`[FILE_COMPLETION] 处理补全请求: "${partialPath}", 当前目录: "${currentDir}"`);
+async function getFileCompletions(partialPath, currentDir) {
+  return withErrorHandling(async () => {
+    console.debug(`[FILE_COMPLETION] 处理补全请求: "${partialPath}", 当前目录: "${currentDir}"`);
 
-  try {
-    // 如果没有提供当前目录，默认使用 .fenestra-storage 目录
-    let workingDir;
-    if (currentDir && partialPath != "restore-window") {
-      workingDir = currentDir;
+    // SPECIAL CASES
+    const caseMap = new Map();
+    caseMap.set('restore-window', '')
+    caseMap.set('save-window', '$')
+
+
+    if (caseMap.has(partialPath)) {partialPath=caseMap.get(partialPath)}
+    // SPECIAL CASES ENCLOSE
+
+    // Validate input parameters
+    const inputValidation = validateInput(
+      { partialPath, currentDir }, 
+      [] // No required fields - both can be empty/null
+    );
+    if (inputValidation) {
+      return inputValidation;
+    }
+
+    // Get the game data directory (defaults to project root)
+    const gameDataRoot = getDefaultGameDataDirectory();
+    
+    // Determine working directory - use current directory or default to game data root
+    let workingDir = currentDir || gameDataRoot;
+    
+    // Validate the working directory is within game scope
+    const workingDirValidation = validateAndResolvePath(workingDir, gameDataRoot, gameDataRoot);
+    if (!workingDirValidation.isValid) {
+      console.warn(`[FILE_COMPLETION] Invalid working directory: ${workingDirValidation.error}`);
+      
+      // If current directory is invalid, fall back to game data root
+      workingDir = gameDataRoot;
+      
+      // Log this as a warning but continue with fallback
+      const error = new FileCompletionError(
+        `Working directory invalid, using fallback: ${workingDirValidation.error}`,
+        workingDirValidation.errorCode || ERROR_CODES.INVALID_PATH,
+        { 
+          originalCurrentDir: currentDir,
+          fallbackDir: gameDataRoot,
+          validationError: workingDirValidation.error
+        }
+      );
+      logError(error);
     } else {
-      // 默认使用 .fenestra-storage 目录
-      const storageDir = path.join(process.cwd(), '.fenestra-storage');
-      if (fs.existsSync(storageDir)) {
-        workingDir = storageDir;
-        console.debug(`[FILE_COMPLETION] 使用默认存储目录: ${storageDir}`);
-      } else {
-        workingDir = process.cwd();
-        console.debug(`[FILE_COMPLETION] 存储目录不存在，使用项目根目录: ${workingDir}`);
-      }
+      workingDir = workingDirValidation.resolvedPath;
     }
 
-    if (partialPath == 'restore-window') partialPath = '';
+    console.debug(`[FILE_COMPLETION] Using working directory: "${workingDir}"`);
 
-    // 处理空输入
+    // Handle empty input - show all contents of working directory
     if (!partialPath || partialPath.trim() === '') {
-      return getDirectoryContents(workingDir);
+      return await getDirectoryContentsForCompletion(workingDir, '', gameDataRoot);
     }
 
-    // 处理特殊字符和转义序列
-    const normalizedPath = normalizePathForCompletion(partialPath);
+    // Determine search directory and file pattern
+    const { searchDir, filePattern } = parseCompletionPath(partialPath, workingDir, gameDataRoot);
+    
+    if (!searchDir) {
+      return createErrorResponse(
+        ERROR_CODES.INVALID_PATH,
+        'Invalid path or access denied',
+        { partialPath, workingDir, gameDataRoot }
+      );
+    }
 
-    // 确定搜索目录和文件名模式
+    console.debug(`[FILE_COMPLETION] 搜索目录: "${searchDir}", 文件模式: "${filePattern}"`);
+
+    // Get directory contents with door-key system integration
+    return await getDirectoryContentsForCompletion(searchDir, filePattern, gameDataRoot);
+  }, 'getFileCompletions', { partialPath, currentDir });
+}
+
+/**
+ * Parses completion path to determine search directory and file pattern
+ * @param {string} partialPath - The partial path input
+ * @param {string} workingDir - Current working directory
+ * @param {string} gameDataRoot - Game data root directory
+ * @returns {Object} Object with searchDir and filePattern
+ */
+function parseCompletionPath(partialPath, workingDir, gameDataRoot) {
+  try {
+    // Normalize the input path
+    const normalizedPath = normalizePathInput(partialPath);
+    
+    // Validate normalized path
+    if (!normalizedPath) {
+      const error = new FileCompletionError(
+        'Path normalization resulted in empty path',
+        ERROR_CODES.MALFORMED_PATH,
+        { partialPath, normalizedPath }
+      );
+      logError(error);
+      return { searchDir: null, filePattern: '', error };
+    }
+    
+    // Determine search directory and file pattern
     let searchDir, filePattern;
 
     if (path.isAbsolute(normalizedPath)) {
-      // 绝对路径
+      // Absolute path
       const dirname = path.dirname(normalizedPath);
       const basename = path.basename(normalizedPath);
 
-      searchDir = dirname;
+      // Validate the directory is within game scope
+      const dirValidation = validateAndResolvePath(dirname, workingDir, gameDataRoot);
+      if (!dirValidation.isValid) {
+        const error = new FileCompletionError(
+          `Absolute path outside scope: ${dirValidation.error}`,
+          dirValidation.errorCode || ERROR_CODES.PATH_OUTSIDE_SCOPE,
+          { 
+            partialPath, 
+            dirname, 
+            workingDir, 
+            gameDataRoot,
+            validationError: dirValidation.error
+          }
+        );
+        logError(error);
+        return { searchDir: null, filePattern: '', error };
+      }
+
+      searchDir = dirValidation.resolvedPath;
       filePattern = basename;
     } else {
-      // 相对路径
+      // Relative path
       const dirname = path.dirname(normalizedPath);
       const basename = path.basename(normalizedPath);
 
       if (dirname === '.') {
         searchDir = workingDir;
       } else {
-        searchDir = path.resolve(workingDir, dirname);
+        // Validate the relative directory is within game scope
+        const dirValidation = validateAndResolvePath(dirname, workingDir, gameDataRoot);
+        if (!dirValidation.isValid) {
+          const error = new FileCompletionError(
+            `Relative path outside scope: ${dirValidation.error}`,
+            dirValidation.errorCode || ERROR_CODES.PATH_OUTSIDE_SCOPE,
+            { 
+              partialPath, 
+              dirname, 
+              workingDir, 
+              gameDataRoot,
+              validationError: dirValidation.error
+            }
+          );
+          logError(error);
+          return { searchDir: null, filePattern: '', error };
+        }
+        searchDir = dirValidation.resolvedPath;
       }
       filePattern = basename;
     }
 
-    console.debug(`[FILE_COMPLETION] 搜索目录: "${searchDir}", 文件模式: "${filePattern}"`);
+    console.debug(`[FILE_COMPLETION] Path parsing successful: searchDir="${searchDir}", filePattern="${filePattern}"`);
+    return { searchDir, filePattern, error: null };
 
-    // 检查搜索目录是否存在和可访问
-    const dirAccessResult = checkDirectoryAccess(searchDir);
-    if (!dirAccessResult.success) {
-      return {
-        success: true,
-        completions: [],
-        commonPrefix: '',
-        message: dirAccessResult.message,
-        error: dirAccessResult.error
-      };
+  } catch (error) {
+    const completionError = new FileCompletionError(
+      `Path parsing failed: ${error.message}`,
+      ERROR_CODES.MALFORMED_PATH,
+      { 
+        partialPath, 
+        workingDir, 
+        gameDataRoot,
+        originalError: {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        }
+      }
+    );
+    logError(completionError);
+    return { searchDir: null, filePattern: '', error: completionError };
+  }
+}
+
+/**
+ * Gets directory contents for file completion with door-key integration
+ * @param {string} dirPath - Directory path to read
+ * @param {string} pattern - File pattern to match
+ * @param {string} gameDataRoot - Game data root directory
+ * @returns {Object} Completion results
+ */
+async function getDirectoryContentsForCompletion(dirPath, pattern, gameDataRoot) {
+  return withErrorHandling(async () => {
+    // Check directory access with door-key system
+    const doorKeyAccess = checkDirectoryAccess(dirPath);
+    if (!doorKeyAccess.hasAccess) {
+      console.debug(`[FILE_COMPLETION] Directory access denied by door-key system: ${dirPath}`);
+      
+      // Create appropriate error response based on door-key system result
+      let errorCode = doorKeyAccess.errorCode || ERROR_CODES.ACCESS_DENIED;
+      let message = doorKeyAccess.lockReason || 'Directory access denied';
+      
+      if (doorKeyAccess.isLocked) {
+        if (doorKeyAccess.requiredKey) {
+          if (doorKeyAccess.keyAvailable) {
+            message = `Directory is locked. Use key "${doorKeyAccess.requiredKey}" to unlock.`;
+          } else {
+            message = `Directory is locked. Required key "${doorKeyAccess.requiredKey}" is not available.`;
+            errorCode = ERROR_CODES.MISSING_KEY;
+          }
+        } else {
+          message = doorKeyAccess.lockReason || 'Directory is locked';
+        }
+      }
+      
+      return createErrorResponse(errorCode, message, {
+        path: dirPath,
+        pattern,
+        doorKeyInfo: doorKeyAccess
+      });
     }
 
-    // 读取目录内容（带性能优化）
-    const entries = readDirectoryWithOptimization(searchDir);
-    if (!entries.success) {
-      return {
-        success: true,
-        completions: [],
-        commonPrefix: '',
-        message: entries.message
-      };
-    }
-
-    // 过滤匹配的条目（支持特殊字符）
-    const matchingEntries = filterMatchingEntries(entries.entries, filePattern, searchDir);
-
-    // 转换为补全格式（处理特殊字符）
-    const completions = matchingEntries.map(entry => {
-      const fullPath = path.join(searchDir, entry.name);
-      const relativePath = path.relative(workingDir, fullPath);
-
-      // 处理包含空格和特殊字符的文件名
-      const displayName = entry.isDirectory() ? `${entry.name}/` : entry.name;
-      const escapedName = needsQuoting(entry.name) ? `"${entry.name}"` : entry.name;
-
-      return {
-        name: displayName,
-        escapedName: entry.isDirectory() ? `${escapedName}/` : escapedName,
-        type: entry.isDirectory() ? 'directory' : 'file',
-        path: relativePath || entry.name,
-        hasSpecialChars: needsQuoting(entry.name)
-      };
+    // Use directory navigator to get contents with improved options
+    // Don't pass pattern here - we'll do enhanced filtering at completion level
+    const contentsResult = await getDirectoryContents(dirPath, '', {
+      includeHidden: pattern.startsWith('.'), // Show hidden files if pattern starts with dot
+      includeDirectories: true,
+      includeFiles: true,
+      caseSensitive: false, // Case-insensitive matching by default
+      sortAlphabetically: false, // We'll do our own sorting with scoring
+      maxResults: 1000 // Higher limit since we'll filter at completion level
     });
 
-    // 计算公共前缀（考虑特殊字符）
-    const commonPrefix = findCommonPrefixWithSpecialChars(completions.map(c => c.name));
-
-    // 性能优化：限制返回数量
-    const maxResults = 100;
-    const limitedCompletions = completions.slice(0, maxResults);
-
-    console.debug(`[FILE_COMPLETION] 找到 ${completions.length} 个匹配项，返回 ${limitedCompletions.length} 个`);
-
-    return {
-      success: true,
-      completions: limitedCompletions,
-      commonPrefix,
-      totalMatches: completions.length,
-      message: completions.length > maxResults ?
-        `显示前${maxResults}个结果，共${completions.length}个匹配项` :
-        (completions.length === 0 ? '没有找到匹配的文件' : '')
-    };
-
-  } catch (error) {
-    console.error(`[FILE_COMPLETION] 补全处理失败:`, error);
-
-    // 提供更详细的错误信息
-    let errorMessage = '补全失败';
-    if (error.code === 'ENOENT') {
-      errorMessage = '路径不存在';
-    } else if (error.code === 'EACCES') {
-      errorMessage = '权限不足';
-    } else if (error.code === 'ENOTDIR') {
-      errorMessage = '路径不是目录';
-    } else if (error.message) {
-      errorMessage = `补全失败: ${error.message}`;
+    if (!contentsResult.success) {
+      throw new FileCompletionError(
+        contentsResult.error || 'Failed to read directory contents',
+        ERROR_CODES.DIRECTORY_READ_FAILED,
+        { path: dirPath, pattern, originalError: contentsResult.error }
+      );
     }
 
-    return {
-      success: false,
-      message: errorMessage,
-      completions: [],
-      error: error.code || 'UNKNOWN'
-    };
-  }
-}
+    // Filter accessible directories using door-key system
+    const accessibleEntries = filterAccessibleDirectories(contentsResult.entries);
 
-/**
- * 获取目录内容
- * @param {string} dirPath - 目录路径
- * @returns {Object} 目录内容
- */
-function getDirectoryContents(dirPath) {
-  try {
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-    
-    // 检查是否在 .fenestra-storage 目录中
-    const isStorageDir = dirPath.includes('.fenestra-storage');
+    // Apply enhanced filtering for better pattern matching
+    const filteredEntries = filterMatchingEntries(accessibleEntries, pattern, {
+      caseSensitive: false,
+      includeAllFileTypes: true,
+      maxResults: 100 // Reasonable limit for UI display
+    });
 
-    const completions = entries
-      .filter(entry => {
-        // 跳过隐藏文件
-        if (entry.name.startsWith('.')) return false;
-        
-        // 如果在存储目录中，优先显示 .fenestra 文件
-        if (isStorageDir && !entry.isDirectory()) {
-          return entry.name.endsWith('.fenestra');
+    // Convert to completion format with enhanced special character handling
+    const completions = filteredEntries.map(entry => {
+      // Clean up the display name - remove trailing slash for processing
+      const baseName = entry.name.replace(/\/$/, '');
+      const displayName = entry.type === 'directory' ? `${baseName}/` : baseName;
+      
+      // Use enhanced escaping logic
+      const needsEscaping = entry.hasSpecialChars || hasSpecialCharacters(baseName);
+      
+      // Use the new escaping function for better shell compatibility
+      let escapedName;
+      if (needsEscaping) {
+        escapedName = escapeFilenameForShell(baseName, { 
+          forceQuotes: false, 
+          preferSingleQuotes: false 
+        });
+      } else {
+        escapedName = baseName;
+      }
+      
+      const finalEscapedName = entry.type === 'directory' ? `${escapedName}/` : escapedName;
+
+      const completion = {
+        name: displayName, // Display name with trailing slash for directories
+        escapedName: finalEscapedName, // Properly escaped name for shell usage
+        type: entry.type,
+        path: entry.relativePath || baseName,
+        hasSpecialChars: needsEscaping,
+        isLocked: entry.isLocked || false
+      };
+
+      // Add door-key system information if entry is locked
+      if (entry.isLocked) {
+        completion.lockReason = entry.lockReason;
+        completion.requiredKey = entry.requiredKey;
+        completion.doorType = entry.doorType;
+        if (entry.progress) {
+          completion.progress = entry.progress;
         }
-        
-        return true;
-      })
-      .map(entry => {
-        const displayName = entry.isDirectory() ? `${entry.name}/` : entry.name;
-        const escapedName = needsQuoting(entry.name) ? `"${entry.name}"` : entry.name;
+      }
 
-        return {
-          name: displayName,
-          escapedName: entry.isDirectory() ? `${escapedName}/` : escapedName,
-          type: entry.isDirectory() ? 'directory' : 'file',
-          path: entry.name,
-          hasSpecialChars: needsQuoting(entry.name)
-        };
-      })
-      .slice(0, 100); // 增加限制数量
+      return completion;
+    });
 
-    return {
-      success: true,
-      completions,
-      commonPrefix: '',
+    // Calculate common prefix with enhanced special character handling
+    const commonPrefix = findCommonPrefixWithSpecialChars(
+      completions.map(c => c.name),
+      {
+        caseSensitive: false,
+        respectWordBoundaries: true,
+        minPrefixLength: 1,
+        includePathSeparators: true
+      }
+    );
+
+    console.debug(`[FILE_COMPLETION] Found ${completions.length} accessible entries`);
+
+    // Determine appropriate message
+    let message = '';
+    if (completions.length === 0) {
+      if (pattern) {
+        message = `No files match the pattern "${pattern}"`;
+      } else {
+        message = 'No accessible files found in this directory';
+      }
+    }
+
+    return createSuccessResponse(completions, commonPrefix, {
       totalMatches: completions.length,
-      message: completions.length === 100 ? '显示前100个文件' : ''
-    };
-  } catch (error) {
-    let errorMessage = '读取目录失败';
-    if (error.code === 'EACCES') {
-      errorMessage = '目录访问权限不足';
-    } else if (error.code === 'ENOENT') {
-      errorMessage = '目录不存在';
-    } else if (error.code === 'ENOTDIR') {
-      errorMessage = '路径不是目录';
-    }
-
-    return {
-      success: false,
-      message: errorMessage,
-      completions: [],
-      error: error.code || 'UNKNOWN'
-    };
-  }
+      message,
+      searchPath: dirPath,
+      searchPattern: pattern,
+      totalEntriesFound: contentsResult.totalCount,
+      accessibleEntriesFound: accessibleEntries.length
+    });
+  }, 'getDirectoryContentsForCompletion', { dirPath, pattern, gameDataRoot });
 }
 
 /**
- * 查找字符串数组的公共前缀
- * @param {string[]} strings - 字符串数组
- * @returns {string} 公共前缀
+ * Normalizes path input for completion processing with enhanced special character handling
+ * @param {string} inputPath - Raw input path
+ * @returns {string} Normalized path
  */
-function findCommonPrefix(strings) {
-  if (strings.length === 0) return '';
-  if (strings.length === 1) return strings[0];
-
-  let prefix = '';
-  const firstString = strings[0];
-
-  for (let i = 0; i < firstString.length; i++) {
-    const char = firstString[i];
-
-    if (strings.every(str => str[i] === char)) {
-      prefix += char;
-    } else {
-      break;
-    }
+function normalizePathInput(inputPath) {
+  if (!inputPath || typeof inputPath !== 'string') {
+    return '';
   }
 
-  return prefix;
-}
+  // Use the enhanced normalization function
+  let normalized = normalizePathForCompletion(inputPath);
 
-/**
- * 查找字符串数组的公共前缀（处理特殊字符）
- * @param {string[]} strings - 字符串数组
- * @returns {string} 公共前缀
- */
-function findCommonPrefixWithSpecialChars(strings) {
-  if (strings.length === 0) return '';
-  if (strings.length === 1) return strings[0];
-
-  let prefix = '';
-  const firstString = strings[0];
-
-  for (let i = 0; i < firstString.length; i++) {
-    const char = firstString[i];
-
-    if (strings.every(str => str[i] && str[i].toLowerCase() === char.toLowerCase())) {
-      prefix += char;
-    } else {
-      break;
-    }
-  }
-
-  return prefix;
-}
-
-/**
- * 规范化路径用于补全（处理特殊字符和转义）
- * @param {string} inputPath - 输入路径
- * @returns {string} 规范化后的路径
- */
-function normalizePathForCompletion(inputPath) {
-  let normalized = inputPath;
-
-  // 处理引号包围的路径
-  if ((normalized.startsWith('"') && normalized.endsWith('"')) ||
-    (normalized.startsWith("'") && normalized.endsWith("'"))) {
-    normalized = normalized.slice(1, -1);
-  }
-
-  // 处理转义字符
-  normalized = normalized.replace(/\\(.)/g, '$1');
-
-  // 处理波浪号扩展
-  if (normalized.startsWith('~')) {
-    const os = require('os');
-    normalized = normalized.replace('~', os.homedir());
+  // Additional validation for path characters
+  const validation = validatePathCharacters(normalized);
+  if (!validation.isValid) {
+    console.warn(`[PATH_NORMALIZE] Path validation warning: ${validation.error}`);
+    // Continue with the normalized path but log the warning
   }
 
   return normalized;
 }
+
+/**
+ * Enhanced filtering for file completion entries
+ * Removes storage-specific filtering and applies more flexible matching
+ * @param {Array} entries - Array of directory entries
+ * @param {string} pattern - Pattern to match against
+ * @param {Object} options - Filtering options
+ * @returns {Array} Filtered entries
+ */
+function filterMatchingEntries(entries, pattern, options = {}) {
+  const {
+    caseSensitive = false,
+    includeAllFileTypes = true,
+    maxResults = 200
+  } = options;
+
+  if (!pattern || pattern.trim() === '') {
+    // No pattern - return all entries (up to limit)
+    // Sort to prioritize directories first, then alphabetically
+    const sortedEntries = [...entries].sort((a, b) => {
+      // Directories first
+      if (a.type !== b.type) {
+        return a.type === 'directory' ? -1 : 1;
+      }
+      // Then alphabetically (case-insensitive)
+      return a.name.localeCompare(b.name, undefined, { 
+        numeric: true, 
+        sensitivity: 'base' 
+      });
+    });
+    
+    return sortedEntries.slice(0, maxResults);
+  }
+
+  const filteredEntries = [];
+  const searchPattern = caseSensitive ? pattern.trim() : pattern.trim().toLowerCase();
+
+  // Create scoring system for better match ranking
+  const scoredMatches = [];
+
+  for (const entry of entries) {
+    const entryName = caseSensitive ? entry.name : entry.name.toLowerCase();
+    const baseEntryName = entryName.replace(/\/$/, ''); // Remove trailing slash for matching
+    
+    let matchScore = 0;
+    let matches = false;
+
+    // 1. Exact match (highest priority - score 100)
+    if (baseEntryName === searchPattern) {
+      matches = true;
+      matchScore = 100;
+    }
+    // 2. Prefix matching (high priority - score 80-90)
+    else if (baseEntryName.startsWith(searchPattern)) {
+      matches = true;
+      // Shorter matches get higher scores
+      matchScore = 90 - Math.min(10, baseEntryName.length - searchPattern.length);
+    }
+    // 3. Word boundary matching (medium-high priority - score 60-70)
+    else {
+      const nameParts = baseEntryName.split(/[-_.\s]/);
+      for (let i = 0; i < nameParts.length; i++) {
+        const part = nameParts[i];
+        if (part.startsWith(searchPattern)) {
+          matches = true;
+          // Earlier word boundaries get higher scores
+          matchScore = 70 - (i * 5);
+          break;
+        }
+      }
+    }
+    
+    // 4. Substring matching (medium priority - score 40-50)
+    if (!matches && baseEntryName.includes(searchPattern)) {
+      matches = true;
+      const index = baseEntryName.indexOf(searchPattern);
+      // Earlier occurrences get higher scores
+      matchScore = 50 - Math.min(10, index);
+    }
+    
+    // 5. Extension matching (lower priority - score 30)
+    if (!matches && searchPattern.startsWith('.') && baseEntryName.endsWith(searchPattern)) {
+      matches = true;
+      matchScore = 30;
+    }
+    
+    // 6. Fuzzy matching for very partial matches (lowest priority - score 10-20)
+    if (!matches && searchPattern.length >= 2) {
+      // Check if all characters in pattern appear in order (not necessarily consecutive)
+      let patternIndex = 0;
+      for (let i = 0; i < baseEntryName.length && patternIndex < searchPattern.length; i++) {
+        if (baseEntryName[i] === searchPattern[patternIndex]) {
+          patternIndex++;
+        }
+      }
+      
+      if (patternIndex === searchPattern.length) {
+        matches = true;
+        matchScore = 20 - Math.min(10, baseEntryName.length - searchPattern.length);
+      }
+    }
+
+    if (matches) {
+      // Boost score for directories to prioritize them
+      if (entry.type === 'directory') {
+        matchScore += 5;
+      }
+      
+      // Boost score for files that don't start with dot (unless pattern starts with dot)
+      if (!entry.name.startsWith('.') || searchPattern.startsWith('.')) {
+        matchScore += 2;
+      }
+
+      scoredMatches.push({
+        entry,
+        score: matchScore
+      });
+    }
+  }
+
+  // Sort by score (descending) then alphabetically
+  scoredMatches.sort((a, b) => {
+    if (a.score !== b.score) {
+      return b.score - a.score; // Higher scores first
+    }
+    // Same score - sort alphabetically
+    return a.entry.name.localeCompare(b.entry.name, undefined, { 
+      numeric: true, 
+      sensitivity: 'base' 
+    });
+  });
+
+  // Extract entries and apply limit
+  const sortedEntries = scoredMatches.map(match => match.entry);
+  return sortedEntries.slice(0, maxResults);
+}
+
+/**
+ * Checks if a filename contains special characters that need escaping
+ * @param {string} filename - The filename to check
+ * @returns {boolean} True if filename has special characters
+ */
+function hasSpecialCharacters(filename) {
+  // Characters that typically need escaping in shell contexts
+  // Enhanced pattern for comprehensive special character detection
+  // Includes: spaces, quotes, backslashes, wildcards, brackets, braces, parentheses,
+  // pipes, redirections, semicolons, ampersands, tildes, backticks, dollar signs, hash
+  const specialChars = /[\s'"\\!*?[\]{}()&|;><$`~#]/;
+  return specialChars.test(filename);
+}
+
+
 
 /**
  * 检查文件名是否需要引号包围
@@ -1069,141 +1634,23 @@ function normalizePathForCompletion(inputPath) {
  */
 function needsQuoting(filename) {
   // 检查是否包含空格、特殊字符或需要转义的字符
-  return /[\s'"\\&|<>(){}[\]$`!?*;]/.test(filename);
+  // Enhanced pattern to handle more shell metacharacters and edge cases
+  // Includes: spaces, quotes, backslashes, wildcards, brackets, braces, parentheses,
+  // pipes, redirections, semicolons, ampersands, tildes, backticks, dollar signs, hash
+  return /[\s'"\\&|<>(){}[\]$`!?*;~#]/.test(filename);
 }
 
-/**
- * 检查目录访问权限
- * @param {string} dirPath - 目录路径
- * @returns {Object} 检查结果
- */
-function checkDirectoryAccess(dirPath) {
-  try {
-    // 检查路径是否存在
-    if (!fs.existsSync(dirPath)) {
-      return {
-        success: false,
-        message: '目录不存在',
-        error: 'ENOENT'
-      };
-    }
 
-    // 检查是否是目录
-    const stats = fs.statSync(dirPath);
-    if (!stats.isDirectory()) {
-      return {
-        success: false,
-        message: '路径不是目录',
-        error: 'ENOTDIR'
-      };
-    }
-
-    // 检查读取权限
-    fs.accessSync(dirPath, fs.constants.R_OK);
-
-    return { success: true };
-
-  } catch (error) {
-    let message = '目录访问失败';
-    if (error.code === 'EACCES') {
-      message = '目录访问权限不足';
-    } else if (error.code === 'EPERM') {
-      message = '操作权限不足';
-    }
-
-    return {
-      success: false,
-      message,
-      error: error.code || 'UNKNOWN'
-    };
-  }
-}
-
-/**
- * 优化的目录读取（处理大目录）
- * @param {string} dirPath - 目录路径
- * @returns {Object} 读取结果
- */
-function readDirectoryWithOptimization(dirPath) {
-  try {
-    const startTime = Date.now();
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-    const readTime = Date.now() - startTime;
-
-    // 如果读取时间过长，记录警告
-    if (readTime > 1000) {
-      console.warn(`[FILE_COMPLETION] 目录读取耗时较长: ${readTime}ms, 路径: ${dirPath}`);
-    }
-
-    // 如果文件数量过多，记录信息
-    if (entries.length > 1000) {
-      console.info(`[FILE_COMPLETION] 大目录检测: ${entries.length} 个条目, 路径: ${dirPath}`);
-    }
-
-    return {
-      success: true,
-      entries,
-      readTime,
-      totalEntries: entries.length
-    };
-
-  } catch (error) {
-    return {
-      success: false,
-      message: `读取目录失败: ${error.message}`,
-      error: error.code || 'UNKNOWN'
-    };
-  }
-}
-
-/**
- * 过滤匹配的条目（支持特殊字符）
- * @param {Array} entries - 目录条目
- * @param {string} pattern - 匹配模式
- * @returns {Array} 匹配的条目
- */
-function filterMatchingEntries(entries, pattern, searchDir) {
-  const normalizedPattern = pattern.toLowerCase();
-  const isStorageDir = searchDir && searchDir.includes('.fenestra-storage');
-
-  return entries.filter(entry => {
-    // 跳过隐藏文件（除非用户明确输入了点开头）
-    if (entry.name.startsWith('.') && !pattern.startsWith('.')) {
-      return false;
-    }
-
-    // 如果在存储目录中，优先显示 .fenestra 文件
-    if (isStorageDir && !entry.isDirectory() && !entry.name.endsWith('.fenestra')) {
-      return false;
-    }
-
-    // 基本前缀匹配
-    if (entry.name.toLowerCase().startsWith(normalizedPattern)) {
-      return true;
-    }
-
-    // 如果基本匹配失败，尝试处理特殊字符的匹配
-    const normalizedName = entry.name.toLowerCase();
-
-    // 处理包含空格的文件名
-    if (normalizedName.replace(/\s+/g, '').startsWith(normalizedPattern.replace(/\s+/g, ''))) {
-      return true;
-    }
-
-    return false;
-  });
-}
 
 /**
  * 获取当前工作目录
  * @returns {Object} 当前目录信息
  */
 function getCurrentDirectory() {
-  console.debug('[CURRENT_DIR] 获取当前工作目录');
+  return withErrorHandling(async () => {
+    console.debug('[CURRENT_DIR] 获取当前工作目录');
 
-  try {
     const currentDir = process.cwd();
-
     console.debug(`[CURRENT_DIR] 当前工作目录: ${currentDir}`);
 
     return {
@@ -1211,13 +1658,323 @@ function getCurrentDirectory() {
       currentDirectory: currentDir,
       message: '获取成功'
     };
-  } catch (error) {
-    console.error(`[CURRENT_DIR] 获取当前目录失败:`, error);
-    return {
-      success: false,
-      message: `获取失败: ${error.message}`
-    };
-  }
+  }, 'getCurrentDirectory', {});
+}
+
+/**
+ * 更改当前工作目录
+ * @param {string} targetPath - 目标目录路径
+ * @param {string} currentDir - 当前工作目录（可选）
+ * @returns {Object} 目录更改结果
+ */
+async function changeDirectory(targetPath, currentDir = null) {
+  return withErrorHandling(async () => {
+    console.debug(`[CHANGE_DIR] 更改目录到: "${targetPath}"`);
+
+    // Get the game data directory as the root scope
+    const gameDataRoot = getDefaultGameDataDirectory();
+    const workingDir = currentDir || process.cwd();
+
+    // Handle empty path - go to game data root
+    if (!targetPath || targetPath.trim() === '') {
+      const navigationResult = navigateToDirectory(gameDataRoot, workingDir, gameDataRoot);
+      
+      if (!navigationResult.success) {
+        throw new FileCompletionError(
+          navigationResult.error,
+          ERROR_CODES.DIRECTORY_NOT_FOUND,
+          { targetPath: gameDataRoot, currentDir: workingDir }
+        );
+      }
+
+      return createSuccessResponse([], '', {
+        message: `已切换到游戏数据根目录: ${navigationResult.newPath}`,
+        newDirectory: navigationResult.newPath,
+        previousDirectory: workingDir
+      });
+    }
+
+    // Handle special paths
+    if (targetPath === '..') {
+      // Go to parent directory
+      const { getParentDirectory } = await import('./utils/directoryNavigator.js');
+      const parentResult = getParentDirectory(workingDir, gameDataRoot);
+      
+      if (!parentResult.success) {
+        return createErrorResponse(
+          ERROR_CODES.INVALID_PATH,
+          parentResult.error,
+          { targetPath, currentDir: workingDir, gameDataRoot }
+        );
+      }
+
+      return createSuccessResponse([], '', {
+        message: `已切换到上级目录: ${parentResult.parentPath}`,
+        newDirectory: parentResult.parentPath,
+        previousDirectory: workingDir
+      });
+    }
+
+    if (targetPath === '~' || targetPath === '$HOME') {
+      // Go to game data root (equivalent to home in this context)
+      const navigationResult = navigateToDirectory(gameDataRoot, workingDir, gameDataRoot);
+      
+      if (!navigationResult.success) {
+        throw new FileCompletionError(
+          navigationResult.error,
+          ERROR_CODES.DIRECTORY_NOT_FOUND,
+          { targetPath: gameDataRoot, currentDir: workingDir }
+        );
+      }
+
+      return createSuccessResponse([], '', {
+        message: `已切换到游戏数据根目录: ${navigationResult.newPath}`,
+        newDirectory: navigationResult.newPath,
+        previousDirectory: workingDir
+      });
+    }
+
+    // Navigate to the specified directory
+    const navigationResult = navigateToDirectory(targetPath, workingDir, gameDataRoot);
+    
+    if (!navigationResult.success) {
+      return createErrorResponse(
+        ERROR_CODES.DIRECTORY_NOT_FOUND,
+        navigationResult.error,
+        { targetPath, currentDir: workingDir, gameDataRoot }
+      );
+    }
+
+    // Check door-key system access
+    const doorKeyAccess = checkDirectoryAccess(navigationResult.newPath);
+    if (!doorKeyAccess.hasAccess) {
+      let errorMessage = '目录访问被拒绝';
+      
+      if (doorKeyAccess.isLocked) {
+        if (doorKeyAccess.requiredKey) {
+          errorMessage = `目录已锁定，需要钥匙: ${doorKeyAccess.requiredKey}`;
+        } else {
+          errorMessage = doorKeyAccess.lockReason || '目录已锁定';
+        }
+      }
+      
+      return createErrorResponse(
+        ERROR_CODES.ACCESS_DENIED,
+        errorMessage,
+        { 
+          targetPath, 
+          resolvedPath: navigationResult.newPath,
+          doorKeyInfo: doorKeyAccess 
+        }
+      );
+    }
+
+    console.debug(`[CHANGE_DIR] 目录更改成功: ${navigationResult.newPath}`);
+
+    return createSuccessResponse([], '', {
+      message: `已切换到目录: ${navigationResult.newPath}`,
+      newDirectory: navigationResult.newPath,
+      previousDirectory: workingDir
+    });
+  }, 'changeDirectory', { targetPath, currentDir });
+}
+
+/**
+ * 列出目录内容
+ * @param {string} dirPath - 目录路径（可选，默认为当前目录）
+ * @param {boolean} showHidden - 是否显示隐藏文件
+ * @returns {Object} 目录内容列表结果
+ */
+async function listDirectoryContents(dirPath = '', showHidden = false) {
+  return withErrorHandling(async () => {
+    console.debug(`[LIST_DIR] 列出目录内容: "${dirPath}", 显示隐藏文件: ${showHidden}`);
+
+    // Get the game data directory as the root scope
+    const gameDataRoot = getDefaultGameDataDirectory();
+    
+    // Get the working directory (defaults to .fenestra-storage)
+    const workingDirResult = await getWorkingDirectory();
+    const currentDir = workingDirResult.currentDirectory || process.cwd();
+    
+    // Determine target directory
+    let targetDir = dirPath.trim();
+    if (!targetDir) {
+      targetDir = currentDir;
+    } else {
+      // Resolve the path within game scope
+      const pathValidation = validateAndResolvePath(targetDir, currentDir, gameDataRoot);
+      if (!pathValidation.isValid) {
+        return createErrorResponse(
+          pathValidation.errorCode || ERROR_CODES.INVALID_PATH,
+          pathValidation.error,
+          { dirPath, currentDir, gameDataRoot }
+        );
+      }
+      targetDir = pathValidation.resolvedPath;
+    }
+
+    // Check door-key system access
+    const doorKeyAccess = checkDirectoryAccess(targetDir);
+    if (!doorKeyAccess.hasAccess) {
+      let errorMessage = '目录访问被拒绝';
+      
+      if (doorKeyAccess.isLocked) {
+        if (doorKeyAccess.requiredKey) {
+          errorMessage = `目录已锁定，需要钥匙: ${doorKeyAccess.requiredKey}`;
+        } else {
+          errorMessage = doorKeyAccess.lockReason || '目录已锁定';
+        }
+      }
+      
+      return createErrorResponse(
+        ERROR_CODES.ACCESS_DENIED,
+        errorMessage,
+        { 
+          dirPath: targetDir,
+          doorKeyInfo: doorKeyAccess 
+        }
+      );
+    }
+
+    // Get directory contents
+    const contentsResult = await getDirectoryContents(targetDir, '', {
+      includeHidden: showHidden,
+      includeDirectories: true,
+      includeFiles: true,
+      caseSensitive: false,
+      sortAlphabetically: true,
+      maxResults: 1000
+    });
+
+    if (!contentsResult.success) {
+      return createErrorResponse(
+        ERROR_CODES.DIRECTORY_READ_FAILED,
+        contentsResult.error,
+        { dirPath: targetDir, showHidden }
+      );
+    }
+
+    // Filter accessible directories using door-key system
+    const accessibleEntries = filterAccessibleDirectories(contentsResult.entries);
+
+    // Format the output
+    let message = `目录内容: ${targetDir}\n`;
+    
+    if (accessibleEntries.length === 0) {
+      message += '(空目录)';
+    } else {
+      // Group by type and format
+      const directories = accessibleEntries.filter(entry => entry.type === 'directory');
+      const files = accessibleEntries.filter(entry => entry.type === 'file');
+      
+      if (directories.length > 0) {
+        message += '\n目录:\n';
+        directories.forEach(dir => {
+          const displayName = dir.name.replace(/\/$/, ''); // Remove trailing slash for display
+          const lockIndicator = dir.isLocked ? ' [锁定]' : '';
+          message += `  ${displayName}/${lockIndicator}\n`;
+        });
+      }
+      
+      if (files.length > 0) {
+        message += '\n文件:\n';
+        files.forEach(file => {
+          const sizeInfo = file.size ? ` (${Math.round(file.size / 1024)}KB)` : '';
+          message += `  ${file.name}${sizeInfo}\n`;
+        });
+      }
+      
+      message += `\n总计: ${directories.length} 个目录, ${files.length} 个文件`;
+    }
+
+    console.debug(`[LIST_DIR] 找到 ${accessibleEntries.length} 个可访问条目`);
+
+    return createSuccessResponse(accessibleEntries, '', {
+      message,
+      directoryPath: targetDir,
+      totalEntries: accessibleEntries.length,
+      directories: accessibleEntries.filter(e => e.type === 'directory').length,
+      files: accessibleEntries.filter(e => e.type === 'file').length,
+      showHidden
+    });
+  }, 'listDirectoryContents', { dirPath, showHidden });
+}
+
+/**
+ * 获取当前工作目录（用于终端显示）
+ * @returns {Object} 工作目录信息
+ */
+async function getWorkingDirectory() {
+  return withErrorHandling(async () => {
+    console.debug('[GET_WORKING_DIR] 获取工作目录');
+
+    const gameDataRoot = getDefaultGameDataDirectory();
+    const fenestraStoragePath = path.join(gameDataRoot, '.fenestra-storage');
+    
+    // Ensure .fenestra-storage directory exists
+    try {
+      if (!fs.existsSync(fenestraStoragePath)) {
+        console.debug(`[GET_WORKING_DIR] Creating .fenestra-storage directory: ${fenestraStoragePath}`);
+        fs.mkdirSync(fenestraStoragePath, { recursive: true });
+        console.log(`[GET_WORKING_DIR] .fenestra-storage directory created`);
+      }
+    } catch (error) {
+      console.error(`[GET_WORKING_DIR] Failed to create .fenestra-storage directory:`, error);
+      // Fall back to game data root if we can't create .fenestra-storage
+    }
+    
+    // Default to .fenestra-storage directory if it exists and is accessible
+    let workingDirectory = process.cwd();
+    let shouldUseFenestraStorage = false;
+    
+    try {
+      if (fs.existsSync(fenestraStoragePath)) {
+        // Validate that .fenestra-storage is within game scope
+        if (isWithinGameScope(fenestraStoragePath, gameDataRoot)) {
+          workingDirectory = fenestraStoragePath;
+          shouldUseFenestraStorage = true;
+          console.debug(`[GET_WORKING_DIR] Using .fenestra-storage as working directory`);
+        }
+      }
+    } catch (error) {
+      console.warn(`[GET_WORKING_DIR] Could not access .fenestra-storage directory:`, error);
+    }
+    
+    // Check if working directory is within game scope
+    const isWithinScope = isWithinGameScope(workingDirectory, gameDataRoot);
+    
+    let displayPath = workingDirectory;
+    let message = `当前工作目录: ${workingDirectory}`;
+    
+    if (isWithinScope) {
+      // Show relative path from game data root for better readability
+      const relativePath = path.relative(gameDataRoot, workingDirectory);
+      if (relativePath) {
+        displayPath = `./${relativePath}`;
+        if (shouldUseFenestraStorage) {
+          message = `当前工作目录: ${displayPath} (Fenestra存储目录)`;
+        } else {
+          message = `当前工作目录: ${displayPath} (${workingDirectory})`;
+        }
+      } else {
+        displayPath = './';
+        message = `当前工作目录: ${displayPath} (游戏数据根目录)`;
+      }
+    } else {
+      message += ' [警告: 不在游戏数据范围内]';
+    }
+
+    console.debug(`[GET_WORKING_DIR] 工作目录: ${workingDirectory}`);
+
+    return createSuccessResponse([], '', {
+      message,
+      currentDirectory: workingDirectory,
+      displayPath,
+      gameDataRoot,
+      isWithinScope,
+      isFenestraStorage: shouldUseFenestraStorage
+    });
+  }, 'getWorkingDirectory', {});
 }
 
 /**
@@ -1235,6 +1992,13 @@ export function cleanupIpcHandlers() {
   ipcMain.removeAllListeners('storage/validate-fenestra-file');
   ipcMain.removeAllListeners('terminal/get-file-completions');
   ipcMain.removeAllListeners('terminal/get-current-directory');
+  ipcMain.removeAllListeners('terminal/change-directory');
+  ipcMain.removeAllListeners('terminal/list-directory');
+  ipcMain.removeAllListeners('terminal/get-working-directory');
+  ipcMain.removeAllListeners('config/get-game-data-directory');
+  ipcMain.removeAllListeners('config/set-game-data-directory');
+  ipcMain.removeAllListeners('config/get-config');
+  ipcMain.removeAllListeners('config/reset-to-defaults');
 
   console.debug('[IPC] IPC处理程序已清理');
 }
