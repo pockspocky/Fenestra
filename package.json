@@ -4,7 +4,14 @@
   "description": "An Electron-based window puzzle game featuring dynamic window management, lens systems, and interactive door-key mechanics",
   "main": "main.js",
   "type": "module",
-  "keywords": ["electron", "puzzle", "game", "window-management", "lens-system", "interactive"],
+  "keywords": [
+    "electron",
+    "puzzle",
+    "game",
+    "window-management",
+    "lens-system",
+    "interactive"
+  ],
   "author": "Fenestra Development Team",
   "license": "MIT",
   "scripts": {
@@ -21,5 +28,8 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/fenestra-team/fenestra.git"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.3"
   }
 }

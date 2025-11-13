@@ -131,3 +131,4 @@ test-*.js
 *.fenestra
 
 *.hook
+node_modules
