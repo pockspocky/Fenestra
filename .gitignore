@@ -113,8 +113,21 @@ logs
 # Fenestra storage (project-specific)
 .fenestra-storage/
 
+# Fenestra configuration (user-specific)
+.fenestra-config.json
+
 # Kiro hooks (project-specific)
 .kiro/hooks/
 
 # Test files (if they're temporary)
+.kiro
 test-*.js
+.kiro/steering/structure.md
+.kiro/steering/tech.md
+.kiro/specs/file-completion-fix/requirements.md
+.kiro/specs/file-completion-fix/design.md
+.kiro/specs/file-completion-fix/tasks.md
+
+*.fenestra
+
+*.hook

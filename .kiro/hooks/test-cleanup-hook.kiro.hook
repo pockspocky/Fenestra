@@ -4,14 +4,7 @@
   "description": "Automatically runs unit tests and other test files to ensure they pass, then deletes them from the codebase",
   "version": "1",
   "when": {
-    "type": "fileEdited",
-    "patterns": [
-      "test-*.js",
-      "*test.js",
-      "*.test.js",
-      "**/*test*.js",
-      "tests/**/*.js"
-    ]
+    "type": "userTriggered"
   },
   "then": {
     "type": "askAgent",

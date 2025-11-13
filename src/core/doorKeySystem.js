@@ -1,6 +1,12 @@
 import { dialog } from 'electron';
+import path from 'node:path';
 import { getWindow } from './windowManager.js';
 import '../../logger.js'; // 导入日志系统
+import { 
+  FileCompletionError, 
+  ERROR_CODES, 
+  logError 
+} from './utils/errorHandler.js';
 
 // 门钥匙关系管理系统
 const doorKeyRelations = new Map(); // doorId -> Set of keyIds
@@ -312,6 +318,9 @@ export function handleDoorToggle(doorId, keyId) {
         // 更新门标题
         doorWin.setTitle(currentTitle.replace('(locked)', '(opened)').replace('(encrypted)', '(opened)'));
         
+        // 执行门开启回调
+        executeDoorOpenCallback(doorId, keyId);
+        
         // 显示完成消息
         const completeVariables = { 
           doorId, 
@@ -387,6 +396,9 @@ export function handleDoorToggle(doorId, keyId) {
     // 更新状态
     doorStates.set(doorId, { isOpen: true, lastKeyUsed: keyId });
     
+    // 执行门开启回调
+    executeDoorOpenCallback(doorId, keyId);
+    
     // 处理一次性钥匙消费
     if (oneTimeKeys.has(keyId)) {
       usedKeys.add(keyId);
@@ -453,7 +465,7 @@ export function handleDoorToggle(doorId, keyId) {
     
     // 获取自定义关门消息
     const variables = { doorId, keyId };
-    const closeMessage = getFormattedMessage('door_closed', variables, 'Door closed!');
+    const closeMessage = getFormattedMessage('door_closed', variables, 'Door closed!');    
     
     dialog.showMessageBox(doorWin, {
       type: 'info',
@@ -789,6 +801,116 @@ function startMultiKeyTimeout(doorId) {
   console.log(`[MULTI_KEY] Started timeout timer for door '${doorId}' (${doorState.timeoutDuration}ms)`);
 }
 
+// ==================== 门开启回调系统 ====================
+
+// 门开启回调存储
+const doorOpenCallbacks = new Map(); // doorId -> callback function
+
+/**
+ * 注册门开启回调函数
+ * @param {string} doorId - 门ID
+ * @param {Function} callback - 回调函数 (doorId, keyId) => void
+ * @throws {Error} 当doorId或callback无效时抛出错误
+ */
+export function registerDoorOpenCallback(doorId, callback) {
+  // 验证doorId
+  if (!doorId || typeof doorId !== 'string') {
+    const error = new Error('Door ID must be a non-empty string');
+    error.name = 'ValidationError';
+    console.error('[DOOR_CALLBACK] Validation error:', error.message, { doorId, type: typeof doorId });
+    throw error;
+  }
+  
+  // 验证callback
+  if (typeof callback !== 'function') {
+    const error = new Error('Callback must be a function');
+    error.name = 'ValidationError';
+    console.error('[DOOR_CALLBACK] Validation error:', error.message, { callback, type: typeof callback });
+    throw error;
+  }
+  
+  // 如果已存在回调，将被替换
+  if (doorOpenCallbacks.has(doorId)) {
+    console.log(`[DOOR_CALLBACK] Replacing existing callback for door '${doorId}'`);
+  }
+  
+  // 存储回调
+  doorOpenCallbacks.set(doorId, callback);
+  console.log(`[DOOR_CALLBACK] Registered callback for door '${doorId}'`);
+}
+
+/**
+ * 注销门开启回调函数
+ * @param {string} doorId - 门ID
+ * @throws {Error} 当doorId无效时抛出错误
+ */
+export function unregisterDoorOpenCallback(doorId) {
+  // 验证doorId
+  if (!doorId || typeof doorId !== 'string') {
+    const error = new Error('Door ID must be a non-empty string');
+    error.name = 'ValidationError';
+    console.error('[DOOR_CALLBACK] Validation error:', error.message, { doorId, type: typeof doorId });
+    throw error;
+  }
+  
+  // 检查是否存在回调
+  if (!doorOpenCallbacks.has(doorId)) {
+    console.warn(`[DOOR_CALLBACK] No callback registered for door '${doorId}', skipping unregister`);
+    return;
+  }
+  
+  // 移除回调
+  doorOpenCallbacks.delete(doorId);
+  console.log(`[DOOR_CALLBACK] Unregistered callback for door '${doorId}'`);
+}
+
+/**
+ * 获取门开启回调信息
+ * @param {string|null} doorId - 门ID（可选，null表示查询所有门）
+ * @returns {Object|Array} 回调信息
+ */
+export function getDoorOpenCallbackInfo(doorId = null) {
+  if (doorId === null) {
+    // 返回所有注册了回调的门ID列表
+    return Array.from(doorOpenCallbacks.keys());
+  }
+  
+  // 返回特定门的回调信息
+  return {
+    doorId,
+    hasCallback: doorOpenCallbacks.has(doorId)
+  };
+}
+
+/**
+ * 执行门开启回调（内部使用）
+ * @param {string} doorId - 门ID
+ * @param {string} keyId - 钥匙ID
+ */
+function executeDoorOpenCallback(doorId, keyId) {
+  // 检查是否存在回调
+  const callback = doorOpenCallbacks.get(doorId);
+  
+  if (!callback) {
+    // 没有回调，静默返回
+    return;
+  }
+  
+  try {
+    // 执行回调
+    callback(doorId, keyId);
+    console.log(`[DOOR_CALLBACK] Executed callback for door '${doorId}' with key '${keyId}'`);
+  } catch (error) {
+    // 捕获并记录回调执行错误，但不中断门开启流程
+    console.error(`[DOOR_CALLBACK] Error executing callback for door '${doorId}':`, {
+      doorId,
+      keyId,
+      error: error.message,
+      stack: error.stack
+    });
+  }
+}
+
 // ==================== 消息配置系统 ====================
 
 /**
@@ -1030,6 +1152,389 @@ export function clearMessages(scope, id = null, messageType = null) {
       
     default:
       console.error('[MESSAGE] Invalid scope. Use "global", "door", or "key"');
+  }
+}
+
+// ==================== 目录访问控制系统 ====================
+
+// 目录访问权限映射
+const directoryAccessMap = new Map(); // dirPath -> { doorId, isLocked, requiredKeys }
+
+/**
+ * 设置目录访问权限
+ * @param {string} dirPath - 目录路径
+ * @param {string} doorId - 关联的门ID
+ * @param {Array} requiredKeys - 需要的钥匙ID数组（可选）
+ */
+export function setDirectoryAccess(dirPath, doorId, requiredKeys = []) {
+  if (!dirPath || typeof dirPath !== 'string') {
+    console.error('[DIR_ACCESS] Invalid dirPath provided to setDirectoryAccess:', dirPath);
+    return;
+  }
+  
+  if (!doorId || typeof doorId !== 'string') {
+    console.error('[DIR_ACCESS] Invalid doorId provided to setDirectoryAccess:', doorId);
+    return;
+  }
+  
+  if (!Array.isArray(requiredKeys)) {
+    console.error('[DIR_ACCESS] requiredKeys must be an array:', requiredKeys);
+    return;
+  }
+  
+  // 规范化目录路径
+  const normalizedPath = normalizePath(dirPath);
+  
+  directoryAccessMap.set(normalizedPath, {
+    doorId,
+    isLocked: true,
+    requiredKeys: [...requiredKeys]
+  });
+  
+  console.log(`[DIR_ACCESS] Directory access set for '${normalizedPath}' -> door '${doorId}' with keys: [${requiredKeys.join(', ')}]`);
+}
+
+/**
+ * 检查目录访问权限
+ * @param {string} dirPath - 目录路径
+ * @returns {Object} 访问权限信息
+ */
+export function checkDirectoryAccess(dirPath) {
+  try {
+    if (!dirPath || typeof dirPath !== 'string') {
+      const error = new FileCompletionError(
+        'Invalid directory path provided',
+        ERROR_CODES.MALFORMED_PATH,
+        { dirPath, type: typeof dirPath }
+      );
+      logError(error);
+      
+      return {
+        hasAccess: false,
+        isLocked: false,
+        requiredKey: null,
+        lockReason: 'Invalid directory path',
+        errorCode: error.code
+      };
+    }
+    
+    // 规范化目录路径
+    const normalizedPath = normalizePath(dirPath);
+    
+    // 检查是否有访问控制设置
+    const accessInfo = directoryAccessMap.get(normalizedPath);
+    
+    if (!accessInfo) {
+      // 没有访问控制，默认允许访问
+      console.debug(`[DIR_ACCESS] No access control for '${normalizedPath}', allowing access`);
+      return {
+        hasAccess: true,
+        isLocked: false,
+        requiredKey: null,
+        lockReason: null,
+        errorCode: null
+      };
+    }
+    
+    const { doorId, requiredKeys } = accessInfo;
+    
+    // 检查关联的门是否已打开
+    const doorState = doorStates.get(doorId);
+    
+    if (doorState && doorState.isOpen) {
+      console.debug(`[DIR_ACCESS] Door '${doorId}' is open, allowing access to '${normalizedPath}'`);
+      return {
+        hasAccess: true,
+        isLocked: false,
+        requiredKey: null,
+        lockReason: null,
+        errorCode: null
+      };
+    }
+    
+    // 门未打开，检查是否为多钥匙门
+    if (isMultiKeyDoor(doorId)) {
+      const progress = getMultiKeyProgress(doorId);
+      
+      if (progress && progress.isComplete) {
+        console.debug(`[DIR_ACCESS] Multi-key door '${doorId}' is complete, allowing access to '${normalizedPath}'`);
+        return {
+          hasAccess: true,
+          isLocked: false,
+          requiredKey: null,
+          lockReason: null,
+          errorCode: null
+        };
+      }
+      
+      // 多钥匙门未完成
+      const nextKey = progress ? progress.nextKey : (requiredKeys.length > 0 ? requiredKeys[0] : null);
+      const remainingKeys = progress ? progress.total - progress.progress : requiredKeys.length;
+      
+      console.debug(`[DIR_ACCESS] Multi-key door '${doorId}' not complete, denying access to '${normalizedPath}'. Next key: '${nextKey}'`);
+      
+      return {
+        hasAccess: false,
+        isLocked: true,
+        requiredKey: nextKey,
+        lockReason: `Multi-key door requires ${remainingKeys} more key${remainingKeys > 1 ? 's' : ''}`,
+        errorCode: ERROR_CODES.DIRECTORY_LOCKED,
+        doorType: 'multi-key',
+        progress: progress ? `${progress.progress}/${progress.total}` : `0/${requiredKeys.length}`
+      };
+    }
+    
+    // 普通门，检查是否有任何授权钥匙可用
+    if (requiredKeys.length > 0) {
+      // 检查是否有可用的钥匙
+      const availableKey = requiredKeys.find(keyId => isKeyUsable(keyId));
+      
+      if (availableKey) {
+        console.debug(`[DIR_ACCESS] Door '${doorId}' locked but key '${availableKey}' is available for '${normalizedPath}'`);
+        return {
+          hasAccess: false,
+          isLocked: true,
+          requiredKey: availableKey,
+          lockReason: `Directory locked, key "${availableKey}" required`,
+          errorCode: ERROR_CODES.DIRECTORY_LOCKED,
+          doorType: 'single-key',
+          keyAvailable: true
+        };
+      } else {
+        console.debug(`[DIR_ACCESS] Door '${doorId}' locked and no usable keys available for '${normalizedPath}'`);
+        return {
+          hasAccess: false,
+          isLocked: true,
+          requiredKey: requiredKeys[0], // 返回第一个钥匙作为提示
+          lockReason: `Directory locked, required keys are not available`,
+          errorCode: ERROR_CODES.MISSING_KEY,
+          doorType: 'single-key',
+          keyAvailable: false,
+          allRequiredKeys: requiredKeys
+        };
+      }
+    }
+    
+    // 门锁定但没有指定钥匙
+    console.debug(`[DIR_ACCESS] Door '${doorId}' locked with no specific keys for '${normalizedPath}'`);
+    return {
+      hasAccess: false,
+      isLocked: true,
+      requiredKey: null,
+      lockReason: `Directory locked by door "${doorId}"`,
+      errorCode: ERROR_CODES.DIRECTORY_LOCKED,
+      doorType: 'no-key',
+      doorId
+    };
+    
+  } catch (error) {
+    const completionError = new FileCompletionError(
+      `Directory access check failed: ${error.message}`,
+      ERROR_CODES.KEY_VALIDATION_FAILED,
+      { 
+        dirPath,
+        originalError: {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        }
+      }
+    );
+    logError(completionError);
+    
+    return {
+      hasAccess: false,
+      isLocked: false,
+      requiredKey: null,
+      lockReason: 'Access check failed due to internal error',
+      errorCode: completionError.code
+    };
+  }
+}
+
+/**
+ * 过滤可访问的目录
+ * @param {Array} directories - 目录条目数组
+ * @returns {Array} 过滤后的可访问目录数组
+ */
+export function filterAccessibleDirectories(directories) {
+  try {
+    if (!Array.isArray(directories)) {
+      const error = new FileCompletionError(
+        'Invalid directories array provided',
+        ERROR_CODES.MALFORMED_PATH,
+        { directories, type: typeof directories }
+      );
+      logError(error);
+      return [];
+    }
+    
+    const accessibleDirectories = [];
+    const processingErrors = [];
+    
+    for (let i = 0; i < directories.length; i++) {
+      const directory = directories[i];
+      
+      try {
+        // 支持不同的目录对象格式
+        let dirPath;
+        
+        if (typeof directory === 'string') {
+          dirPath = directory;
+        } else if (directory && typeof directory === 'object') {
+          // 支持文件系统条目对象
+          dirPath = directory.path || directory.name || directory.fullPath;
+        } else {
+          processingErrors.push({
+            index: i,
+            directory,
+            error: 'Invalid directory entry type',
+            errorCode: ERROR_CODES.MALFORMED_PATH
+          });
+          continue;
+        }
+        
+        if (!dirPath) {
+          processingErrors.push({
+            index: i,
+            directory,
+            error: 'Directory entry missing path information',
+            errorCode: ERROR_CODES.MALFORMED_PATH
+          });
+          continue;
+        }
+        
+        // 检查访问权限
+        const accessInfo = checkDirectoryAccess(dirPath);
+        
+        if (accessInfo.hasAccess) {
+          accessibleDirectories.push(directory);
+          console.debug(`[DIR_ACCESS] Directory '${dirPath}' is accessible`);
+        } else {
+          console.debug(`[DIR_ACCESS] Directory '${dirPath}' is locked: ${accessInfo.lockReason}`);
+          
+          // 为锁定的目录添加详细的锁定信息
+          if (typeof directory === 'object' && directory !== null) {
+            directory.isLocked = true;
+            directory.lockReason = accessInfo.lockReason;
+            directory.requiredKey = accessInfo.requiredKey;
+            directory.errorCode = accessInfo.errorCode;
+            directory.doorType = accessInfo.doorType;
+            
+            // 添加额外的上下文信息
+            if (accessInfo.progress) {
+              directory.progress = accessInfo.progress;
+            }
+            if (accessInfo.keyAvailable !== undefined) {
+              directory.keyAvailable = accessInfo.keyAvailable;
+            }
+            if (accessInfo.allRequiredKeys) {
+              directory.allRequiredKeys = accessInfo.allRequiredKeys;
+            }
+          }
+        }
+        
+      } catch (entryError) {
+        processingErrors.push({
+          index: i,
+          directory,
+          error: entryError.message,
+          errorCode: ERROR_CODES.INTERNAL_ERROR
+        });
+        
+        const error = new FileCompletionError(
+          `Error processing directory entry at index ${i}: ${entryError.message}`,
+          ERROR_CODES.INTERNAL_ERROR,
+          { 
+            index: i,
+            directory,
+            originalError: entryError.message
+          }
+        );
+        logError(error);
+      }
+    }
+    
+    // Log summary with detailed information
+    const totalDirectories = directories.length;
+    const accessibleCount = accessibleDirectories.length;
+    const lockedCount = totalDirectories - accessibleCount - processingErrors.length;
+    const errorCount = processingErrors.length;
+    
+    console.log(`[DIR_ACCESS] Directory filtering complete: ${totalDirectories} total, ${accessibleCount} accessible, ${lockedCount} locked, ${errorCount} errors`);
+    
+    if (processingErrors.length > 0) {
+      console.warn(`[DIR_ACCESS] Processing errors encountered:`, processingErrors);
+    }
+    
+    return accessibleDirectories;
+    
+  } catch (error) {
+    const completionError = new FileCompletionError(
+      `Directory filtering failed: ${error.message}`,
+      ERROR_CODES.INTERNAL_ERROR,
+      { 
+        directoriesCount: Array.isArray(directories) ? directories.length : 'unknown',
+        originalError: {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        }
+      }
+    );
+    logError(completionError);
+    
+    return [];
+  }
+}
+
+/**
+ * 移除目录访问控制
+ * @param {string} dirPath - 目录路径
+ */
+export function removeDirectoryAccess(dirPath) {
+  if (!dirPath || typeof dirPath !== 'string') {
+    console.error('[DIR_ACCESS] Invalid dirPath provided to removeDirectoryAccess:', dirPath);
+    return;
+  }
+  
+  const normalizedPath = normalizePath(dirPath);
+  
+  if (directoryAccessMap.has(normalizedPath)) {
+    directoryAccessMap.delete(normalizedPath);
+    console.log(`[DIR_ACCESS] Directory access control removed for '${normalizedPath}'`);
+  } else {
+    console.log(`[DIR_ACCESS] No access control found for '${normalizedPath}'`);
+  }
+}
+
+/**
+ * 获取所有目录访问控制信息（用于调试）
+ * @returns {Object} 目录访问控制映射
+ */
+export function getDirectoryAccessDebugInfo() {
+  return {
+    directoryAccessMap: Object.fromEntries(directoryAccessMap),
+    totalControlledDirectories: directoryAccessMap.size
+  };
+}
+
+/**
+ * 规范化路径用于一致性比较
+ * @param {string} dirPath - 目录路径
+ * @returns {string} 规范化后的路径
+ */
+function normalizePath(dirPath) {
+  if (!dirPath || typeof dirPath !== 'string') {
+    return '';
+  }
+  
+  // 使用 Node.js path.resolve 来规范化路径
+  try {
+    return path.resolve(dirPath);
+  } catch (error) {
+    console.warn('[DIR_ACCESS] Path normalization failed:', error);
+    return dirPath;
   }
 }
 

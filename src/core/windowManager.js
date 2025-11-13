@@ -538,7 +538,7 @@ export function createKey(keyId = 'key', title = null, encrypt = false, relatedD
   const suitablePosition = findSuitablePositionForKey(keyId, keyWidth, keyHeight, keyDoorMaxOverlap);
   
   // 确定要使用的HTML内容，保持向后兼容性
-  const htmlContent = otherContents || "index.html";
+  const htmlContent = otherContents || "pictureViewer.html?imagePath=doors/Keychain.jpeg&fitMode=cover";
   
   // 如果使用自定义内容，需要通过查询参数传递keyId
   let finalContent;

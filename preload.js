@@ -13,6 +13,9 @@ const whitelist = [
   'window/get-info',
   'terminal/get-file-completions',
   'terminal/get-current-directory',
+  'terminal/change-directory',
+  'terminal/list-directory',
+  'terminal/get-working-directory',
   'storage/validate-fenestra-file'
 ];
 
@@ -122,6 +125,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getCurrentDirectory: () => {
     console.log(`[PRELOAD] 获取当前工作目录`);
     return ipcRenderer.invoke('terminal/get-current-directory');
+  },
+  // Directory navigation APIs
+  changeDirectory: (params) => {
+    console.log(`[PRELOAD] 更改目录:`, params);
+    return ipcRenderer.invoke('terminal/change-directory', params);
+  },
+  listDirectory: (params) => {
+    console.log(`[PRELOAD] 列出目录内容:`, params);
+    return ipcRenderer.invoke('terminal/list-directory', params);
+  },
+  getWorkingDirectory: () => {
+    console.log(`[PRELOAD] 获取工作目录`);
+    return ipcRenderer.invoke('terminal/get-working-directory');
   }
 });
 

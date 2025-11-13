@@ -14,13 +14,15 @@ import '../../logger.js';
 const STORAGE_DIR = '.fenestra-storage';
 const FILE_EXTENSION = '.fenestra';
 const STORAGE_VERSION = '1.0';
+const STORAGE_PATH = '/Users/ericzhong/Documents/GitHub/Fenestra/game-data'
 
 /**
  * Ensure storage directory exists
  * @returns {string} Storage directory path
  */
 export function ensureStorageDirectory() {
-  const storageDir = path.join(process.cwd(), STORAGE_DIR);
+  // const storageDir = path.join(process.cwd(), STORAGE_DIR);
+  const storageDir = path.join(STORAGE_PATH, STORAGE_DIR)
 
   if (!fs.existsSync(storageDir)) {
     try {
@@ -40,7 +42,7 @@ export function ensureStorageDirectory() {
  * @returns {string} Storage directory path
  */
 export function getStorageDirectory() {
-  return path.join(process.cwd(), STORAGE_DIR);
+  return path.join(STORAGE_PATH, STORAGE_DIR);
 }
 
 /**
@@ -293,14 +295,14 @@ export function serializeWindow(windowId) {
 function generateFilename(windowId, windowType, customName = null) {
   if (customName) {
     // Ensure custom name has correct extension
-    return customName.endsWith(FILE_EXTENSION) ? customName : `${customName}${FILE_EXTENSION}`;
+    return customName.endsWith(FILE_EXTENSION) ? customName : `${customName}`;
   }
 
   const isoString = new Date().toISOString();
   const timestamp = isoString.replace(/[:.]/g, '-').split('T')[0] + 'T' +
     isoString.replace(/[:.]/g, '-').split('T')[1].split('-')[0];
 
-  return `${windowType}-${windowId}-${timestamp}${FILE_EXTENSION}`;
+  return `${windowType}-${windowId}-${timestamp}`;
 }
 
 /**
