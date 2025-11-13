@@ -450,6 +450,67 @@ export function initializeIpcHandlers() {
     }
   });
 
+  ipcMain.handle('email/execute-action', async (_e, { emailId, actionIndex }) => {
+    console.debug(`[IPC] 执行邮件操作: emailId=${emailId}, actionIndex=${actionIndex}`);
+    
+    try {
+      const { getEmailById } = await import('./emailStorage.js');
+      const { executeEmailAction } = await import('./emailActions.js');
+      
+      // Get the email to retrieve the action
+      const email = await getEmailById(emailId);
+      
+      if (!email) {
+        console.warn(`[IPC] 邮件未找到: ${emailId}`);
+        return {
+          success: false,
+          error: 'Email not found'
+        };
+      }
+      
+      // Check if email has actions
+      if (!email.actions || !Array.isArray(email.actions)) {
+        console.warn(`[IPC] 邮件没有操作: ${emailId}`);
+        return {
+          success: false,
+          error: 'Email has no actions'
+        };
+      }
+      
+      // Check if action index is valid
+      if (actionIndex < 0 || actionIndex >= email.actions.length) {
+        console.warn(`[IPC] 无效的操作索引: ${actionIndex} (总数: ${email.actions.length})`);
+        return {
+          success: false,
+          error: 'Invalid action index'
+        };
+      }
+      
+      // Get the action
+      const action = email.actions[actionIndex];
+      
+      console.log(`[IPC] 执行操作: ${action.type} - ${action.label}`);
+      
+      // Execute the action
+      const result = await executeEmailAction(action);
+      
+      if (result.success) {
+        console.log(`[IPC] 操作执行成功: ${action.label}`);
+      } else {
+        console.warn(`[IPC] 操作执行失败: ${result.error}`);
+      }
+      
+      return result;
+      
+    } catch (error) {
+      console.error(`[IPC] 执行邮件操作失败: ${emailId}`, error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  });
+
   console.debug('[IPC] 所有IPC处理程序已设置完成');
 }
 
@@ -2119,6 +2180,7 @@ export function cleanupIpcHandlers() {
   ipcMain.removeAllListeners('email/get-by-id');
   ipcMain.removeAllListeners('email/mark-read');
   ipcMain.removeAllListeners('email/get-inbox-path');
+  ipcMain.removeAllListeners('email/execute-action');
 
   console.debug('[IPC] IPC处理程序已清理');
 }

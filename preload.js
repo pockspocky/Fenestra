@@ -20,7 +20,8 @@ const whitelist = [
   'email/get-list',
   'email/get-by-id',
   'email/mark-read',
-  'email/get-inbox-path'
+  'email/get-inbox-path',
+  'email/execute-action'
 ];
 
 console.log('[PRELOAD] IPC白名单:', whitelist);
