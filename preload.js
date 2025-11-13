@@ -16,7 +16,11 @@ const whitelist = [
   'terminal/change-directory',
   'terminal/list-directory',
   'terminal/get-working-directory',
-  'storage/validate-fenestra-file'
+  'storage/validate-fenestra-file',
+  'email/get-list',
+  'email/get-by-id',
+  'email/mark-read',
+  'email/get-inbox-path'
 ];
 
 console.log('[PRELOAD] IPC白名单:', whitelist);

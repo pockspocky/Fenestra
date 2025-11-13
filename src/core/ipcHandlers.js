@@ -334,6 +334,122 @@ export function initializeIpcHandlers() {
     }
   });
 
+  // Email system handlers
+  ipcMain.handle('email/get-list', async (_e, { limit, offset }) => {
+    console.debug(`[IPC] 获取邮件列表: limit=${limit}, offset=${offset}`);
+    
+    try {
+      const { getEmails } = await import('./emailStorage.js');
+      const emails = await getEmails(limit, offset);
+      
+      console.debug(`[IPC] 返回 ${emails.length} 封邮件`);
+      
+      return {
+        success: true,
+        emails,
+        count: emails.length
+      };
+      
+    } catch (error) {
+      console.error('[IPC] 获取邮件列表失败:', error);
+      return {
+        success: false,
+        error: error.message,
+        emails: []
+      };
+    }
+  });
+
+  ipcMain.handle('email/get-by-id', async (_e, { emailId }) => {
+    console.debug(`[IPC] 获取邮件: ${emailId}`);
+    
+    try {
+      const { getEmailById } = await import('./emailStorage.js');
+      const email = await getEmailById(emailId);
+      
+      if (!email) {
+        console.warn(`[IPC] 邮件未找到: ${emailId}`);
+        return {
+          success: false,
+          error: 'Email not found',
+          email: null
+        };
+      }
+      
+      console.debug(`[IPC] 邮件获取成功: ${emailId}`);
+      
+      return {
+        success: true,
+        email
+      };
+      
+    } catch (error) {
+      console.error(`[IPC] 获取邮件失败: ${emailId}`, error);
+      return {
+        success: false,
+        error: error.message,
+        email: null
+      };
+    }
+  });
+
+  ipcMain.handle('email/mark-read', async (_e, { emailId }) => {
+    console.debug(`[IPC] 标记邮件为已读: ${emailId}`);
+    
+    try {
+      const { markEmailAsRead } = await import('./emailStorage.js');
+      const result = await markEmailAsRead(emailId);
+      
+      if (result.success) {
+        console.log(`[IPC] 邮件已标记为已读: ${emailId}`);
+      } else {
+        console.warn(`[IPC] 标记邮件为已读失败: ${result.error}`);
+      }
+      
+      return result;
+      
+    } catch (error) {
+      console.error(`[IPC] 标记邮件为已读失败: ${emailId}`, error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  });
+
+  ipcMain.handle('email/get-inbox-path', async (_e) => {
+    console.debug('[IPC] 获取收件箱路径');
+    
+    try {
+      const { getInboxPath } = await import('./emailStorage.js');
+      const inboxPath = getInboxPath();
+      
+      if (!inboxPath) {
+        console.warn('[IPC] 邮件系统未初始化');
+        return {
+          success: false,
+          error: 'Email system not initialized',
+          inboxPath: null
+        };
+      }
+      
+      console.debug(`[IPC] 收件箱路径: ${inboxPath}`);
+      
+      return {
+        success: true,
+        inboxPath
+      };
+      
+    } catch (error) {
+      console.error('[IPC] 获取收件箱路径失败:', error);
+      return {
+        success: false,
+        error: error.message,
+        inboxPath: null
+      };
+    }
+  });
+
   console.debug('[IPC] 所有IPC处理程序已设置完成');
 }
 
@@ -1999,6 +2115,10 @@ export function cleanupIpcHandlers() {
   ipcMain.removeAllListeners('config/set-game-data-directory');
   ipcMain.removeAllListeners('config/get-config');
   ipcMain.removeAllListeners('config/reset-to-defaults');
+  ipcMain.removeAllListeners('email/get-list');
+  ipcMain.removeAllListeners('email/get-by-id');
+  ipcMain.removeAllListeners('email/mark-read');
+  ipcMain.removeAllListeners('email/get-inbox-path');
 
   console.debug('[IPC] IPC处理程序已清理');
 }
