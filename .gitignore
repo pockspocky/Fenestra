@@ -147,3 +147,4 @@ game-data/test-inbox/09-multiple-actions.json
 game-data/test-inbox/invalid-schema.json
 game-data/test-inbox/malformed.json
 game-data/test-inbox/valid-email.json
+.kiro/hooks/auto-git-commit.kiro.hook

@@ -181,7 +181,7 @@
 
     // Available commands list
     const commands = [
-      'help', 'clear', 'list', 'ls', 'getWindows', 'info',
+      'help', 'tips', 'clear', 'list', 'ls', 'getWindows', 'info',
       'get-title', 'set-title', 'set-size', 'set-position', 'set-resizable', 'set-visibility',
       'show', 'hide', 'reload-html',
       'create-picture', 'set-picture', 'set-fit-mode',
@@ -577,6 +577,16 @@
         tips: [
           'Use "help [command]" to get detailed help for a specific command',
           'Commands also support --help and -h flags for individual help'
+        ]
+      },
+      'tips': {
+        description: 'Display helpful usage tips for the terminal',
+        usage: 'tips',
+        parameters: [],
+        examples: ['tips'],
+        tips: [
+          'Tips provide helpful shortcuts and usage patterns',
+          'Use "help [command]" for detailed command-specific information'
         ]
       },
       'clear': {
@@ -1400,6 +1410,8 @@
         } else {
           showHelp();
         }
+      } else if (cmd === 'tips') {
+        showTips();
       } else if (cmd === 'clear') {
         clearTerminal();
       } else if (cmd === 'cd') {
@@ -1577,6 +1589,13 @@
       print('  config get game-data-dir          - Show game data directory', 'info');
       print('  config set game-data-dir [path]   - Set game data directory', 'info');
       print('  config reset                      - Reset configuration to defaults', 'info');
+      print('', 'info');
+      printTip('Tip: Type "tips" to see helpful usage tips and shortcuts');
+    }
+
+    // Display terminal usage tips
+    function showTips() {
+      printCommandHelp('--- Terminal Usage Tips ---');
       print('', 'info');
       printTip('Tip: Use "help [command]" to get detailed help for any specific command');
       printTip('Tip: Commands support --help and -h flags (e.g., "set-title --help")');
