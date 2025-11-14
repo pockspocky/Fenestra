@@ -178,12 +178,18 @@ Window configurations are saved as JSON with metadata:
 }
 ```
 
-## Guides
+## Documentation
 
-- [Lens System Guide](LENS_SYSTEM_GUIDE.md) - Complete lens system documentation
-- [Key Overlap Avoidance Guide](KEY_OVERLAP_AVOIDANCE_GUIDE.md) - Positioning system details
-- [Window Offset Guide](WINDOW_OFFSET_GUIDE.md) - Window positioning mechanics
-- [Logging Guide](src/core/LOGGING_GUIDE.md) - Logging system configuration
+All documentation has been organized in the `docs/` directory:
+
+- **[Documentation Index](docs/README.md)** - Complete documentation overview
+- **[Configuration Guide](docs/CONFIGURATION_GUIDE.md)** - System configuration
+- **[Email System](docs/EMAIL_SYSTEM.md)** - Email receiver interface
+- **[Email JSON Guide](docs/EMAIL_JSON_GUIDE.md)** - How to write email JSON files
+- **[Lens System Guide](docs/LENS_SYSTEM_GUIDE.md)** - Lens mechanics and usage
+- **[Level Creation Guide](docs/LEVEL_CREATION_GUIDE.md)** - Creating game levels
+- **[Window Storage Guide](docs/WINDOW_STORAGE_GUIDE.md)** - Window state persistence
+- **[Logging Guide](src/core/LOGGING_GUIDE.md)** - Logging system configuration
 
 ## License
 

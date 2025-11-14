@@ -116,6 +116,9 @@ logs
 # Fenestra configuration (user-specific)
 .fenestra-config.json
 
+# Email inbox directory (development/testing)
+inbox/
+
 # Kiro hooks (project-specific)
 .kiro/hooks/
 
@@ -132,3 +135,15 @@ test-*.js
 
 *.hook
 node_modules
+game-data/test-inbox/01-welcome-text.json
+game-data/test-inbox/02-html-email.json
+game-data/test-inbox/03-email-with-attachments.json
+game-data/test-inbox/04-action-create-window.json
+game-data/test-inbox/05-action-create-door.json
+game-data/test-inbox/06-action-create-lens.json
+game-data/test-inbox/07-action-open-path.json
+game-data/test-inbox/08-action-execute-function.json
+game-data/test-inbox/09-multiple-actions.json
+game-data/test-inbox/invalid-schema.json
+game-data/test-inbox/malformed.json
+game-data/test-inbox/valid-email.json

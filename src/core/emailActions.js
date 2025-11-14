@@ -9,13 +9,17 @@ import { createLensWindow } from './windowManager.js';
 import { shell } from 'electron';
 import path from 'node:path';
 
+// Callback registry for custom functions
+const callbackRegistry = new Map();
+
 // Supported action types
 const ACTION_TYPES = {
   CREATE_WINDOW: 'createWindow',
   CREATE_DOOR: 'createDoor',
   CREATE_LENS: 'createLens',
   EXECUTE_FUNCTION: 'executeFunction',
-  OPEN_PATH: 'openPath'
+  OPEN_PATH: 'openPath',
+  CALLBACK: 'callback'
 };
 
 /**
@@ -393,13 +397,75 @@ async function handleOpenPath(params) {
   }
 }
 
+/**
+ * Validates callback action parameters
+ * @param {Object} params - Action parameters
+ * @returns {Object} Validation result
+ */
+function validateCallbackParams(params) {
+  if (!params.name || typeof params.name !== 'string') {
+    return {
+      isValid: false,
+      error: 'Callback name is required and must be a string'
+    };
+  }
+
+  if (params.args !== undefined && !Array.isArray(params.args)) {
+    return {
+      isValid: false,
+      error: 'Callback arguments must be an array'
+    };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * Handles callback action
+ * @param {Object} params - Action parameters
+ * @returns {Promise<Object>} Execution result
+ */
+async function handleCallback(params) {
+  console.log('[EMAIL_ACTION] Executing callback action', { params });
+
+  try {
+    const callback = callbackRegistry.get(params.name);
+
+    if (!callback) {
+      throw new Error(`Callback '${params.name}' is not registered. Use registerEmailCallback() to register it first.`);
+    }
+
+    const args = params.args || [];
+    const result = await callback(...args);
+
+    console.log(`[EMAIL_ACTION] Callback executed successfully: ${params.name}`);
+
+    return {
+      success: true,
+      message: `Callback '${params.name}' executed successfully`,
+      result
+    };
+  } catch (error) {
+    console.error('[EMAIL_ACTION] Failed to execute callback', {
+      params,
+      error: error.message
+    });
+
+    return {
+      success: false,
+      error: `Failed to execute callback: ${error.message}`
+    };
+  }
+}
+
 // Action handler mapping
 const ACTION_HANDLERS = {
   [ACTION_TYPES.CREATE_WINDOW]: handleCreateWindow,
   [ACTION_TYPES.CREATE_DOOR]: handleCreateDoor,
   [ACTION_TYPES.CREATE_LENS]: handleCreateLens,
   [ACTION_TYPES.EXECUTE_FUNCTION]: handleExecuteFunction,
-  [ACTION_TYPES.OPEN_PATH]: handleOpenPath
+  [ACTION_TYPES.OPEN_PATH]: handleOpenPath,
+  [ACTION_TYPES.CALLBACK]: handleCallback
 };
 
 // Parameter validation mapping
@@ -408,7 +474,8 @@ const PARAM_VALIDATORS = {
   [ACTION_TYPES.CREATE_DOOR]: validateCreateDoorParams,
   [ACTION_TYPES.CREATE_LENS]: validateCreateLensParams,
   [ACTION_TYPES.EXECUTE_FUNCTION]: validateExecuteFunctionParams,
-  [ACTION_TYPES.OPEN_PATH]: validateOpenPathParams
+  [ACTION_TYPES.OPEN_PATH]: validateOpenPathParams,
+  [ACTION_TYPES.CALLBACK]: validateCallbackParams
 };
 
 /**
@@ -503,4 +570,103 @@ export function validateEmailAction(action) {
   }
 
   return { isValid: true };
+}
+
+/**
+ * Registers a callback function for email actions
+ * @param {string} name - Unique name for the callback
+ * @param {Function} callback - Function to execute when action is triggered
+ * @returns {Object} Registration result
+ * 
+ * @example
+ * registerEmailCallback('startQuest', (questId, difficulty) => {
+ *   console.log(`Starting quest ${questId} with difficulty ${difficulty}`);
+ *   // Your quest logic here
+ *   return { questStarted: true, questId, difficulty };
+ * });
+ */
+export function registerEmailCallback(name, callback) {
+  if (!name || typeof name !== 'string') {
+    console.error('[EMAIL_ACTION] Invalid callback name', { name });
+    return {
+      success: false,
+      error: 'Callback name must be a non-empty string'
+    };
+  }
+
+  if (typeof callback !== 'function') {
+    console.error('[EMAIL_ACTION] Invalid callback', { name });
+    return {
+      success: false,
+      error: 'Callback must be a function'
+    };
+  }
+
+  if (callbackRegistry.has(name)) {
+    console.warn('[EMAIL_ACTION] Overwriting existing callback', { name });
+  }
+
+  callbackRegistry.set(name, callback);
+  console.log('[EMAIL_ACTION] Callback registered', { name });
+
+  return {
+    success: true,
+    message: `Callback '${name}' registered successfully`
+  };
+}
+
+/**
+ * Unregisters a callback function
+ * @param {string} name - Name of the callback to unregister
+ * @returns {Object} Unregistration result
+ */
+export function unregisterEmailCallback(name) {
+  if (!callbackRegistry.has(name)) {
+    console.warn('[EMAIL_ACTION] Callback not found', { name });
+    return {
+      success: false,
+      error: `Callback '${name}' is not registered`
+    };
+  }
+
+  callbackRegistry.delete(name);
+  console.log('[EMAIL_ACTION] Callback unregistered', { name });
+
+  return {
+    success: true,
+    message: `Callback '${name}' unregistered successfully`
+  };
+}
+
+/**
+ * Gets list of registered callback names
+ * @returns {Array<string>} Array of registered callback names
+ */
+export function getRegisteredCallbacks() {
+  return Array.from(callbackRegistry.keys());
+}
+
+/**
+ * Checks if a callback is registered
+ * @param {string} name - Callback name to check
+ * @returns {boolean} True if callback is registered
+ */
+export function isCallbackRegistered(name) {
+  return callbackRegistry.has(name);
+}
+
+/**
+ * Clears all registered callbacks
+ * @returns {Object} Clear result
+ */
+export function clearAllCallbacks() {
+  const count = callbackRegistry.size;
+  callbackRegistry.clear();
+  console.log('[EMAIL_ACTION] All callbacks cleared', { count });
+
+  return {
+    success: true,
+    message: `Cleared ${count} callback(s)`,
+    count
+  };
 }

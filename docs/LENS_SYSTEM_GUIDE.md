@@ -350,17 +350,6 @@ src/core/
 
 ---
 
-## 📝 API 参考
-
-完整API文档请参考：
-- `src/core/lensSystem.js` - 镜头系统函数
-- `src/core/windowManager.js` - 窗口管理函数
-- `src/core/ipcHandlers.js` - IPC处理函数
-
----
-
 **祝您使用愉快！🎉**
 
 如有问题或建议，请查看项目 README.md 或提交 Issue。
-
-

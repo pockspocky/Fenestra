@@ -4,10 +4,25 @@
  */
 
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import path from 'path';
 import { app } from 'electron';
 import chokidar from 'chokidar';
 import '../../logger.js';
+
+// Error codes for email storage operations
+const EMAIL_ERROR_CODES = {
+  INBOX_NOT_INITIALIZED: 'INBOX_NOT_INITIALIZED',
+  INBOX_INACCESSIBLE: 'INBOX_INACCESSIBLE',
+  INBOX_CREATION_FAILED: 'INBOX_CREATION_FAILED',
+  FILE_READ_ERROR: 'FILE_READ_ERROR',
+  FILE_WRITE_ERROR: 'FILE_WRITE_ERROR',
+  FILE_PERMISSION_ERROR: 'FILE_PERMISSION_ERROR',
+  INVALID_JSON: 'INVALID_JSON',
+  VALIDATION_ERROR: 'VALIDATION_ERROR',
+  EMAIL_NOT_FOUND: 'EMAIL_NOT_FOUND',
+  WATCHER_ERROR: 'WATCHER_ERROR'
+};
 
 // In-memory email cache
 const emailCache = new Map();
@@ -20,6 +35,9 @@ let inboxPath = null;
 
 // Watcher callback
 let watcherCallback = null;
+
+// Track read-only status
+let isReadOnly = false;
 
 /**
  * Validates email JSON structure according to schema
@@ -135,49 +153,165 @@ export function validateEmailJson(jsonData) {
 }
 
 /**
+ * Checks if a path is accessible and validates permissions
+ * @param {string} dirPath - Directory path to check
+ * @returns {Promise<Object>} Access check result
+ */
+async function checkDirectoryAccess(dirPath) {
+  try {
+    // Check if directory exists
+    await fs.access(dirPath, fsSync.constants.F_OK);
+    
+    // Check read permission
+    try {
+      await fs.access(dirPath, fsSync.constants.R_OK);
+    } catch (error) {
+      return {
+        accessible: false,
+        error: EMAIL_ERROR_CODES.FILE_PERMISSION_ERROR,
+        message: `No read permission for directory: ${dirPath}`,
+        canCreate: false
+      };
+    }
+    
+    // Check write permission
+    try {
+      await fs.access(dirPath, fsSync.constants.W_OK);
+    } catch (error) {
+      return {
+        accessible: true,
+        error: EMAIL_ERROR_CODES.FILE_PERMISSION_ERROR,
+        message: `No write permission for directory: ${dirPath}`,
+        canCreate: false,
+        readOnly: true
+      };
+    }
+    
+    return {
+      accessible: true,
+      canCreate: true,
+      readOnly: false
+    };
+  } catch (error) {
+    // Directory doesn't exist
+    return {
+      accessible: false,
+      exists: false,
+      canCreate: true
+    };
+  }
+}
+
+/**
  * Initializes email storage system with inbox directory
  * @param {string} customInboxPath - Optional custom inbox path
  * @returns {Promise<Object>} Initialization result with success flag and path
  */
 export async function initializeEmailStorage(customInboxPath = null) {
   try {
-    // Set inbox path
-    inboxPath = customInboxPath || path.join(app.getPath('userData'), 'fenestra', 'inbox');
+    // Set inbox path - use project directory for development
+    const projectRoot = process.cwd();
+    inboxPath = customInboxPath || path.join(projectRoot, 'inbox');
     
     console.log('[EMAIL] Initializing email storage', { inboxPath });
 
+    // Validate inbox path
+    if (!inboxPath || typeof inboxPath !== 'string') {
+      const error = {
+        success: false,
+        error: EMAIL_ERROR_CODES.VALIDATION_ERROR,
+        message: 'Invalid inbox path provided',
+        userMessage: 'Email system configuration error. Please restart the application.'
+      };
+      console.error('[EMAIL] Invalid inbox path', error);
+      return error;
+    }
+
+    // Check directory access
+    const accessCheck = await checkDirectoryAccess(inboxPath);
+    
+    if (!accessCheck.accessible && !accessCheck.canCreate) {
+      const error = {
+        success: false,
+        error: EMAIL_ERROR_CODES.INBOX_INACCESSIBLE,
+        message: accessCheck.message || `Inbox directory is inaccessible: ${inboxPath}`,
+        userMessage: `Cannot access email inbox at: ${inboxPath}\n\nPlease check directory permissions.`,
+        inboxPath
+      };
+      console.error('[EMAIL] Inbox directory inaccessible', error);
+      return error;
+    }
+
     // Create inbox directory if it doesn't exist
-    try {
-      await fs.access(inboxPath);
-    } catch (error) {
-      console.log('[EMAIL] Creating inbox directory', { inboxPath });
-      await fs.mkdir(inboxPath, { recursive: true });
+    if (!accessCheck.accessible && accessCheck.canCreate) {
+      try {
+        console.log('[EMAIL] Creating inbox directory', { inboxPath });
+        await fs.mkdir(inboxPath, { recursive: true });
+        
+        // Verify creation was successful
+        const verifyAccess = await checkDirectoryAccess(inboxPath);
+        if (!verifyAccess.accessible) {
+          throw new Error('Directory created but not accessible');
+        }
+        isReadOnly = verifyAccess.readOnly || false;
+      } catch (error) {
+        const errorResponse = {
+          success: false,
+          error: EMAIL_ERROR_CODES.INBOX_CREATION_FAILED,
+          message: `Failed to create inbox directory: ${error.message}`,
+          userMessage: `Could not create email inbox at: ${inboxPath}\n\nError: ${error.message}`,
+          inboxPath,
+          originalError: error.message
+        };
+        console.error('[EMAIL] Failed to create inbox directory', errorResponse);
+        return errorResponse;
+      }
+    } else {
+      isReadOnly = accessCheck.readOnly || false;
+    }
+
+    // Warn if directory is read-only
+    if (isReadOnly) {
+      console.warn('[EMAIL] Inbox directory is read-only', {
+        inboxPath,
+        message: 'Emails cannot be marked as read'
+      });
     }
 
     // Load existing emails into cache
-    await loadEmailsIntoCache();
+    try {
+      await loadEmailsIntoCache();
+    } catch (error) {
+      console.warn('[EMAIL] Failed to load some emails into cache', {
+        error: error.message,
+        inboxPath
+      });
+      // Continue initialization even if some emails fail to load
+    }
 
     console.log('[EMAIL] Email storage initialized', { 
       inboxPath, 
-      emailCount: emailCache.size 
+      emailCount: emailCache.size,
+      readOnly: isReadOnly
     });
 
     return {
       success: true,
       inboxPath,
-      emailCount: emailCache.size
+      emailCount: emailCache.size,
+      readOnly: isReadOnly
     };
   } catch (error) {
-    console.error('[EMAIL] Failed to initialize email storage', {
-      error: error.message,
-      inboxPath
-    });
-    
-    return {
+    const errorResponse = {
       success: false,
-      error: error.message,
-      inboxPath
+      error: EMAIL_ERROR_CODES.INBOX_INACCESSIBLE,
+      message: `Email storage initialization failed: ${error.message}`,
+      userMessage: `Failed to initialize email system.\n\nError: ${error.message}`,
+      inboxPath,
+      originalError: error.message
     };
+    console.error('[EMAIL] Failed to initialize email storage', errorResponse);
+    return errorResponse;
   }
 }
 
@@ -186,6 +320,11 @@ export async function initializeEmailStorage(customInboxPath = null) {
  * @private
  */
 async function loadEmailsIntoCache() {
+  if (!inboxPath) {
+    console.error('[EMAIL] Cannot load emails - inbox not initialized');
+    throw new Error('Inbox not initialized');
+  }
+
   try {
     const files = await fs.readdir(inboxPath);
     const jsonFiles = files.filter(file => file.endsWith('.json'));
@@ -194,18 +333,50 @@ async function loadEmailsIntoCache() {
       fileCount: jsonFiles.length 
     });
 
+    let loadedCount = 0;
+    let failedCount = 0;
+
     for (const file of jsonFiles) {
       const filePath = path.join(inboxPath, file);
-      await loadEmailFile(filePath);
+      try {
+        await loadEmailFile(filePath);
+        loadedCount++;
+      } catch (error) {
+        failedCount++;
+        console.warn('[EMAIL] Failed to load email file', {
+          file,
+          error: error.message
+        });
+        // Continue loading other files
+      }
     }
 
     console.log('[EMAIL] Emails loaded into cache', { 
+      total: jsonFiles.length,
+      loaded: loadedCount,
+      failed: failedCount,
       emailCount: emailCache.size 
     });
   } catch (error) {
-    console.error('[EMAIL] Failed to load emails into cache', {
-      error: error.message
+    console.error('[EMAIL] Failed to read inbox directory', {
+      error: error.message,
+      inboxPath
     });
+    throw error;
+  }
+}
+
+/**
+ * Checks if a file is readable
+ * @param {string} filePath - Path to file
+ * @returns {Promise<boolean>} True if file is readable
+ */
+async function isFileReadable(filePath) {
+  try {
+    await fs.access(filePath, fsSync.constants.R_OK);
+    return true;
+  } catch (error) {
+    return false;
   }
 }
 
@@ -216,16 +387,52 @@ async function loadEmailsIntoCache() {
  */
 async function loadEmailFile(filePath) {
   try {
-    const fileContent = await fs.readFile(filePath, 'utf8');
-    const emailData = JSON.parse(fileContent);
+    // Check file permissions before reading
+    const readable = await isFileReadable(filePath);
+    if (!readable) {
+      console.warn('[EMAIL] File is not readable, skipping', {
+        filePath,
+        error: EMAIL_ERROR_CODES.FILE_PERMISSION_ERROR
+      });
+      return;
+    }
+
+    // Read file content
+    let fileContent;
+    try {
+      fileContent = await fs.readFile(filePath, 'utf8');
+    } catch (error) {
+      console.error('[EMAIL] Failed to read email file', {
+        filePath,
+        error: error.message,
+        errorCode: EMAIL_ERROR_CODES.FILE_READ_ERROR
+      });
+      return;
+    }
+
+    // Parse JSON
+    let emailData;
+    try {
+      emailData = JSON.parse(fileContent);
+    } catch (error) {
+      console.warn('[EMAIL] Malformed JSON file, skipping', {
+        filePath,
+        error: error.message,
+        errorCode: EMAIL_ERROR_CODES.INVALID_JSON,
+        userMessage: `Email file ${path.basename(filePath)} contains invalid JSON and will be skipped`
+      });
+      return;
+    }
 
     // Validate email JSON
     const validation = validateEmailJson(emailData);
     
     if (!validation.isValid) {
-      console.warn('[EMAIL] Invalid email JSON file', {
+      console.warn('[EMAIL] Invalid email JSON file, skipping', {
         filePath,
-        errors: validation.errors
+        errors: validation.errors,
+        errorCode: EMAIL_ERROR_CODES.VALIDATION_ERROR,
+        userMessage: `Email file ${path.basename(filePath)} is invalid and will be skipped`
       });
       return;
     }
@@ -250,10 +457,12 @@ async function loadEmailFile(filePath) {
       subject: emailData.subject
     });
   } catch (error) {
-    console.error('[EMAIL] Failed to load email file', {
+    console.error('[EMAIL] Unexpected error loading email file', {
       filePath,
-      error: error.message
+      error: error.message,
+      stack: error.stack
     });
+    throw error;
   }
 }
 
@@ -265,12 +474,32 @@ async function loadEmailFile(filePath) {
  */
 export async function getEmails(limit = 50, offset = 0) {
   try {
+    // Validate parameters
+    if (typeof limit !== 'number' || limit < 0) {
+      console.warn('[EMAIL] Invalid limit parameter, using default', { limit });
+      limit = 50;
+    }
+    
+    if (typeof offset !== 'number' || offset < 0) {
+      console.warn('[EMAIL] Invalid offset parameter, using default', { offset });
+      offset = 0;
+    }
+
     // Convert cache to array and sort by timestamp descending
     const emails = Array.from(emailCache.values())
       .sort((a, b) => {
-        const dateA = new Date(a.timestamp);
-        const dateB = new Date(b.timestamp);
-        return dateB - dateA; // Descending order
+        try {
+          const dateA = new Date(a.timestamp);
+          const dateB = new Date(b.timestamp);
+          return dateB - dateA; // Descending order
+        } catch (error) {
+          console.warn('[EMAIL] Error sorting emails by timestamp', {
+            emailA: a.id,
+            emailB: b.id,
+            error: error.message
+          });
+          return 0;
+        }
       });
 
     // Apply pagination
@@ -301,10 +530,19 @@ export async function getEmails(limit = 50, offset = 0) {
  */
 export async function getEmailById(emailId) {
   try {
+    // Validate email ID
+    if (!emailId || typeof emailId !== 'string') {
+      console.warn('[EMAIL] Invalid email ID provided', { emailId });
+      return null;
+    }
+
     const email = emailCache.get(emailId);
     
     if (!email) {
-      console.log('[EMAIL] Email not found', { emailId });
+      console.log('[EMAIL] Email not found', { 
+        emailId,
+        errorCode: EMAIL_ERROR_CODES.EMAIL_NOT_FOUND
+      });
       return null;
     }
 
@@ -330,13 +568,37 @@ export async function getEmailById(emailId) {
  */
 export async function markEmailAsRead(emailId) {
   try {
+    // Validate email ID
+    if (!emailId || typeof emailId !== 'string') {
+      return {
+        success: false,
+        error: EMAIL_ERROR_CODES.VALIDATION_ERROR,
+        message: 'Invalid email ID provided'
+      };
+    }
+
+    // Check if inbox is read-only
+    if (isReadOnly) {
+      console.warn('[EMAIL] Cannot mark email as read - inbox is read-only', { emailId });
+      return {
+        success: false,
+        error: EMAIL_ERROR_CODES.FILE_PERMISSION_ERROR,
+        message: 'Inbox directory is read-only',
+        userMessage: 'Cannot mark email as read due to insufficient permissions'
+      };
+    }
+
     const email = emailCache.get(emailId);
     
     if (!email) {
-      console.warn('[EMAIL] Cannot mark email as read - not found', { emailId });
+      console.warn('[EMAIL] Cannot mark email as read - not found', { 
+        emailId,
+        errorCode: EMAIL_ERROR_CODES.EMAIL_NOT_FOUND
+      });
       return {
         success: false,
-        error: 'Email not found'
+        error: EMAIL_ERROR_CODES.EMAIL_NOT_FOUND,
+        message: 'Email not found'
       };
     }
 
@@ -358,7 +620,33 @@ export async function markEmailAsRead(emailId) {
     delete emailDataToSave._filePath;
     delete emailDataToSave._fileName;
 
-    await fs.writeFile(filePath, JSON.stringify(emailDataToSave, null, 2), 'utf8');
+    try {
+      // Check write permission before attempting
+      try {
+        await fs.access(filePath, fsSync.constants.W_OK);
+      } catch (error) {
+        throw new Error(`No write permission for file: ${filePath}`);
+      }
+
+      await fs.writeFile(filePath, JSON.stringify(emailDataToSave, null, 2), 'utf8');
+    } catch (error) {
+      // Revert in-memory change if file write fails
+      email.isRead = false;
+      
+      console.error('[EMAIL] Failed to update email file', {
+        emailId,
+        filePath,
+        error: error.message,
+        errorCode: EMAIL_ERROR_CODES.FILE_WRITE_ERROR
+      });
+      
+      return {
+        success: false,
+        error: EMAIL_ERROR_CODES.FILE_WRITE_ERROR,
+        message: `Failed to update email file: ${error.message}`,
+        userMessage: 'Could not mark email as read. Please check file permissions.'
+      };
+    }
 
     console.log('[EMAIL] Email marked as read', {
       emailId,
@@ -377,7 +665,9 @@ export async function markEmailAsRead(emailId) {
     
     return {
       success: false,
-      error: error.message
+      error: EMAIL_ERROR_CODES.FILE_WRITE_ERROR,
+      message: error.message,
+      userMessage: 'An error occurred while marking email as read'
     };
   }
 }
@@ -390,10 +680,13 @@ export async function markEmailAsRead(emailId) {
 export function watchInboxDirectory(callback) {
   try {
     if (!inboxPath) {
-      console.error('[EMAIL] Cannot watch inbox - not initialized');
+      console.error('[EMAIL] Cannot watch inbox - not initialized', {
+        errorCode: EMAIL_ERROR_CODES.INBOX_NOT_INITIALIZED
+      });
       return {
         success: false,
-        error: 'Email storage not initialized'
+        error: EMAIL_ERROR_CODES.INBOX_NOT_INITIALIZED,
+        message: 'Email storage not initialized'
       };
     }
 
@@ -409,60 +702,113 @@ export function watchInboxDirectory(callback) {
     watcherCallback = callback;
 
     // Initialize chokidar watcher
-    watcher = chokidar.watch(path.join(inboxPath, '*.json'), {
-      persistent: true,
-      ignoreInitial: true, // Don't trigger for existing files
-      awaitWriteFinish: {
-        stabilityThreshold: 100, // Wait 100ms for file to stabilize
-        pollInterval: 50
-      }
-    });
+    try {
+      // Watch the directory instead of glob pattern for better compatibility
+      watcher = chokidar.watch(inboxPath, {
+        persistent: true,
+        ignoreInitial: true, // Don't trigger for existing files
+        ignored: /(^|[\/\\])\../, // Ignore dotfiles
+        awaitWriteFinish: {
+          stabilityThreshold: 100, // Wait 100ms for file to stabilize
+          pollInterval: 50
+        },
+        depth: 0 // Don't watch subdirectories
+      });
+    } catch (error) {
+      console.error('[EMAIL] Failed to create file watcher', {
+        error: error.message,
+        errorCode: EMAIL_ERROR_CODES.WATCHER_ERROR
+      });
+      return {
+        success: false,
+        error: EMAIL_ERROR_CODES.WATCHER_ERROR,
+        message: `Failed to create file watcher: ${error.message}`
+      };
+    }
 
     // Handle new email files
     watcher.on('add', async (filePath) => {
-      console.log('[EMAIL] New email file detected', { filePath });
-      await loadEmailFile(filePath);
+      // Only process .json files
+      if (!filePath.endsWith('.json')) {
+        return;
+      }
       
-      if (watcherCallback) {
-        const fileName = path.basename(filePath);
-        watcherCallback('add', fileName);
+      console.log('[EMAIL] New email file detected', { filePath });
+      try {
+        await loadEmailFile(filePath);
+        
+        if (watcherCallback) {
+          const fileName = path.basename(filePath);
+          watcherCallback('add', fileName);
+        }
+      } catch (error) {
+        console.error('[EMAIL] Error processing new email file', {
+          filePath,
+          error: error.message
+        });
       }
     });
 
     // Handle modified email files
     watcher.on('change', async (filePath) => {
-      console.log('[EMAIL] Email file modified', { filePath });
-      await loadEmailFile(filePath);
+      // Only process .json files
+      if (!filePath.endsWith('.json')) {
+        return;
+      }
       
-      if (watcherCallback) {
-        const fileName = path.basename(filePath);
-        watcherCallback('change', fileName);
+      console.log('[EMAIL] Email file modified', { filePath });
+      try {
+        await loadEmailFile(filePath);
+        
+        if (watcherCallback) {
+          const fileName = path.basename(filePath);
+          watcherCallback('change', fileName);
+        }
+      } catch (error) {
+        console.error('[EMAIL] Error processing modified email file', {
+          filePath,
+          error: error.message
+        });
       }
     });
 
     // Handle deleted email files
     watcher.on('unlink', (filePath) => {
-      console.log('[EMAIL] Email file deleted', { filePath });
-      
-      // Remove from cache
-      for (const [emailId, email] of emailCache.entries()) {
-        if (email._filePath === filePath) {
-          emailCache.delete(emailId);
-          console.log('[EMAIL] Email removed from cache', { emailId });
-          break;
-        }
+      // Only process .json files
+      if (!filePath.endsWith('.json')) {
+        return;
       }
       
-      if (watcherCallback) {
-        const fileName = path.basename(filePath);
-        watcherCallback('unlink', fileName);
+      console.log('[EMAIL] Email file deleted', { filePath });
+      
+      try {
+        // Remove from cache
+        for (const [emailId, email] of emailCache.entries()) {
+          if (email._filePath === filePath) {
+            emailCache.delete(emailId);
+            console.log('[EMAIL] Email removed from cache', { emailId });
+            break;
+          }
+        }
+        
+        if (watcherCallback) {
+          const fileName = path.basename(filePath);
+          watcherCallback('unlink', fileName);
+        }
+      } catch (error) {
+        console.error('[EMAIL] Error processing deleted email file', {
+          filePath,
+          error: error.message
+        });
       }
     });
 
     // Handle watcher errors
     watcher.on('error', (error) => {
       console.error('[EMAIL] Inbox watcher error', {
-        error: error.message
+        error: error.message,
+        errorCode: EMAIL_ERROR_CODES.WATCHER_ERROR,
+        userMessage: 'Email monitoring encountered an error. New emails may not appear automatically.'
       });
     });
 
@@ -475,12 +821,15 @@ export function watchInboxDirectory(callback) {
   } catch (error) {
     console.error('[EMAIL] Failed to start inbox watcher', {
       error: error.message,
-      inboxPath
+      inboxPath,
+      errorCode: EMAIL_ERROR_CODES.WATCHER_ERROR
     });
     
     return {
       success: false,
-      error: error.message
+      error: EMAIL_ERROR_CODES.WATCHER_ERROR,
+      message: error.message,
+      userMessage: 'Failed to start email monitoring. New emails may not appear automatically.'
     };
   }
 }
@@ -534,6 +883,14 @@ export function getInboxPath() {
  */
 export function getCacheSize() {
   return emailCache.size;
+}
+
+/**
+ * Gets read-only status of inbox
+ * @returns {boolean} True if inbox is read-only
+ */
+export function isInboxReadOnly() {
+  return isReadOnly;
 }
 
 /**

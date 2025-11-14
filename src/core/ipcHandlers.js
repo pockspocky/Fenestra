@@ -339,7 +339,7 @@ export function initializeIpcHandlers() {
     console.debug(`[IPC] 获取邮件列表: limit=${limit}, offset=${offset}`);
     
     try {
-      const { getEmails } = await import('./emailStorage.js');
+      const { getEmails, getInboxPath } = await import('./emailStorage.js');
       const emails = await getEmails(limit, offset);
       
       console.debug(`[IPC] 返回 ${emails.length} 封邮件`);
@@ -352,9 +352,21 @@ export function initializeIpcHandlers() {
       
     } catch (error) {
       console.error('[IPC] 获取邮件列表失败:', error);
+      
+      // Import getInboxPath to provide context in error
+      let inboxPath = null;
+      try {
+        const { getInboxPath } = await import('./emailStorage.js');
+        inboxPath = getInboxPath();
+      } catch (e) {
+        // Ignore if we can't get inbox path
+      }
+      
       return {
         success: false,
         error: error.message,
+        userMessage: error.userMessage || 'Failed to load emails. Please check the inbox directory.',
+        inboxPath,
         emails: []
       };
     }
