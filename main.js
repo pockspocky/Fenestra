@@ -50,6 +50,12 @@ import {
   getRelationsDebugInfo
 } from './src/core/doorKeySystem.js';
 
+import {
+  initializeEmailSystem,
+  toggleEmailWindow,
+  cleanupEmailSystem
+} from './src/core/emailSystem.js';
+
 // 设置日志级别
 setLogLevel("warning"); // 可以根据需要调整
 console.log(`[MAIN] 当前日志级别: ${getLogLevel()}`);
@@ -63,7 +69,7 @@ console.debug(`[MAIN] 运行平台: ${process.platform}, isMac: ${isMac}`);
 setWindowCloseCallback(handleVideoWindowClosed);
 
 // 初始化所有核心系统
-function initializeApp() {
+async function initializeApp() {
   console.debug('[MAIN] 初始化应用程序核心系统...');
 
   // 设置窗口偏移量（每个新窗口向右下偏移30像素）
@@ -83,16 +89,28 @@ function initializeApp() {
   // 初始化 IPC 处理程序
   initializeIpcHandlers();
 
+  // 初始化邮件系统
+  const emailResult = await initializeEmailSystem();
+  if (emailResult.success) {
+    console.log('[MAIN] 邮件系统初始化成功', {
+      inboxPath: emailResult.inboxPath,
+      emailCount: emailResult.emailCount,
+      hotkeyRegistered: emailResult.hotkeyRegistered
+    });
+  } else {
+    console.error('[MAIN] 邮件系统初始化失败', { error: emailResult.error });
+  }
+
   console.debug('[MAIN] 应用程序核心系统初始化完成');
 }
 
 // 启动应用
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   console.debug('[APP] Electron应用程序准备就绪');
   console.log('[APP] 开始创建初始窗口...');
 
   // 初始化应用
-  initializeApp();
+  await initializeApp();
 
   // 创建初始窗口（可选）
   // createDesktop();
@@ -142,8 +160,11 @@ function setupAppEventListeners() {
     }
   });
 
-  app.on('before-quit', () => {
+  app.on('before-quit', async () => {
     console.debug('[APP] 应用程序即将退出，清理资源...');
+
+    // 清理邮件系统
+    await cleanupEmailSystem();
 
     // 注销全局快捷键
     globalShortcut.unregisterAll();
@@ -165,18 +186,22 @@ function registerGlobalShortcuts() {
   console.debug('[APP] 注册全局快捷键...');
 
   // 注册 Ctrl+~ (Mac 上是 Cmd+~) 来打开/关闭终端
-  const shortcut = isMac ? 'Command+`' : 'Control+`';
+  const terminalShortcut = isMac ? 'Command+`' : 'Control+`';
 
-  const registered = globalShortcut.register(shortcut, () => {
-    console.log(`[APP] 终端快捷键被触发: ${shortcut}`);
+  const terminalRegistered = globalShortcut.register(terminalShortcut, () => {
+    console.log(`[APP] 终端快捷键被触发: ${terminalShortcut}`);
     createTerminal();
   });
 
-  if (registered) {
-    console.log(`[APP] 全局快捷键注册成功: ${shortcut} (打开终端)`);
+  if (terminalRegistered) {
+    console.log(`[APP] 全局快捷键注册成功: ${terminalShortcut} (打开终端)`);
   } else {
-    console.error(`[APP] 全局快捷键注册失败: ${shortcut}`);
+    console.error(`[APP] 全局快捷键注册失败: ${terminalShortcut}`);
   }
+
+  // 注意: 邮件窗口快捷键 (Ctrl+E / Cmd+E) 在 initializeEmailSystem() 中注册
+  const emailShortcut = isMac ? 'Command+E' : 'Control+E';
+  console.log(`[APP] 邮件快捷键已在邮件系统初始化时注册: ${emailShortcut} (打开/关闭邮件)`);
 }
 
 // 导出主要功能供外部使用（如果需要）

@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Email</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';">
+  
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #1e1e1e;
+      color: #e0e0e0;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .email-container {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .email-list-pane {
+      width: 35%;
+      background-color: #1e1e1e;
+      border-right: 1px solid #2d2d2d;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .email-list-header {
+      padding: 16px;
+      background-color: #2d2d2d;
+      border-bottom: 1px solid #1e1e1e;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .inbox-title {
+      font-size: 16px;
+      font-weight: bold;
+      color: #e0e0e0;
+    }
+
+    .email-count {
+      font-size: 14px;
+      color: #a0a0a0;
+    }
+
+    .email-list-scroll {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+
+    .email-item {
+      padding: 16px;
+      border-bottom: 1px solid #2d2d2d;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .email-item:hover {
+      background-color: #2d2d2d;
+    }
+
+    .email-item.selected {
+      background-color: #2d2d2d;
+      border-left: 3px solid #4a9eff;
+    }
+
+    .email-item.unread {
+      background-color: #252525;
+    }
+
+    .email-item.unread .email-sender,
+    .email-item.unread .email-subject {
+      font-weight: bold;
+    }
+
+    .email-sender {
+      font-size: 14px;
+      color: #e0e0e0;
+      margin-bottom: 4px;
+    }
+
+    .email-subject {
+      font-size: 14px;
+      color: #e0e0e0;
+      margin-bottom: 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .email-timestamp {
+      font-size: 12px;
+      color: #a0a0a0;
+    }
+
+    .unread-indicator {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      background-color: #4a9eff;
+      border-radius: 50%;
+      margin-right: 8px;
+    }
+
+    .email-reading-pane {
+      width: 65%;
+      background-color: #1e1e1e;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .email-header {
+      padding: 16px;
+      background-color: #2d2d2d;
+      border-bottom: 1px solid #1e1e1e;
+    }
+
+    .email-header-subject {
+      font-size: 16px;
+      font-weight: bold;
+      color: #e0e0e0;
+      margin-bottom: 12px;
+    }
+
+    .email-header-meta {
+      font-size: 14px;
+      color: #a0a0a0;
+      line-height: 1.6;
+    }
+
+    .email-header-meta strong {
+      color: #e0e0e0;
+    }
+
+    .email-body-scroll {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+
+    .email-body {
+      padding: 16px;
+      font-size: 15px;
+      line-height: 1.6;
+      color: #e0e0e0;
+    }
+
+    .email-body-text {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    .email-body-html {
+      word-wrap: break-word;
+    }
+
+    .email-body-html p {
+      margin-bottom: 12px;
+    }
+
+    .email-body-html h1,
+    .email-body-html h2,
+    .email-body-html h3 {
+      margin-top: 16px;
+      margin-bottom: 8px;
+      color: #e0e0e0;
+    }
+
+    .email-body-html ul,
+    .email-body-html ol {
+      margin-left: 20px;
+      margin-bottom: 12px;
+    }
+
+    .email-attachments {
+      padding: 16px;
+      border-top: 1px solid #2d2d2d;
+    }
+
+    .attachments-title {
+      font-size: 14px;
+      font-weight: bold;
+      color: #e0e0e0;
+      margin-bottom: 8px;
+    }
+
+    .attachment-item {
+      padding: 8px;
+      background-color: #2d2d2d;
+      border-radius: 4px;
+      margin-bottom: 8px;
+      font-size: 14px;
+      color: #e0e0e0;
+    }
+
+    .attachment-name {
+      font-weight: bold;
+    }
+
+    .attachment-size {
+      color: #a0a0a0;
+      margin-left: 8px;
+    }
+
+    .email-actions {
+      padding: 16px;
+      border-top: 1px solid #2d2d2d;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .action-button {
+      padding: 8px 16px;
+      background-color: #4a9eff;
+      color: #ffffff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-family: inherit;
+      transition: background-color 0.2s;
+    }
+
+    .action-button:hover {
+      background-color: #3a8eef;
+    }
+
+    .action-button:active {
+      background-color: #2a7edf;
+    }
+
+    .empty-state {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #a0a0a0;
+      font-size: 14px;
+      text-align: center;
+      padding: 16px;
+    }
+
+    .loading-state {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #a0a0a0;
+      font-size: 14px;
+    }
+
+    .notification-indicator {
+      display: none;
+      position: fixed;
+      top: 8px;
+      right: 8px;
+      background-color: #4a9eff;
+      color: #ffffff;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      z-index: 1000;
+      animation: slideIn 0.3s ease-out;
+    }
+
+    .notification-indicator.visible {
+      display: block;
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateY(-100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #1e1e1e;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #2d2d2d;
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #3d3d3d;
+    }
+
+    .email-item:focus,
+    .action-button:focus {
+      outline: 2px solid #4a9eff;
+      outline-offset: 2px;
+    }
+
+    .error-state {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #ff6b6b;
+      font-size: 14px;
+      text-align: center;
+      padding: 32px;
+    }
+
+    .error-state.visible {
+      display: flex;
+    }
+
+    .error-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+
+    .error-title {
+      font-size: 16px;
+      font-weight: bold;
+      margin-bottom: 8px;
+      color: #ff6b6b;
+    }
+
+    .error-message {
+      color: #a0a0a0;
+      line-height: 1.6;
+      max-width: 400px;
+      white-space: pre-wrap;
+    }
+
+    .error-path {
+      margin-top: 12px;
+      padding: 8px 12px;
+      background-color: #2d2d2d;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+      color: #e0e0e0;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <div class="email-container">
+    <div class="email-list-pane" role="navigation" aria-label="Email list">
+      <div class="email-list-header">
+        <span class="inbox-title">Inbox</span>
+        <span class="email-count" id="email-count">0</span>
+      </div>
+      <div class="email-list-scroll" id="email-list-scroll">
+        <div class="loading-state" id="loading-state">Loading emails...</div>
+        <div class="error-state" id="error-state">
+          <div class="error-icon">⚠️</div>
+          <div class="error-title" id="error-title">Error Loading Emails</div>
+          <div class="error-message" id="error-message"></div>
+          <div class="error-path" id="error-path" style="display: none;"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="email-reading-pane" role="main" aria-label="Email content">
+      <div class="empty-state" id="empty-state">
+        Select an email to read
+      </div>
+    </div>
+  </div>
+
+  <div class="notification-indicator" id="notification-indicator" role="alert" aria-live="polite">
+    New email received
+  </div>
+
+  <script type="module">
+    let emails = [];
+    let selectedEmailId = null;
+    let currentOffset = 0;
+    const EMAILS_PER_PAGE = 50;
+    let isLoading = false;
+    let hasMoreEmails = true;
+    let newEmailsCount = 0;
+    let hasViewedNewEmails = false;
+
+    const emailListScroll = document.getElementById('email-list-scroll');
+    const emailCount = document.getElementById('email-count');
+    const emptyState = document.getElementById('empty-state');
+    const loadingState = document.getElementById('loading-state');
+    const notificationIndicator = document.getElementById('notification-indicator');
+    const errorState = document.getElementById('error-state');
+    const errorTitle = document.getElementById('error-title');
+    const errorMessage = document.getElementById('error-message');
+    const errorPath = document.getElementById('error-path');
+
+    async function initializeEmailSystem() {
+      console.log('[EMAIL] Initializing email system');
+      
+      try {
+        await loadEmails();
+        setupScrollListener();
+        setupInboxUpdateListener();
+        console.log('[EMAIL] Email system initialized successfully');
+      } catch (error) {
+        console.error('[EMAIL] Failed to initialize email system:', error);
+        showError('Failed to load emails');
+      }
+    }
+
+    function setupInboxUpdateListener() {
+      console.log('[EMAIL] Setting up inbox update listener');
+      
+      window.api.on('email-inbox-update', async (data) => {
+        console.log('[EMAIL] Inbox update received:', data);
+        
+        if (data.event === 'add') {
+          await handleNewEmail();
+        } else if (data.event === 'change') {
+          await handleEmailUpdate();
+        } else if (data.event === 'unlink') {
+          await handleEmailDelete();
+        }
+      });
+    }
+
+    async function handleNewEmail() {
+      console.log('[EMAIL] Handling new email');
+      
+      const scrollTop = emailListScroll.scrollTop;
+      const scrollHeight = emailListScroll.scrollHeight;
+      
+      const previousEmailCount = emails.length;
+      
+      currentOffset = 0;
+      hasMoreEmails = true;
+      
+      try {
+        const result = await window.api.invoke('email/get-list', {
+          limit: EMAILS_PER_PAGE,
+          offset: 0
+        });
+
+        if (result.success) {
+          const newEmails = result.emails || [];
+          
+          const newEmailsAdded = newEmails.length - previousEmailCount;
+          if (newEmailsAdded > 0) {
+            newEmailsCount += newEmailsAdded;
+            hasViewedNewEmails = false;
+            
+            showNewEmailNotification(newEmailsAdded);
+          }
+          
+          emails = newEmails;
+          hasMoreEmails = newEmails.length === EMAILS_PER_PAGE;
+          currentOffset = newEmails.length;
+
+          renderEmailList();
+          updateEmailCount();
+          
+          const newScrollHeight = emailListScroll.scrollHeight;
+          const heightDifference = newScrollHeight - scrollHeight;
+          
+          if (scrollTop > 0) {
+            emailListScroll.scrollTop = scrollTop + heightDifference;
+          }
+
+          console.log(`[EMAIL] Email list updated with new emails (added: ${newEmailsAdded})`);
+        }
+      } catch (error) {
+        console.error('[EMAIL] Error handling new email:', error);
+      }
+    }
+
+    async function handleEmailUpdate() {
+      console.log('[EMAIL] Handling email update');
+      
+      const scrollTop = emailListScroll.scrollTop;
+      
+      currentOffset = 0;
+      hasMoreEmails = true;
+      
+      try {
+        const result = await window.api.invoke('email/get-list', {
+          limit: Math.max(EMAILS_PER_PAGE, emails.length),
+          offset: 0
+        });
+
+        if (result.success) {
+          emails = result.emails || [];
+          currentOffset = emails.length;
+
+          renderEmailList();
+          updateEmailCount();
+          
+          emailListScroll.scrollTop = scrollTop;
+
+          console.log('[EMAIL] Email list updated after modification');
+        }
+      } catch (error) {
+        console.error('[EMAIL] Error handling email update:', error);
+      }
+    }
+
+    async function handleEmailDelete() {
+      console.log('[EMAIL] Handling email deletion');
+      
+      const scrollTop = emailListScroll.scrollTop;
+      
+      currentOffset = 0;
+      hasMoreEmails = true;
+      
+      try {
+        const result = await window.api.invoke('email/get-list', {
+          limit: Math.max(EMAILS_PER_PAGE, emails.length),
+          offset: 0
+        });
+
+        if (result.success) {
+          emails = result.emails || [];
+          currentOffset = emails.length;
+
+          renderEmailList();
+          updateEmailCount();
+          
+          emailListScroll.scrollTop = scrollTop;
+
+          console.log('[EMAIL] Email list updated after deletion');
+        }
+      } catch (error) {
+        console.error('[EMAIL] Error handling email deletion:', error);
+      }
+    }
+
+    function showNewEmailNotification(count) {
+      const message = count === 1 ? 'New email received' : `${count} new emails received`;
+      notificationIndicator.textContent = message;
+      notificationIndicator.classList.add('visible');
+      
+      setTimeout(() => {
+        if (!hasViewedNewEmails) {
+          notificationIndicator.classList.remove('visible');
+        }
+      }, 5000);
+    }
+
+    function clearNewEmailNotification() {
+      if (newEmailsCount > 0) {
+        hasViewedNewEmails = true;
+        newEmailsCount = 0;
+        notificationIndicator.classList.remove('visible');
+        console.log('[EMAIL] New email notification cleared');
+      }
+    }
+
+    async function loadEmails(append = false) {
+      if (isLoading || (!append && emails.length > 0)) {
+        return;
+      }
+
+      isLoading = true;
+      console.log(`[EMAIL] Loading emails (offset: ${currentOffset}, limit: ${EMAILS_PER_PAGE})`);
+
+      try {
+        const result = await window.api.invoke('email/get-list', {
+          limit: EMAILS_PER_PAGE,
+          offset: currentOffset
+        });
+
+        if (result.success) {
+          const newEmails = result.emails || [];
+          
+          if (append) {
+            emails = [...emails, ...newEmails];
+          } else {
+            emails = newEmails;
+          }
+
+          hasMoreEmails = newEmails.length === EMAILS_PER_PAGE;
+          currentOffset += newEmails.length;
+
+          renderEmailList();
+          updateEmailCount();
+
+          console.log(`[EMAIL] Loaded ${newEmails.length} emails (total: ${emails.length})`);
+        } else {
+          console.error('[EMAIL] Failed to load emails:', result.error);
+          showErrorState(result.userMessage || result.message || 'Failed to load emails', result.inboxPath);
+        }
+      } catch (error) {
+        console.error('[EMAIL] Error loading emails:', error);
+        showError('Error loading emails');
+      } finally {
+        isLoading = false;
+        loadingState.style.display = 'none';
+      }
+    }
+
+    function renderEmailList() {
+      const listContainer = emailListScroll;
+      
+      loadingState.style.display = 'none';
+
+      const existingItems = listContainer.querySelectorAll('.email-item');
+      existingItems.forEach(item => item.remove());
+
+      if (emails.length === 0) {
+        const emptyMessage = document.createElement('div');
+        emptyMessage.className = 'empty-state';
+        emptyMessage.textContent = 'No emails found';
+        listContainer.appendChild(emptyMessage);
+        return;
+      }
+
+      emails.forEach((email, index) => {
+        const emailItem = createEmailListItem(email, index);
+        listContainer.appendChild(emailItem);
+      });
+    }
+
+    function createEmailListItem(email, index) {
+      const item = document.createElement('div');
+      item.className = `email-item ${email.isRead ? '' : 'unread'} ${selectedEmailId === email.id ? 'selected' : ''}`;
+      item.setAttribute('role', 'button');
+      item.setAttribute('tabindex', '0');
+      item.setAttribute('aria-label', `Email from ${email.senderName}: ${email.subject}`);
+      item.dataset.emailId = email.id;
+      item.dataset.index = index;
+
+      const senderDiv = document.createElement('div');
+      senderDiv.className = 'email-sender';
+      
+      if (!email.isRead) {
+        const indicator = document.createElement('span');
+        indicator.className = 'unread-indicator';
+        indicator.setAttribute('aria-label', 'Unread');
+        senderDiv.appendChild(indicator);
+      }
+      
+      senderDiv.appendChild(document.createTextNode(email.senderName));
+      
+      const subjectDiv = document.createElement('div');
+      subjectDiv.className = 'email-subject';
+      subjectDiv.textContent = email.subject;
+
+      const timestampDiv = document.createElement('div');
+      timestampDiv.className = 'email-timestamp';
+      timestampDiv.textContent = formatTimestamp(email.timestamp);
+
+      item.appendChild(senderDiv);
+      item.appendChild(subjectDiv);
+      item.appendChild(timestampDiv);
+
+      item.addEventListener('click', () => selectEmail(email.id));
+      
+      item.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          selectEmail(email.id);
+        }
+      });
+
+      return item;
+    }
+
+    async function selectEmail(emailId) {
+      console.log(`[EMAIL] Selecting email: ${emailId}`);
+      selectedEmailId = emailId;
+
+      const items = emailListScroll.querySelectorAll('.email-item');
+      items.forEach(item => {
+        if (item.dataset.emailId === emailId) {
+          item.classList.add('selected');
+        } else {
+          item.classList.remove('selected');
+        }
+      });
+
+      clearNewEmailNotification();
+
+      try {
+        const result = await window.api.invoke('email/get-by-id', { emailId });
+
+        if (result.success) {
+          const email = result.email;
+          renderReadingPane(email);
+          
+          if (!email.isRead) {
+            await markEmailAsRead(emailId);
+          }
+        } else {
+          console.error('[EMAIL] Failed to load email:', result.error);
+          showError('Failed to load email');
+        }
+      } catch (error) {
+        console.error('[EMAIL] Error loading email:', error);
+        showError('Error loading email');
+      }
+    }
+
+    function renderReadingPane(email) {
+      const readingPane = document.querySelector('.email-reading-pane');
+      
+      emptyState.style.display = 'none';
+      readingPane.innerHTML = '';
+
+      const header = document.createElement('div');
+      header.className = 'email-header';
+      header.setAttribute('role', 'region');
+      header.setAttribute('aria-label', 'Email header');
+
+      const subject = document.createElement('div');
+      subject.className = 'email-header-subject';
+      subject.textContent = email.subject;
+
+      const meta = document.createElement('div');
+      meta.className = 'email-header-meta';
+      meta.innerHTML = `
+        <div><strong>From:</strong> ${escapeHtml(email.senderName)} &lt;${escapeHtml(email.senderEmail)}&gt;</div>
+        ${email.recipientName ? `<div><strong>To:</strong> ${escapeHtml(email.recipientName)}${email.recipientEmail ? ` &lt;${escapeHtml(email.recipientEmail)}&gt;` : ''}</div>` : ''}
+        <div><strong>Date:</strong> ${formatFullTimestamp(email.timestamp)}</div>
+      `;
+
+      header.appendChild(subject);
+      header.appendChild(meta);
+      readingPane.appendChild(header);
+
+      const bodyScroll = document.createElement('div');
+      bodyScroll.className = 'email-body-scroll';
+
+      const body = document.createElement('div');
+      body.className = 'email-body';
+      body.setAttribute('role', 'article');
+      body.setAttribute('aria-label', 'Email body');
+
+      if (email.bodyType === 'html') {
+        const htmlContent = document.createElement('div');
+        htmlContent.className = 'email-body-html';
+        htmlContent.innerHTML = sanitizeHtml(email.body);
+        body.appendChild(htmlContent);
+      } else {
+        const textContent = document.createElement('div');
+        textContent.className = 'email-body-text';
+        textContent.textContent = email.body;
+        body.appendChild(textContent);
+      }
+
+      bodyScroll.appendChild(body);
+      readingPane.appendChild(bodyScroll);
+
+      if (email.attachments && email.attachments.length > 0) {
+        const attachments = document.createElement('div');
+        attachments.className = 'email-attachments';
+        attachments.setAttribute('role', 'region');
+        attachments.setAttribute('aria-label', 'Attachments');
+
+        const title = document.createElement('div');
+        title.className = 'attachments-title';
+        title.textContent = `Attachments (${email.attachments.length})`;
+        attachments.appendChild(title);
+
+        email.attachments.forEach(attachment => {
+          const item = document.createElement('div');
+          item.className = 'attachment-item';
+          
+          const name = document.createElement('span');
+          name.className = 'attachment-name';
+          name.textContent = attachment.fileName;
+          
+          const size = document.createElement('span');
+          size.className = 'attachment-size';
+          size.textContent = formatFileSize(attachment.fileSize);
+          
+          item.appendChild(name);
+          item.appendChild(size);
+          attachments.appendChild(item);
+        });
+
+        readingPane.appendChild(attachments);
+      }
+
+      if (email.actions && email.actions.length > 0) {
+        const actions = document.createElement('div');
+        actions.className = 'email-actions';
+        actions.setAttribute('role', 'region');
+        actions.setAttribute('aria-label', 'Email actions');
+
+        email.actions.forEach((action, index) => {
+          const button = document.createElement('button');
+          button.className = 'action-button';
+          button.textContent = action.label;
+          button.setAttribute('aria-label', action.label);
+          button.addEventListener('click', () => executeAction(email.id, index, action));
+          actions.appendChild(button);
+        });
+
+        readingPane.appendChild(actions);
+      }
+    }
+
+    async function markEmailAsRead(emailId) {
+      try {
+        const result = await window.api.invoke('email/mark-read', { emailId });
+
+        if (result.success) {
+          const email = emails.find(e => e.id === emailId);
+          if (email) {
+            email.isRead = true;
+          }
+
+          const item = emailListScroll.querySelector(`[data-email-id="${emailId}"]`);
+          if (item) {
+            item.classList.remove('unread');
+            const indicator = item.querySelector('.unread-indicator');
+            if (indicator) {
+              indicator.remove();
+            }
+            const sender = item.querySelector('.email-sender');
+            const subject = item.querySelector('.email-subject');
+            if (sender) sender.style.fontWeight = 'normal';
+            if (subject) subject.style.fontWeight = 'normal';
+          }
+
+          console.log(`[EMAIL] Marked email as read: ${emailId}`);
+        } else {
+          console.error('[EMAIL] Failed to mark email as read:', result.error);
+        }
+      } catch (error) {
+        console.error('[EMAIL] Error marking email as read:', error);
+      }
+    }
+
+    async function executeAction(emailId, actionIndex, action) {
+      console.log(`[EMAIL] Executing action: ${action.label} for email ${emailId}`);
+
+      try {
+        const result = await window.api.invoke('email/execute-action', {
+          emailId,
+          actionIndex
+        });
+
+        if (result.success) {
+          console.log('[EMAIL] Action executed successfully');
+          showNotification(`Action "${action.label}" completed`);
+        } else {
+          console.error('[EMAIL] Action execution failed:', result.error);
+          showError(`Action failed: ${result.error}`);
+        }
+      } catch (error) {
+        console.error('[EMAIL] Error executing action:', error);
+        showError('Error executing action');
+      }
+    }
+
+    function setupScrollListener() {
+      emailListScroll.addEventListener('scroll', () => {
+        const scrollTop = emailListScroll.scrollTop;
+        const scrollHeight = emailListScroll.scrollHeight;
+        const clientHeight = emailListScroll.clientHeight;
+
+        if (scrollTop + clientHeight >= scrollHeight - 50 && hasMoreEmails && !isLoading) {
+          console.log('[EMAIL] Loading more emails...');
+          loadEmails(true);
+        }
+      });
+    }
+
+    function updateEmailCount() {
+      const unreadCount = emails.filter(e => !e.isRead).length;
+      emailCount.textContent = unreadCount > 0 ? `${unreadCount} unread` : `${emails.length}`;
+    }
+
+    function showNotification(message) {
+      notificationIndicator.textContent = message;
+      notificationIndicator.classList.add('visible');
+      
+      setTimeout(() => {
+        notificationIndicator.classList.remove('visible');
+      }, 3000);
+    }
+
+    function showError(message) {
+      console.error('[EMAIL]', message);
+      showNotification(message);
+    }
+
+    function showErrorState(message, inboxPathValue = null) {
+      console.error('[EMAIL] Showing error state:', message);
+      
+      loadingState.style.display = 'none';
+      errorState.classList.add('visible');
+      
+      errorMessage.textContent = message;
+      
+      if (inboxPathValue) {
+        errorPath.textContent = inboxPathValue;
+        errorPath.style.display = 'block';
+      } else {
+        errorPath.style.display = 'none';
+      }
+    }
+
+    function hideErrorState() {
+      errorState.classList.remove('visible');
+    }
+
+    function formatTimestamp(timestamp) {
+      const date = new Date(timestamp);
+      const now = new Date();
+      const diffMs = now - date;
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMs / 3600000);
+      const diffDays = Math.floor(diffMs / 86400000);
+
+      if (diffMins < 1) return 'Just now';
+      if (diffMins < 60) return `${diffMins}m ago`;
+      if (diffHours < 24) return `${diffHours}h ago`;
+      if (diffDays < 7) return `${diffDays}d ago`;
+      
+      return date.toLocaleDateString();
+    }
+
+    function formatFullTimestamp(timestamp) {
+      const date = new Date(timestamp);
+      return date.toLocaleString();
+    }
+
+    function formatFileSize(bytes) {
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / 1048576).toFixed(1)} MB`;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function sanitizeHtml(html) {
+      const temp = document.createElement('div');
+      temp.innerHTML = html;
+
+      const scripts = temp.querySelectorAll('script');
+      scripts.forEach(script => script.remove());
+
+      const allElements = temp.querySelectorAll('*');
+      allElements.forEach(el => {
+        Array.from(el.attributes).forEach(attr => {
+          if (attr.name.startsWith('on')) {
+            el.removeAttribute(attr.name);
+          }
+        });
+
+        if (['iframe', 'object', 'embed', 'link', 'style'].includes(el.tagName.toLowerCase())) {
+          el.remove();
+        }
+      });
+
+      return temp.innerHTML;
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      console.log('[EMAIL] DOM loaded, initializing...');
+      initializeEmailSystem();
+    });
+
+    console.log('[EMAIL] Email window script loaded');
+  </script>
+</body>
+</html>
