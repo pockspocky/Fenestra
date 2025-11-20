@@ -1,6 +1,13 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import '../../logger.js'; // Import logging system
+import { 
+  toForwardSlashes, 
+  hasWindowsDriveLetter, 
+  isUNCPath,
+  resolvePath,
+  toRelativePath
+} from './utils/pathUtils.js';
 
 /**
  * Configuration System for Fenestra
@@ -104,6 +111,7 @@ export function setGameDataDirectory(newPath) {
 
 /**
  * Validates a game data directory path
+ * Handles Windows paths with drive letters, UNC paths, and ensures cross-platform compatibility
  * @param {string} inputPath - Path to validate
  * @returns {Object} Validation result with path information
  */
@@ -117,18 +125,61 @@ function validateGameDataDirectoryPath(inputPath) {
     }
     
     const projectRoot = process.cwd();
-    const normalizedProjectRoot = path.resolve(projectRoot);
+    const normalizedProjectRoot = resolvePath(projectRoot);
     
-    // Resolve the input path
+    // Validate Windows-specific path formats
+    if (hasWindowsDriveLetter(inputPath)) {
+      console.debug(`[CONFIG] Detected Windows path with drive letter: "${inputPath}"`);
+      
+      // Validate drive letter format (must be A-Z followed by colon)
+      const driveMatch = inputPath.match(/^([a-zA-Z]):/);
+      if (!driveMatch) {
+        return {
+          isValid: false,
+          error: 'Invalid Windows drive letter format'
+        };
+      }
+      
+      // Check if the drive letter is valid (A-Z)
+      const driveLetter = driveMatch[1].toUpperCase();
+      if (driveLetter < 'A' || driveLetter > 'Z') {
+        return {
+          isValid: false,
+          error: 'Drive letter must be between A and Z'
+        };
+      }
+    }
+    
+    // Check for UNC paths
+    if (isUNCPath(inputPath)) {
+      console.debug(`[CONFIG] Detected UNC path: "${inputPath}"`);
+      // UNC paths are allowed but must be within project scope
+    }
+    
+    // Resolve the input path to absolute
     let absolutePath;
     if (path.isAbsolute(inputPath)) {
-      absolutePath = path.resolve(inputPath);
+      absolutePath = resolvePath(inputPath);
     } else {
-      absolutePath = path.resolve(projectRoot, inputPath);
+      absolutePath = resolvePath(projectRoot, inputPath);
     }
     
     // Check if the path is within project scope
     const relativePath = path.relative(normalizedProjectRoot, absolutePath);
+    
+    // On Windows, check if paths are on different drives
+    if (process.platform === 'win32') {
+      const projectRootParsed = path.parse(normalizedProjectRoot);
+      const absolutePathParsed = path.parse(absolutePath);
+      
+      // If roots are different (different drives), paths cannot be relative
+      if (projectRootParsed.root.toLowerCase() !== absolutePathParsed.root.toLowerCase()) {
+        return {
+          isValid: false,
+          error: `Game data directory must be on the same drive as project (project: ${projectRootParsed.root}, path: ${absolutePathParsed.root})`
+        };
+      }
+    }
     
     // Path is outside project scope if relative path starts with '..' or is absolute
     if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
@@ -138,8 +189,8 @@ function validateGameDataDirectoryPath(inputPath) {
       };
     }
     
-    // Convert back to relative path for storage
-    const relativeForStorage = './' + relativePath.replace(/\\/g, '/');
+    // Convert to relative path for storage, always using forward slashes
+    const relativeForStorage = './' + toForwardSlashes(relativePath);
     
     console.debug(`[CONFIG] Path validation successful - Absolute: "${absolutePath}", Relative: "${relativeForStorage}"`);
     
@@ -172,6 +223,12 @@ function loadConfig() {
       
       const configData = fs.readFileSync(configFilePath, 'utf8');
       const parsedConfig = JSON.parse(configData);
+      
+      // Convert backslashes to forward slashes in gameDataDirectory path on load
+      if (parsedConfig.gameDataDirectory && typeof parsedConfig.gameDataDirectory === 'string') {
+        parsedConfig.gameDataDirectory = toForwardSlashes(parsedConfig.gameDataDirectory);
+        console.debug(`[CONFIG] Normalized gameDataDirectory path: "${parsedConfig.gameDataDirectory}"`);
+      }
       
       // Merge with defaults to ensure all required properties exist
       const config = { ...DEFAULT_CONFIG, ...parsedConfig };
