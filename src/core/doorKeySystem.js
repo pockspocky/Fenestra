@@ -53,6 +53,33 @@ export function establishRelation(doorId, keyId) {
  * @returns {boolean} 是否有权限开门
  */
 export function canOpenDoor(doorId, keyId) {
+  // NEW: Check for custom authorization callback
+  const authCallback = authorizationCallbacks.get(doorId);
+  
+  if (authCallback) {
+    try {
+      const result = authCallback(doorId, keyId);
+      
+      // Validate boolean return
+      if (typeof result !== 'boolean') {
+        console.warn(`[AUTH_CALLBACK] Callback for door '${doorId}' returned non-boolean: ${result}, treating as false`);
+        return false;
+      }
+      
+      console.log(`[AUTH_CALLBACK] Custom authorization for door '${doorId}' with key '${keyId}': ${result}`);
+      return result;
+    } catch (error) {
+      console.error(`[AUTH_CALLBACK] Error in authorization callback for door '${doorId}':`, {
+        doorId,
+        keyId,
+        error: error.message,
+        stack: error.stack
+      });
+      return false; // Deny access on error
+    }
+  }
+  
+  // EXISTING: Default authorization logic continues unchanged
   // 首先检查钥匙是否可用（一次性钥匙使用状态检查）
   if (!isKeyUsable(keyId)) {
     console.log(`[DOOR_ACCESS] Key '${keyId}' is not usable (already used)`);
@@ -909,6 +936,87 @@ function executeDoorOpenCallback(doorId, keyId) {
       stack: error.stack
     });
   }
+}
+
+// ==================== 授权回调系统 ====================
+
+// 授权回调存储
+const authorizationCallbacks = new Map(); // doorId -> callback function
+
+/**
+ * 注册授权回调函数
+ * @param {string} doorId - 门ID
+ * @param {Function} callback - 授权回调函数 (doorId, keyId) => boolean
+ * @throws {Error} 当doorId或callback无效时抛出错误
+ */
+export function registerAuthorizationCallback(doorId, callback) {
+  // 验证doorId
+  if (!doorId || typeof doorId !== 'string') {
+    const error = new Error('Door ID must be a non-empty string');
+    error.name = 'ValidationError';
+    console.error('[AUTH_CALLBACK] Validation error:', error.message, { doorId, type: typeof doorId });
+    throw error;
+  }
+  
+  // 验证callback
+  if (typeof callback !== 'function') {
+    const error = new Error('Callback must be a function');
+    error.name = 'ValidationError';
+    console.error('[AUTH_CALLBACK] Validation error:', error.message, { callback, type: typeof callback });
+    throw error;
+  }
+  
+  // 如果已存在回调，将被替换
+  if (authorizationCallbacks.has(doorId)) {
+    console.log(`[AUTH_CALLBACK] Replacing existing authorization callback for door '${doorId}'`);
+  }
+  
+  // 存储回调
+  authorizationCallbacks.set(doorId, callback);
+  console.log(`[AUTH_CALLBACK] Registered authorization callback for door '${doorId}'`);
+}
+
+/**
+ * 注销授权回调函数
+ * @param {string} doorId - 门ID
+ * @throws {Error} 当doorId无效时抛出错误
+ */
+export function unregisterAuthorizationCallback(doorId) {
+  // 验证doorId
+  if (!doorId || typeof doorId !== 'string') {
+    const error = new Error('Door ID must be a non-empty string');
+    error.name = 'ValidationError';
+    console.error('[AUTH_CALLBACK] Validation error:', error.message, { doorId, type: typeof doorId });
+    throw error;
+  }
+  
+  // 检查是否存在回调
+  if (!authorizationCallbacks.has(doorId)) {
+    console.warn(`[AUTH_CALLBACK] No authorization callback registered for door '${doorId}', skipping unregister`);
+    return;
+  }
+  
+  // 移除回调
+  authorizationCallbacks.delete(doorId);
+  console.log(`[AUTH_CALLBACK] Unregistered authorization callback for door '${doorId}'`);
+}
+
+/**
+ * 获取授权回调信息
+ * @param {string|null} doorId - 门ID（可选，null表示查询所有门）
+ * @returns {Object|Array} 回调信息
+ */
+export function getAuthorizationCallbackInfo(doorId = null) {
+  if (doorId === null) {
+    // 返回所有注册了授权回调的门ID列表
+    return Array.from(authorizationCallbacks.keys());
+  }
+  
+  // 返回特定门的授权回调信息
+  return {
+    doorId,
+    hasCallback: authorizationCallbacks.has(doorId)
+  };
 }
 
 // ==================== 消息配置系统 ====================
