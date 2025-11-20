@@ -9,6 +9,7 @@ import path from 'path';
 import { app } from 'electron';
 import chokidar from 'chokidar';
 import '../../logger.js';
+import { joinPaths, validatePathCharacters, normalizePath } from './utils/pathUtils.js';
 
 // Error codes for email storage operations
 const EMAIL_ERROR_CODES = {
@@ -210,8 +211,9 @@ async function checkDirectoryAccess(dirPath) {
 export async function initializeEmailStorage(customInboxPath = null) {
   try {
     // Set inbox path - use project directory for development
+    // Use cross-platform path construction
     const projectRoot = process.cwd();
-    inboxPath = customInboxPath || path.join(projectRoot, 'inbox');
+    inboxPath = customInboxPath || joinPaths(projectRoot, 'inbox');
     
     console.log('[EMAIL] Initializing email storage', { inboxPath });
 
@@ -226,6 +228,23 @@ export async function initializeEmailStorage(customInboxPath = null) {
       console.error('[EMAIL] Invalid inbox path', error);
       return error;
     }
+
+    // Validate path characters for Windows compatibility
+    const pathValidation = validatePathCharacters(inboxPath);
+    if (!pathValidation.isValid) {
+      const error = {
+        success: false,
+        error: EMAIL_ERROR_CODES.VALIDATION_ERROR,
+        message: `Invalid inbox path: ${pathValidation.errors.join(', ')}`,
+        userMessage: 'Email inbox path contains invalid characters.',
+        validationErrors: pathValidation.errors
+      };
+      console.error('[EMAIL] Invalid inbox path characters', error);
+      return error;
+    }
+
+    // Normalize path for consistent handling across platforms
+    inboxPath = normalizePath(inboxPath);
 
     // Check directory access
     const accessCheck = await checkDirectoryAccess(inboxPath);
@@ -337,7 +356,7 @@ async function loadEmailsIntoCache() {
     let failedCount = 0;
 
     for (const file of jsonFiles) {
-      const filePath = path.join(inboxPath, file);
+      const filePath = joinPaths(inboxPath, file);
       try {
         await loadEmailFile(filePath);
         loadedCount++;
@@ -562,6 +581,52 @@ export async function getEmailById(emailId) {
 }
 
 /**
+ * Writes file with retry logic and exponential backoff for Windows file locking
+ * @param {string} filePath - Path to file
+ * @param {string} content - Content to write
+ * @param {number} maxRetries - Maximum number of retry attempts
+ * @returns {Promise<void>}
+ * @private
+ */
+async function writeFileWithRetry(filePath, content, maxRetries = 3) {
+  let lastError;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      await fs.writeFile(filePath, content, 'utf8');
+      return; // Success
+    } catch (error) {
+      lastError = error;
+      
+      // Check if error is due to file locking (common on Windows)
+      const isLockError = error.code === 'EBUSY' || 
+                          error.code === 'EPERM' || 
+                          error.code === 'EACCES';
+      
+      if (isLockError && attempt < maxRetries - 1) {
+        // Exponential backoff: 50ms, 100ms, 200ms
+        const delay = 50 * Math.pow(2, attempt);
+        console.log('[EMAIL] File locked, retrying write', {
+          filePath,
+          attempt: attempt + 1,
+          maxRetries,
+          delayMs: delay,
+          errorCode: error.code
+        });
+        
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        // Not a lock error or max retries reached
+        throw error;
+      }
+    }
+  }
+  
+  // All retries failed
+  throw lastError;
+}
+
+/**
  * Marks an email as read and updates the JSON file
  * @param {string} emailId - Email ID to mark as read
  * @returns {Promise<Object>} Result with success flag
@@ -628,7 +693,8 @@ export async function markEmailAsRead(emailId) {
         throw new Error(`No write permission for file: ${filePath}`);
       }
 
-      await fs.writeFile(filePath, JSON.stringify(emailDataToSave, null, 2), 'utf8');
+      // Write file with retry logic for Windows file locking
+      await writeFileWithRetry(filePath, JSON.stringify(emailDataToSave, null, 2));
     } catch (error) {
       // Revert in-memory change if file write fails
       email.isRead = false;
@@ -701,7 +767,7 @@ export function watchInboxDirectory(callback) {
     // Store callback
     watcherCallback = callback;
 
-    // Initialize chokidar watcher
+    // Initialize chokidar watcher with Windows-compatible configuration
     try {
       // Watch the directory instead of glob pattern for better compatibility
       watcher = chokidar.watch(inboxPath, {
@@ -709,10 +775,16 @@ export function watchInboxDirectory(callback) {
         ignoreInitial: true, // Don't trigger for existing files
         ignored: /(^|[\/\\])\../, // Ignore dotfiles
         awaitWriteFinish: {
-          stabilityThreshold: 100, // Wait 100ms for file to stabilize
-          pollInterval: 50
+          stabilityThreshold: 200, // Wait 200ms for file to stabilize (increased for Windows)
+          pollInterval: 100 // Poll every 100ms (increased for Windows)
         },
-        depth: 0 // Don't watch subdirectories
+        depth: 0, // Don't watch subdirectories
+        // Windows-specific optimizations
+        usePolling: false, // Use native fs.watch on Windows (more efficient)
+        alwaysStat: false, // Don't stat files unnecessarily
+        atomic: true, // Handle atomic writes (common on Windows)
+        // Increase stability for Windows file system events
+        disableGlobbing: true // Disable globbing since we're watching a directory
       });
     } catch (error) {
       console.error('[EMAIL] Failed to create file watcher', {
