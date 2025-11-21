@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fenestra - Start Menu</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      color: #fff;
+    }
+
+    .container {
+      text-align: center;
+      max-width: 500px;
+      padding: 40px;
+    }
+
+    h1 {
+      font-size: 48px;
+      margin-bottom: 10px;
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    .subtitle {
+      font-size: 18px;
+      margin-bottom: 40px;
+      opacity: 0.9;
+    }
+
+    .save-info {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 30px;
+      font-size: 14px;
+      backdrop-filter: blur(10px);
+    }
+
+    .save-info.hidden {
+      display: none;
+    }
+
+    .save-timestamp {
+      font-weight: 600;
+      margin-top: 5px;
+    }
+
+    .buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    button {
+      padding: 15px 30px;
+      font-size: 18px;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    button::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 0;
+      height: 0;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.3);
+      transform: translate(-50%, -50%);
+      transition: width 0.6s, height 0.6s;
+    }
+
+    button:hover::before {
+      width: 300px;
+      height: 300px;
+    }
+
+    button span {
+      position: relative;
+      z-index: 1;
+    }
+
+    .btn-new-game {
+      background: #4CAF50;
+      color: white;
+    }
+
+    .btn-new-game:hover {
+      background: #45a049;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+    }
+
+    .btn-continue {
+      background: #2196F3;
+      color: white;
+    }
+
+    .btn-continue:hover:not(:disabled) {
+      background: #0b7dda;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4);
+    }
+
+    .btn-continue:disabled {
+      background: #666;
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+
+    .keyboard-hint {
+      margin-top: 30px;
+      font-size: 14px;
+      opacity: 0.7;
+    }
+
+    .keyboard-hint kbd {
+      background: rgba(255, 255, 255, 0.2);
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Fenestra</h1>
+    <p class="subtitle">A Window-Based Puzzle Game</p>
+    
+    <div id="saveInfo" class="save-info hidden">
+      <div>Saved game available</div>
+      <div class="save-timestamp" id="saveTimestamp"></div>
+    </div>
+    
+    <div class="buttons">
+      <button class="btn-new-game" id="btnNewGame">
+        <span>New Game</span>
+      </button>
+      <button class="btn-continue" id="btnContinue">
+        <span>Continue Game</span>
+      </button>
+    </div>
+    
+    <div class="keyboard-hint">
+      Keyboard shortcuts: <kbd>N</kbd> New Game · <kbd>C</kbd> Continue
+    </div>
+  </div>
+
+  <script>
+    console.log('[START_MENU_HTML] Script is executing!');
+    console.log('[START_MENU_HTML] window.location:', window.location.href);
+    console.log('[START_MENU_HTML] window.location.search:', window.location.search);
+    
+    // Get query parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    console.log('[START_MENU_HTML] URLSearchParams created');
+    
+    const saveExists = urlParams.get('saveExists') === 'true';
+    const saveTimestamp = urlParams.get('saveTimestamp');
+    const saveWindowCount = urlParams.get('saveWindowCount');
+    const saveIsValid = urlParams.get('saveIsValid') === 'true';
+
+    console.log('[START_MENU_HTML] Parsed query params:', {
+      saveExists,
+      saveTimestamp,
+      saveWindowCount,
+      saveIsValid,
+      raw: {
+        saveExists: urlParams.get('saveExists'),
+        saveTimestamp: urlParams.get('saveTimestamp'),
+        saveWindowCount: urlParams.get('saveWindowCount'),
+        saveIsValid: urlParams.get('saveIsValid')
+      }
+    });
+
+    // Get elements
+    const btnNewGame = document.getElementById('btnNewGame');
+    const btnContinue = document.getElementById('btnContinue');
+    const saveInfo = document.getElementById('saveInfo');
+    const saveTimestampEl = document.getElementById('saveTimestamp');
+
+    console.log('[START_MENU] Save exists:', saveExists);
+
+    // Configure continue button based on save state
+    if (saveExists && saveIsValid) {
+      console.log('[START_MENU] Save exists and is valid');
+      btnContinue.disabled = false;
+      saveInfo.classList.remove('hidden');
+      
+      // Format timestamp
+      if (saveTimestamp) {
+        const date = new Date(saveTimestamp);
+        const formattedDate = date.toLocaleString();
+        saveTimestampEl.textContent = `Last saved: ${formattedDate} (${saveWindowCount} windows)`;
+      }
+    } else {
+      console.log('[START_MENU] Save does not exist or is invalid');
+      btnContinue.disabled = true;
+    }
+
+    // Button click handlers
+    btnNewGame.addEventListener('click', () => {
+      console.log('[START_MENU] New Game button clicked');
+      window.electronAPI.startNewGame();
+    });
+
+    btnContinue.addEventListener('click', () => {
+      if (!btnContinue.disabled) {
+        console.log('[START_MENU] Continue Game button clicked');
+        window.electronAPI.startContinueGame();
+      }
+    });
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (event) => {
+      const key = event.key.toLowerCase();
+      
+      if (key === 'n') {
+        btnNewGame.click();
+      } else if (key === 'c' && !btnContinue.disabled) {
+        btnContinue.click();
+      }
+    });
+
+    // Focus on appropriate button
+    if (saveExists && saveIsValid) {
+      btnContinue.focus();
+    } else {
+      btnNewGame.focus();
+    }
+  </script>
+</body>
+</html>
