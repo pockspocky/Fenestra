@@ -56,8 +56,21 @@ import {
   cleanupEmailSystem
 } from './src/core/emailSystem.js';
 
+import {
+  createStartMenu
+} from './src/core/startMenuManager.js';
+
+import {
+  saveGameState
+} from './src/core/gameStateManager.js';
+
+import {
+  registerGameHotkeys,
+  unregisterGameHotkeys
+} from './src/core/hotkeyManager.js';
+
 // 设置日志级别
-setLogLevel("warning"); // 可以根据需要调整
+setLogLevel("warn"); // 可以根据需要调整
 console.log(`[MAIN] 当前日志级别: ${getLogLevel()}`);
 
 // 全局变量
@@ -107,29 +120,35 @@ async function initializeApp() {
 // 启动应用
 app.whenReady().then(async () => {
   console.debug('[APP] Electron应用程序准备就绪');
-  console.log('[APP] 开始创建初始窗口...');
+  console.log('[APP] 开始初始化应用...');
 
   // 初始化应用
   await initializeApp();
 
-  // 创建初始窗口（可选）
-  // createDesktop();
-  // createVideo();
-
   // 启动重叠检测
   startOverlapLoop();
 
-  // 添加示例门和钥匙来演示系统
-  setTimeout(() => {
-    createDemoDoorsAndKeys();
-    console.debug('[DEMO] 关系映射:', getRelationsDebugInfo());
-  }, 2000);
+  // 显示开始菜单而不是直接创建演示内容 (Requirement 2.1)
+  console.log('[APP] 显示开始菜单...');
+  await createStartMenu();
 
   // 设置应用事件监听器
   setupAppEventListeners();
 
-  // 注册全局快捷键
+  // 注册全局快捷键（终端和邮件）
   registerGlobalShortcuts();
+
+  // 注册游戏热键（保存和退出） (Requirement 7.5, 8.3)
+  console.log('[APP] 注册游戏热键...');
+  const hotkeyResult = registerGameHotkeys();
+  if (hotkeyResult.success) {
+    console.log('[APP] 游戏热键注册成功:', hotkeyResult.registered);
+    if (hotkeyResult.warnings.length > 0) {
+      hotkeyResult.warnings.forEach(warning => console.warn(`[APP] ${warning}`));
+    }
+  } else {
+    console.error('[APP] 游戏热键注册失败');
+  }
 
   console.debug('[APP] 应用程序启动完成');
 });
@@ -142,9 +161,9 @@ function setupAppEventListeners() {
     console.debug(`[APP] 当前窗口数量: ${allWindows.length}`);
 
     if (allWindows.length === 0) {
-      console.debug('[APP] 没有窗口存在，重新创建初始窗口');
-      createDesktop();
-      createVideo();
+      console.debug('[APP] 没有窗口存在');
+      // createDesktop();
+      // createVideo();
     } else {
       console.debug('[APP] 窗口已存在，不需要重新创建');
     }
@@ -160,11 +179,35 @@ function setupAppEventListeners() {
     }
   });
 
-  app.on('before-quit', async () => {
+  app.on('before-quit', async (event) => {
     console.debug('[APP] 应用程序即将退出，清理资源...');
+
+    // 阻止默认退出行为，以便我们可以先保存游戏状态 (Requirement 8.2)
+    event.preventDefault();
+
+    try {
+      // 自动保存游戏状态 (Requirement 1.1, 8.2, 8.4)
+      console.log('[APP] 自动保存游戏状态...');
+      const saveResult = await saveGameState(null, { showNotification: false });
+      
+      if (saveResult.success) {
+        console.log('[APP] 游戏状态保存成功', {
+          windowCount: saveResult.windowCount,
+          relationshipCount: saveResult.relationshipCount
+        });
+      } else {
+        console.warn('[APP] 游戏状态保存失败:', saveResult.message);
+      }
+    } catch (error) {
+      console.error('[APP] 保存游戏状态时发生错误:', error);
+    }
 
     // 清理邮件系统
     await cleanupEmailSystem();
+
+    // 注销游戏热键
+    console.log('[APP] 注销游戏热键...');
+    unregisterGameHotkeys();
 
     // 注销全局快捷键
     globalShortcut.unregisterAll();
@@ -176,6 +219,9 @@ function setupAppEventListeners() {
     cleanupIpcHandlers();
 
     console.debug('[APP] 资源清理完成');
+
+    // 现在可以安全退出了
+    app.exit(0);
   });
 
   console.debug('[APP] 应用事件监听器已设置');
