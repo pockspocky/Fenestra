@@ -71,7 +71,7 @@ import {
 } from './src/core/hotkeyManager.js';
 
 // 设置日志级别
-setLogLevel("warn"); // 可以根据需要调整
+setLogLevel("log"); // 可以根据需要调整
 console.log(`[MAIN] 当前日志级别: ${getLogLevel()}`);
 
 // 全局变量
@@ -81,6 +81,10 @@ console.debug(`[MAIN] 运行平台: ${process.platform}, isMac: ${isMac}`);
 
 // Track whether a game has been started (not just on start menu)
 let gameStarted = false;
+
+export function isGameStarted() {
+  return gameStarted;
+}
 
 // 设置窗口关闭回调
 setWindowCloseCallback(handleVideoWindowClosed);

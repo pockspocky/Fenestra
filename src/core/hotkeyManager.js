@@ -27,6 +27,7 @@
 import { app, globalShortcut, Notification } from 'electron';
 import '../../logger.js';
 import { saveGameState } from './gameStateManager.js';
+import { isGameStarted } from '../../main.js';
 
 // Platform detection
 const isMac = process.platform === 'darwin';
@@ -139,10 +140,16 @@ export function unregisterGameHotkeys() {
  */
 async function handleSaveHotkey() {
   console.log('[HOTKEY] Save hotkey triggered');
+
+
   
   try {
     // Save game state with notification support (Requirement 7.4)
-    const result = await saveGameState(null, { showNotification: true });
+    if (isGameStarted()) {
+      console.log('[HOTKEY] Game started. Saving.');
+      const result = await saveGameState(null, { showNotification: true });
+      return;
+  }
     
     if (result.success) {
       // Log successful save (Requirement 7.3)
@@ -193,7 +200,10 @@ async function handleExitHotkey() {
   try {
     // Save game state before exiting (Requirement 8.2)
     console.log('[HOTKEY] Saving game state before exit...');
-    const result = await saveGameState(null, { showNotification: false });
+    if (isGameStarted()) {
+      console.log('[HOTKEY] Game started. Saving');
+      const result = await saveGameState(null, { showNotification: false });
+    }
     
     if (result.success) {
       console.log('[HOTKEY] Game state saved successfully before exit', {
