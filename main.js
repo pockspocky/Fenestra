@@ -57,7 +57,8 @@ import {
 } from './src/core/emailSystem.js';
 
 import {
-  createStartMenu
+  createStartMenu,
+  setGameStartedCallback
 } from './src/core/startMenuManager.js';
 
 import {
@@ -77,6 +78,9 @@ console.log(`[MAIN] 当前日志级别: ${getLogLevel()}`);
 console.debug('[MAIN] 初始化应用程序...');
 const isMac = process.platform === 'darwin';
 console.debug(`[MAIN] 运行平台: ${process.platform}, isMac: ${isMac}`);
+
+// Track whether a game has been started (not just on start menu)
+let gameStarted = false;
 
 // 设置窗口关闭回调
 setWindowCloseCallback(handleVideoWindowClosed);
@@ -127,6 +131,12 @@ app.whenReady().then(async () => {
 
   // 启动重叠检测
   startOverlapLoop();
+
+  // Set up callback to track when game starts
+  setGameStartedCallback(() => {
+    console.log('[APP] Game started, enabling auto-save on quit');
+    gameStarted = true;
+  });
 
   // 显示开始菜单而不是直接创建演示内容 (Requirement 2.1)
   console.log('[APP] 显示开始菜单...');
@@ -186,17 +196,22 @@ function setupAppEventListeners() {
     event.preventDefault();
 
     try {
-      // 自动保存游戏状态 (Requirement 1.1, 8.2, 8.4)
-      console.log('[APP] 自动保存游戏状态...');
-      const saveResult = await saveGameState(null, { showNotification: false });
-      
-      if (saveResult.success) {
-        console.log('[APP] 游戏状态保存成功', {
-          windowCount: saveResult.windowCount,
-          relationshipCount: saveResult.relationshipCount
-        });
+      // Only auto-save if game has been started (don't save empty state from start menu)
+      if (gameStarted) {
+        // 自动保存游戏状态 (Requirement 1.1, 8.2, 8.4)
+        console.log('[APP] 自动保存游戏状态...');
+        const saveResult = await saveGameState(null, { showNotification: false });
+        
+        if (saveResult.success) {
+          console.log('[APP] 游戏状态保存成功', {
+            windowCount: saveResult.windowCount,
+            relationshipCount: saveResult.relationshipCount
+          });
+        } else {
+          console.warn('[APP] 游戏状态保存失败:', saveResult.message);
+        }
       } else {
-        console.warn('[APP] 游戏状态保存失败:', saveResult.message);
+        console.log('[APP] 游戏未开始，跳过保存');
       }
     } catch (error) {
       console.error('[APP] 保存游戏状态时发生错误:', error);

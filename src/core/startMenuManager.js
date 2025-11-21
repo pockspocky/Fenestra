@@ -10,6 +10,7 @@ import { importGameLogicState } from './gameLogic.js';
 // Start menu state
 let startMenuWindow = null;
 let isMenuActive = false;
+let gameStartedCallback = null;
 
 /**
  * Create and display start menu window
@@ -122,6 +123,11 @@ export async function handleNewGame() {
     console.log('[START_MENU] Creating demo content');
     createDemoDoorsAndKeys();
     
+    // Notify that game has started
+    if (gameStartedCallback) {
+      gameStartedCallback();
+    }
+    
     console.log('[START_MENU] New game started successfully');
     return {
       success: true,
@@ -174,6 +180,11 @@ export async function handleContinueGame() {
       // Fall back to demo content (Requirement 4.5)
       console.log('[START_MENU] Falling back to demo content');
       createDemoDoorsAndKeys();
+      
+      // Notify that game has started (even with fallback)
+      if (gameStartedCallback) {
+        gameStartedCallback();
+      }
       
       return {
         success: false,
@@ -242,6 +253,11 @@ export async function handleContinueGame() {
       message += `, ${failedWindows.length} windows failed to restore`;
     }
     
+    // Notify that game has started
+    if (gameStartedCallback) {
+      gameStartedCallback();
+    }
+    
     console.log('[START_MENU] Continue game completed successfully');
     return {
       success: true,
@@ -269,6 +285,11 @@ export async function handleContinueGame() {
       });
     }
     
+    // Notify that game has started (even with fallback)
+    if (gameStartedCallback) {
+      gameStartedCallback();
+    }
+    
     return {
       success: false,
       message: `Failed to continue game: ${error.message}. Loaded demo content instead.`,
@@ -292,4 +313,14 @@ export function isStartMenuActive() {
  */
 export function getStartMenuWindow() {
   return startMenuWindow;
+}
+
+/**
+ * Set callback to be invoked when game starts (new or continue)
+ * @param {Function} callback - Callback function to invoke when game starts
+ * @returns {void}
+ */
+export function setGameStartedCallback(callback) {
+  gameStartedCallback = callback;
+  console.log('[START_MENU] Game started callback registered');
 }
