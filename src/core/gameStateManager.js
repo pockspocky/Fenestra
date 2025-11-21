@@ -1,8 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { dialog } from 'electron';
 import { getGameDataDirectory } from './config.js';
 import { getAllWindows } from './windowManager.js';
 import { serializeWindow } from './windowStorage.js';
+import { exportRelationshipState } from './doorKeySystem.js';
+import { exportGameLogicState } from './gameLogic.js';
 import '../../logger.js';
 
 // Storage configuration
@@ -60,10 +63,13 @@ function ensureStorageDirectory() {
 /**
  * Save complete game state to disk
  * @param {string} savePath - Optional custom save path
+ * @param {Object} options - Save options
+ * @param {boolean} options.showNotification - Whether to show user notification on failure
  * @returns {Promise<Object>} Save operation result
  */
-export async function saveGameState(savePath = null) {
-  console.log('[GAME_STATE] Starting game state save operation');
+export async function saveGameState(savePath = null, options = {}) {
+  const { showNotification = false } = options;
+  console.log('[GAME_STATE] Starting game state save operation', { savePath, showNotification });
   
   try {
     // Ensure storage directory exists
@@ -75,9 +81,11 @@ export async function saveGameState(savePath = null) {
     
     // Serialize all windows
     const serializedWindows = [];
+    const failedWindows = [];
+    
     for (const [windowId, win] of windows) {
       if (win.isDestroyed()) {
-        console.warn(`[GAME_STATE] Window ${windowId} is destroyed, skipping`);
+        console.warn(`[GAME_STATE] Window ${windowId} is destroyed, skipping`, { windowId });
         continue;
       }
       
@@ -87,18 +95,31 @@ export async function saveGameState(savePath = null) {
           serializedWindows.push(windowData);
           console.debug(`[GAME_STATE] Serialized window: ${windowId}`);
         } else {
-          console.warn(`[GAME_STATE] Failed to serialize window: ${windowId}`);
+          console.warn(`[GAME_STATE] Failed to serialize window: ${windowId}`, { windowId });
+          failedWindows.push(windowId);
         }
       } catch (error) {
-        console.error(`[GAME_STATE] Error serializing window ${windowId}:`, error);
+        console.error(`[GAME_STATE] Error serializing window ${windowId}:`, { 
+          windowId, 
+          error: error.message,
+          stack: error.stack 
+        });
+        failedWindows.push(windowId);
         // Continue with other windows
       }
     }
     
-    // Get door-key relationships (will be implemented in task 2)
+    if (failedWindows.length > 0) {
+      console.warn(`[GAME_STATE] Failed to serialize ${failedWindows.length} windows`, { 
+        failedWindows,
+        totalWindows: windows.size 
+      });
+    }
+    
+    // Get door-key relationships
     const relationships = exportRelationshipState();
     
-    // Get game logic state (will be implemented in task 3)
+    // Get game logic state
     const gameLogicState = exportGameLogicState();
     
     // Build complete game state
@@ -122,19 +143,44 @@ export async function saveGameState(savePath = null) {
     const jsonString = JSON.stringify(gameState, null, 2);
     fs.writeFileSync(saveFilePath, jsonString, 'utf8');
     
-    console.log(`[GAME_STATE] Game state saved successfully to: ${saveFilePath}`);
-    console.log(`[GAME_STATE] Saved ${serializedWindows.length} windows and ${Object.keys(relationships.doorKeyRelations || {}).length} relationships`);
+    console.log(`[GAME_STATE] Game state saved successfully to: ${saveFilePath}`, {
+      filePath: saveFilePath,
+      windowCount: serializedWindows.length,
+      relationshipCount: Object.keys(relationships.doorKeyRelations || {}).length,
+      failedWindows: failedWindows.length
+    });
     
     return {
       success: true,
       message: 'Game state saved successfully',
       filePath: saveFilePath,
       windowCount: serializedWindows.length,
-      relationshipCount: Object.keys(relationships.doorKeyRelations || {}).length
+      relationshipCount: Object.keys(relationships.doorKeyRelations || {}).length,
+      failedWindows: failedWindows.length
     };
     
   } catch (error) {
-    console.error('[GAME_STATE] Failed to save game state:', error);
+    console.error('[GAME_STATE] Failed to save game state:', { 
+      error: error.message,
+      stack: error.stack,
+      savePath 
+    });
+    
+    // Show user notification if requested
+    if (showNotification) {
+      try {
+        await dialog.showMessageBox({
+          type: 'error',
+          title: 'Save Failed',
+          message: 'Failed to save game state',
+          detail: `Could not save your game progress: ${error.message}\n\nYour progress is still in memory but will be lost if you close the application.`,
+          buttons: ['OK']
+        });
+      } catch (dialogError) {
+        console.error('[GAME_STATE] Failed to show error dialog:', { error: dialogError.message });
+      }
+    }
+    
     return {
       success: false,
       message: `Failed to save game state: ${error.message}`,
@@ -146,63 +192,128 @@ export async function saveGameState(savePath = null) {
 /**
  * Load game state from disk
  * @param {string} savePath - Optional custom load path
+ * @param {Object} options - Load options
+ * @param {boolean} options.showNotification - Whether to show user notification on failure
  * @returns {Promise<Object>} Load operation result with state data
  */
-export async function loadGameState(savePath = null) {
-  console.log('[GAME_STATE] Starting game state load operation');
+export async function loadGameState(savePath = null, options = {}) {
+  const { showNotification = false } = options;
+  console.log('[GAME_STATE] Starting game state load operation', { savePath, showNotification });
   
   try {
     const saveFilePath = getSaveFilePath(savePath);
     
-    // Check if save file exists
+    // Check if save file exists (Requirement 6.1)
     if (!fs.existsSync(saveFilePath)) {
-      console.warn(`[GAME_STATE] Save file not found: ${saveFilePath}`);
+      console.warn(`[GAME_STATE] Save file not found: ${saveFilePath}`, { 
+        saveFilePath,
+        reason: 'file_not_found' 
+      });
+      
       return {
         success: false,
         message: 'No saved game state found',
-        notFound: true
+        notFound: true,
+        reason: 'file_not_found'
       };
     }
     
     // Read save file
-    const fileContent = fs.readFileSync(saveFilePath, 'utf8');
+    let fileContent;
+    try {
+      fileContent = fs.readFileSync(saveFilePath, 'utf8');
+    } catch (readError) {
+      console.error('[GAME_STATE] Failed to read save file:', { 
+        saveFilePath,
+        error: readError.message,
+        code: readError.code,
+        stack: readError.stack 
+      });
+      
+      // Show user notification if requested
+      if (showNotification) {
+        await showLoadErrorNotification('Failed to read save file', readError.message);
+      }
+      
+      return {
+        success: false,
+        message: `Failed to read save file: ${readError.message}`,
+        error: readError.message,
+        reason: 'read_error'
+      };
+    }
     
-    // Parse JSON
+    // Parse JSON (Requirement 6.2 - handle corrupted JSON)
     let gameState;
     try {
       gameState = JSON.parse(fileContent);
     } catch (parseError) {
-      console.error('[GAME_STATE] Failed to parse save file JSON:', parseError);
+      console.error('[GAME_STATE] Failed to parse save file JSON:', { 
+        saveFilePath,
+        error: parseError.message,
+        fileSize: fileContent.length,
+        stack: parseError.stack 
+      });
       
-      // Create backup of corrupted file
+      // Create backup of corrupted file (Requirement 6.4)
       await createBackupOfCorruptedFile(saveFilePath);
+      
+      // Show user notification if requested (Requirement 6.3)
+      if (showNotification) {
+        await showLoadErrorNotification(
+          'Save file is corrupted',
+          'The save file contains invalid data and cannot be loaded. A backup has been created. The game will load demo content instead.'
+        );
+      }
       
       return {
         success: false,
         message: 'Save file is corrupted (invalid JSON)',
         corrupted: true,
-        error: parseError.message
+        error: parseError.message,
+        reason: 'parse_error',
+        backupCreated: true
       };
     }
     
-    // Validate game state structure
+    // Validate game state structure (Requirement 6.2)
     const validation = validateGameState(gameState);
     if (!validation.isValid) {
-      console.error('[GAME_STATE] Invalid game state structure:', validation.errors);
+      console.error('[GAME_STATE] Invalid game state structure:', { 
+        saveFilePath,
+        errors: validation.errors,
+        version: gameState?.version 
+      });
       
-      // Create backup of corrupted file
+      // Create backup of corrupted file (Requirement 6.4)
       await createBackupOfCorruptedFile(saveFilePath);
+      
+      // Show user notification if requested (Requirement 6.3)
+      if (showNotification) {
+        await showLoadErrorNotification(
+          'Save file is invalid',
+          `The save file structure is invalid: ${validation.errors.join(', ')}. A backup has been created. The game will load demo content instead.`
+        );
+      }
       
       return {
         success: false,
         message: `Invalid game state: ${validation.errors.join(', ')}`,
         corrupted: true,
-        errors: validation.errors
+        errors: validation.errors,
+        reason: 'validation_error',
+        backupCreated: true
       };
     }
     
-    console.log(`[GAME_STATE] Game state loaded successfully`);
-    console.log(`[GAME_STATE] Loaded ${gameState.windows?.length || 0} windows and ${Object.keys(gameState.relationships?.doorKeyRelations || {}).length} relationships`);
+    // Log successful load (Requirement 6.5)
+    console.log(`[GAME_STATE] Game state loaded successfully`, {
+      saveFilePath,
+      windowCount: gameState.windows?.length || 0,
+      relationshipCount: Object.keys(gameState.relationships?.doorKeyRelations || {}).length,
+      timestamp: gameState.timestamp,
+      version: gameState.version
+    });
     
     return {
       success: true,
@@ -214,11 +325,25 @@ export async function loadGameState(savePath = null) {
     };
     
   } catch (error) {
-    console.error('[GAME_STATE] Failed to load game state:', error);
+    console.error('[GAME_STATE] Failed to load game state:', { 
+      error: error.message,
+      stack: error.stack,
+      savePath 
+    });
+    
+    // Show user notification if requested
+    if (showNotification) {
+      await showLoadErrorNotification(
+        'Failed to load game',
+        `An unexpected error occurred: ${error.message}. The game will load demo content instead.`
+      );
+    }
+    
     return {
       success: false,
       message: `Failed to load game state: ${error.message}`,
-      error: error.message
+      error: error.message,
+      reason: 'unexpected_error'
     };
   }
 }
@@ -386,54 +511,66 @@ function validateGameState(gameState) {
 }
 
 /**
- * Create backup of corrupted save file
+ * Create backup of corrupted save file (Requirement 6.4)
  * @param {string} saveFilePath - Path to corrupted save file
- * @returns {Promise<void>}
+ * @returns {Promise<boolean>} True if backup was created successfully
  */
 async function createBackupOfCorruptedFile(saveFilePath) {
   try {
     const backupFilePath = getBackupFilePath();
     
+    // Check if source file exists
+    if (!fs.existsSync(saveFilePath)) {
+      console.warn('[GAME_STATE] Cannot create backup: source file does not exist', { saveFilePath });
+      return false;
+    }
+    
     // Copy corrupted file to backup
     fs.copyFileSync(saveFilePath, backupFilePath);
     
-    console.log(`[GAME_STATE] Created backup of corrupted file: ${backupFilePath}`);
+    // Get file stats for logging
+    const stats = fs.statSync(backupFilePath);
+    
+    console.log(`[GAME_STATE] Created backup of corrupted file: ${backupFilePath}`, {
+      backupFilePath,
+      originalFilePath: saveFilePath,
+      fileSize: stats.size,
+      timestamp: new Date().toISOString()
+    });
+    
+    return true;
   } catch (error) {
-    console.error('[GAME_STATE] Failed to create backup of corrupted file:', error);
+    console.error('[GAME_STATE] Failed to create backup of corrupted file:', { 
+      saveFilePath,
+      error: error.message,
+      stack: error.stack 
+    });
+    return false;
   }
 }
 
 /**
- * Export relationship state from door-key system
- * This is a placeholder that will be implemented in task 2
- * @returns {Object} Relationship state
+ * Show error notification to user for load failures (Requirement 6.3)
+ * @param {string} title - Error title
+ * @param {string} message - Error message
+ * @returns {Promise<void>}
  */
-function exportRelationshipState() {
-  // Placeholder - will be implemented in task 2
-  console.debug('[GAME_STATE] Exporting relationship state (placeholder)');
-  return {
-    doorKeyRelations: {},
-    keyDoorRelations: {},
-    encryptedItems: [],
-    doorStates: {},
-    oneTimeKeys: {
-      keys: [],
-      usedKeys: [],
-      closeAfterUse: []
-    },
-    multiKeyDoors: {}
-  };
+async function showLoadErrorNotification(title, message) {
+  try {
+    await dialog.showMessageBox({
+      type: 'warning',
+      title: title,
+      message: title,
+      detail: message,
+      buttons: ['OK']
+    });
+  } catch (dialogError) {
+    console.error('[GAME_STATE] Failed to show error dialog:', { 
+      error: dialogError.message,
+      title,
+      message 
+    });
+  }
 }
 
-/**
- * Export game logic state
- * This is a placeholder that will be implemented in task 3
- * @returns {Object} Game logic state
- */
-function exportGameLogicState() {
-  // Placeholder - will be implemented in task 3
-  console.debug('[GAME_STATE] Exporting game logic state (placeholder)');
-  return {
-    level1Completed: false
-  };
-}
+
