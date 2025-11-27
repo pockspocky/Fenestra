@@ -11,6 +11,7 @@ import {
   getLensSystemCount,
   lensSystemExists
 } from './lensSystem.js';
+import { resolveAssetPath, resolveDoorImagePath, resolveKeyImagePath } from './utils/assetPathResolver.js';
 
 // 全局窗口映射
 export const windows = new Map(); // id -> BrowserWindow
@@ -394,8 +395,11 @@ export function createDoor(doorId = 'door', title = null, encrypt = false, other
   const doorTitle = title || (encrypt ? `Door (encrypted)` : `Door (unlocked)`);
   console.log(`[WINDOW] 创建门窗口（${encrypt ? '加密' : '普通'}状态）`);
   
+  // Resolve door image path with backward compatibility
+  const defaultDoorImage = resolveDoorImagePath(null, 'closed');
+  
   // 确定要使用的HTML内容，保持向后兼容性
-  const htmlContent = otherContents || "pictureViewer.html?imagePath=doors/Door.png&fitMode=fill";
+  const htmlContent = otherContents || `pictureViewer.html?imagePath=${encodeURIComponent(defaultDoorImage)}&fitMode=fill`;
   
   // 如果使用自定义内容，需要通过查询参数传递doorId
   let finalContent;
@@ -434,9 +438,12 @@ export function createDoor(doorId = 'door', title = null, encrypt = false, other
  * @param {number} height - 窗口高度
  * @returns {BrowserWindow} 图片窗口
  */
-export function createPicture(pictureId = 'picture', imagePath = 'doors/Door.png', fitMode = 'fill', title = null, width = 400, height = 300) {
-  const pictureTitle = title || `Picture: ${path.basename(imagePath)}`;
-  console.log(`[WINDOW] 创建图片窗口, ID: ${pictureId}, 路径: ${imagePath}, 缩放模式: ${fitMode}`);
+export function createPicture(pictureId = 'picture', imagePath = 'renderer/assets/doors/DoorClosed.png', fitMode = 'fill', title = null, width = 400, height = 300) {
+  // Resolve image path with backward compatibility
+  const resolvedPath = resolveAssetPath(imagePath);
+  
+  const pictureTitle = title || `Picture: ${path.basename(resolvedPath)}`;
+  console.log(`[WINDOW] 创建图片窗口, ID: ${pictureId}, 路径: ${resolvedPath}, 缩放模式: ${fitMode}`);
   
   // 验证 fitMode
   const validFitModes = ['fill', 'contain', 'cover', 'scale-down', 'none'];
@@ -447,7 +454,7 @@ export function createPicture(pictureId = 'picture', imagePath = 'doors/Door.png
   }
   
   // 编码路径参数
-  const encodedPath = encodeURIComponent(imagePath);
+  const encodedPath = encodeURIComponent(resolvedPath);
   const queryString = `imagePath=${encodedPath}&fitMode=${actualFitMode}`;
   
   const win = createWindow(pictureId, { 
@@ -537,8 +544,11 @@ export function createKey(keyId = 'key', title = null, encrypt = false, relatedD
 
   const suitablePosition = findSuitablePositionForKey(keyId, keyWidth, keyHeight, keyDoorMaxOverlap);
   
+  // Resolve key image path with backward compatibility
+  const defaultKeyImage = resolveKeyImagePath(null);
+  
   // 确定要使用的HTML内容，保持向后兼容性
-  const htmlContent = otherContents || "pictureViewer.html?imagePath=doors/Keychain.jpeg&fitMode=cover";
+  const htmlContent = otherContents || `pictureViewer.html?imagePath=${encodeURIComponent(defaultKeyImage)}&fitMode=cover`;
   
   // 如果使用自定义内容，需要通过查询参数传递keyId
   let finalContent;

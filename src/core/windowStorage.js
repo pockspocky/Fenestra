@@ -796,7 +796,7 @@ function recreateWindowByType(windowId, windowData) {
 function recreatePictureWindow(windowId, windowData) {
   const { windowConfig, specialConfig } = windowData;
 
-  let imagePath = 'doors/Door.png'; // Default
+  let imagePath = 'renderer/assets/doors/DoorClosed.png'; // Default
   let fitMode = 'fill';
 
   if (specialConfig && specialConfig.pictureSettings) {
