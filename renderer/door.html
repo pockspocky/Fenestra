@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Door</title>
     <style>
         * {
             margin: 0;
@@ -53,10 +52,10 @@
             pointer-events: none;
             transition: opacity 0.3s ease;
         }
-        
+         
         /* Visual states */
         .door-image.locked {
-            filter: brightness(0.6);
+            filter: brightness(1.0);
         }
         
         .door-image.unlocked {
@@ -64,7 +63,7 @@
         }
         
         .door-image.encrypted {
-            filter: brightness(0.8) drop-shadow(0 0 10px rgba(100, 200, 255, 0.6));
+            filter: brightness(1.0) drop-shadow(0 0 10px rgba(100, 200, 255, 0.6));
         }
         
         /* Loading state */
@@ -205,13 +204,27 @@
         
         /**
          * Get image path based on current state
+         * Converts relative paths to absolute file URLs for Electron
          */
         function getImagePath(doorState) {
+            let relativePath;
             if (doorState === 'open') {
-                return openedImagePath || 'renderer/assets/doors/DoorOpened.png';
+                relativePath = openedImagePath || 'renderer/assets/doors/DoorOpened.png';
             } else {
-                return closedImagePath || 'renderer/assets/doors/DoorClosed.png';
+                relativePath = closedImagePath || 'renderer/assets/doors/DoorClosed.png';
             }
+            
+            // Convert relative path to absolute path
+            // In Electron, we need to use the file:// protocol
+            // The path is relative to the app root, so we go up from renderer/door.html
+            if (!relativePath.startsWith('file://') && !relativePath.startsWith('http')) {
+                // Remove leading './' if present
+                relativePath = relativePath.replace(/^\.\//, '');
+                // Construct path relative to door.html location
+                return `../${relativePath}`;
+            }
+            
+            return relativePath;
         }
         
         /**
@@ -337,23 +350,27 @@
         if (window.electronAPI) {
             // Door state change event
             if (window.electronAPI.onDoorStateChange) {
-                window.electronAPI.onDoorStateChange((event, data) => {
+                window.electronAPI.onDoorStateChange((data) => {
                     console.log('[DOOR] Received state change event:', data);
                     if (data.doorId === doorId) {
                         handleStateChange(data.newState);
                     }
                 });
+                console.log('[DOOR] Registered onDoorStateChange listener');
             }
             
             // Door lock change event
             if (window.electronAPI.onDoorLockChange) {
-                window.electronAPI.onDoorLockChange((event, data) => {
+                window.electronAPI.onDoorLockChange((data) => {
                     console.log('[DOOR] Received lock change event:', data);
                     if (data.doorId === doorId) {
                         handleLockChange(data.isLocked);
                     }
                 });
+                console.log('[DOOR] Registered onDoorLockChange listener');
             }
+        } else {
+            console.warn('[DOOR] electronAPI not available - IPC events will not work');
         }
         
         // Initial load

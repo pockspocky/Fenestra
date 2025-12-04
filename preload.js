@@ -160,6 +160,36 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSaveMetadata: () => {
     console.log(`[PRELOAD] 获取存档元数据`);
     return ipcRenderer.invoke('start-menu/get-save-metadata');
+  },
+  // Door state management APIs
+  getDoorState: (doorId) => {
+    console.log(`[PRELOAD] 获取门状态: ${doorId}`);
+    return ipcRenderer.invoke('door/get-state', doorId);
+  },
+  setDoorState: (doorId, state) => {
+    console.log(`[PRELOAD] 设置门状态: ${doorId} -> ${state}`);
+    return ipcRenderer.invoke('door/set-state', { doorId, state });
+  },
+  toggleDoorState: (doorId) => {
+    console.log(`[PRELOAD] 切换门状态: ${doorId}`);
+    return ipcRenderer.invoke('door/toggle-state', doorId);
+  },
+  setDoorLocked: (doorId, isLocked) => {
+    console.log(`[PRELOAD] 设置门锁定状态: ${doorId} -> ${isLocked}`);
+    return ipcRenderer.invoke('door/set-locked', { doorId, isLocked });
+  },
+  // Door state change event listeners
+  onDoorStateChange: (callback) => {
+    ipcRenderer.on('door-state-change', (_e, data) => {
+      console.log(`[PRELOAD] 收到门状态更改事件:`, data);
+      callback(data);
+    });
+  },
+  onDoorLockChange: (callback) => {
+    ipcRenderer.on('door-lock-change', (_e, data) => {
+      console.log(`[PRELOAD] 收到门锁定状态更改事件:`, data);
+      callback(data);
+    });
   }
 });
 

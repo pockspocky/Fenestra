@@ -12,6 +12,7 @@ import {
   lensSystemExists
 } from './lensSystem.js';
 import { resolveAssetPath, resolveDoorImagePath, resolveKeyImagePath } from './utils/assetPathResolver.js';
+import { initializeDoorState } from './doorKeySystem.js';
 
 // 全局窗口映射
 export const windows = new Map(); // id -> BrowserWindow
@@ -388,34 +389,99 @@ export function createVideo() {
  * @param {string} doorId - 门ID
  * @param {string} title - 门标题
  * @param {boolean} encrypt - 是否加密
- * @param {string} otherContents - 自定义HTML内容（可选）
+ * @param {Object|string} optionsOrOtherContents - 选项对象或自定义HTML内容（向后兼容）
+ * @param {string} optionsOrOtherContents.closedImagePath - 自定义关闭状态图片路径
+ * @param {string} optionsOrOtherContents.openedImagePath - 自定义打开状态图片路径
+ * @param {string} optionsOrOtherContents.initialState - 初始状态 ('open' 或 'closed')
+ * @param {boolean} optionsOrOtherContents.isLocked - 是否锁定
  * @returns {BrowserWindow} 门窗口
  */
-export function createDoor(doorId = 'door', title = null, encrypt = false, otherContents = null) {
+export function createDoor(doorId = 'door', title = null, encrypt = false, optionsOrOtherContents = null) {
+  console.log(`[WINDOW] 创建门窗口（${encrypt ? '加密' : '普通'}状态）, ID: ${doorId}`);
+  
+  // Parse options - support both old string format and new object format
+  let options = {};
+  let otherContents = null;
+  
+  if (typeof optionsOrOtherContents === 'string') {
+    // Backward compatibility: old string format
+    otherContents = optionsOrOtherContents;
+    console.log('[WINDOW] Using legacy string format for door creation');
+  } else if (optionsOrOtherContents && typeof optionsOrOtherContents === 'object') {
+    // New object format
+    options = optionsOrOtherContents;
+    console.log('[WINDOW] Using new options format for door creation:', options);
+  }
+  
+  // Extract options
+  const {
+    closedImagePath = null,
+    openedImagePath = null,
+    initialState = 'closed',
+    isLocked = !encrypt ? false : true
+  } = options;
+  
+  // Validate custom image paths if provided
+  if (closedImagePath) {
+    const resolvedClosed = resolveAssetPath(closedImagePath);
+    if (!fs.existsSync(resolvedClosed)) {
+      console.warn(`[WINDOW] Custom closed image path does not exist: ${closedImagePath}`);
+    }
+  }
+  
+  if (openedImagePath) {
+    const resolvedOpened = resolveAssetPath(openedImagePath);
+    if (!fs.existsSync(resolvedOpened)) {
+      console.warn(`[WINDOW] Custom opened image path does not exist: ${openedImagePath}`);
+    }
+  }
+  
+  // Determine door title
   const doorTitle = title || (encrypt ? `Door (encrypted)` : `Door (unlocked)`);
-  console.log(`[WINDOW] 创建门窗口（${encrypt ? '加密' : '普通'}状态）`);
   
-  // Resolve door image path with backward compatibility
-  const defaultDoorImage = resolveDoorImagePath(null, 'closed');
+  // Initialize door state in doorKeySystem
+  initializeDoorState(doorId, {
+    state: initialState,
+    isLocked,
+    isEncrypted: encrypt,
+    closedImagePath,
+    openedImagePath
+  });
+  console.log(`[WINDOW] Initialized door state for ${doorId}:`, { initialState, isLocked, encrypt });
   
-  // 确定要使用的HTML内容，保持向后兼容性
-  const htmlContent = otherContents || `pictureViewer.html?imagePath=${encodeURIComponent(defaultDoorImage)}&fitMode=fill`;
-  
-  // 如果使用自定义内容，需要通过查询参数传递doorId
+  // Build door.html URL with parameters
   let finalContent;
+  
   if (otherContents) {
-    // 检查是否已包含查询参数
+    // Backward compatibility: use custom HTML content
     if (otherContents.includes('?')) {
       finalContent = `${otherContents}&doorId=${encodeURIComponent(doorId)}`;
     } else {
       finalContent = `${otherContents}?doorId=${encodeURIComponent(doorId)}`;
     }
+    console.log('[WINDOW] Using custom HTML content (backward compatibility)');
   } else {
-    // 使用默认内容，已包含所需参数
-    finalContent = htmlContent;
+    // Use new door.html with state parameters
+    const params = new URLSearchParams({
+      doorId,
+      state: initialState,
+      isLocked: isLocked.toString(),
+      isEncrypted: encrypt.toString()
+    });
+    
+    // Add custom image paths if provided
+    if (closedImagePath) {
+      params.set('closedImagePath', closedImagePath);
+    }
+    if (openedImagePath) {
+      params.set('openedImagePath', openedImagePath);
+    }
+    
+    finalContent = `door.html?${params.toString()}`;
+    console.log('[WINDOW] Using door.html with parameters:', params.toString());
   }
   
-  // 使用自动偏移，不指定固定位置
+  // Create window
   const win = createWindow(doorId, { 
     width: 220, 
     height: 320, 
@@ -424,7 +490,7 @@ export function createDoor(doorId = 'door', title = null, encrypt = false, other
     otherContents: finalContent,
   });
   
-  console.log('[WINDOW] 门窗口创建完成 ' + win.getContentSize());
+  console.log('[WINDOW] 门窗口创建完成, ID:', doorId);
   return win;
 }
 
@@ -526,41 +592,85 @@ export function setFitMode(windowId, fitMode) {
 }
 
 /**
- * 创建钥匙窗口
- * @param {string} keyId - 钥匙ID
- * @param {string} title - 钥匙标题
- * @param {boolean} encrypt - 是否加密
- * @param {Array} relatedDoors - 关联的门ID数组
- * @param {string} otherContents - 自定义HTML内容（可选）
- * @returns {BrowserWindow} 钥匙窗口
+ * Create a key window with optional custom image
+ * 
+ * Creates a key window that displays a key image. By default, uses the new Key.png image,
+ * but can be customized with a different image path. The key window is automatically
+ * positioned to avoid excessive overlap with door windows.
+ * 
+ * @param {string} [keyId='key'] - Unique identifier for the key window
+ * @param {string|null} [title=null] - Window title. If null, generates title based on encrypt parameter
+ * @param {boolean} [encrypt=false] - Whether this is an encrypted key (affects default title)
+ * @param {Array<string>} [relatedDoors=[]] - Array of door IDs that this key can unlock (for future use)
+ * @param {string|null} [otherContents=null] - Custom HTML content path. If provided, overrides default picture viewer.
+ *   For backward compatibility with existing code.
+ * @param {string|null} [imagePath=null] - Custom key image path (optional). 
+ *   - If null/undefined: Uses default Key.png (or fallback to Keychain.jpeg if Key.png missing)
+ *   - If relative path: Resolved from project root (e.g., 'renderer/assets/Keys/GoldKey.png')
+ *   - If absolute path: Used directly (e.g., '/Users/dev/custom-key.png')
+ *   - Invalid paths automatically fallback to default Key.png
+ * @returns {BrowserWindow} The created key window instance
+ * 
+ * @since 1.0.0 - Initial implementation
+ * @since 1.2.0 - Added imagePath parameter for custom key images
+ * @since 1.3.0 - Enhanced positioning to avoid door overlap
+ * 
+ * @example
+ * // Create key with default image (Key.png)
+ * const masterKey = createKey('key-1', 'Master Key', false);
+ * 
+ * @example
+ * // Create encrypted key with default image
+ * const encryptedKey = createKey('key-2', null, true);
+ * // Title will be "Key (encrypted)"
+ * 
+ * @example
+ * // Create key with custom relative path image
+ * const goldKey = createKey('key-3', 'Gold Key', false, [], null, 'renderer/assets/Keys/GoldKey.png');
+ * 
+ * @example
+ * // Create key with custom absolute path image
+ * const specialKey = createKey('key-4', 'Special Key', false, [], null, '/path/to/custom-key.png');
+ * 
+ * @example
+ * // Create key with custom HTML content (backward compatibility)
+ * const customKey = createKey('key-5', 'Custom Key', false, [], 'customKeyViewer.html?special=true');
  */
-export function createKey(keyId = 'key', title = null, encrypt = false, relatedDoors = [], otherContents = null) {
+export function createKey(keyId = 'key', title = null, encrypt = false, relatedDoors = [], otherContents = null, imagePath = null) {
+  // Generate window title based on parameters
   const keyTitle = title || (encrypt ? `Key (encrypted)` : `Key (master)`);
   console.log(`[WINDOW] 创建钥匙窗口（${encrypt ? '加密' : '普通'}）`);
   
-  // 为钥匙寻找合适的位置，避免与门重叠超过配置的阈值
+  // Calculate key window dimensions
   const keyWidth = 200;
   const keyHeight = 200;
 
+  // Find suitable position that avoids excessive overlap with door windows
+  // This ensures keys are visible and not hidden behind doors
   const suitablePosition = findSuitablePositionForKey(keyId, keyWidth, keyHeight, keyDoorMaxOverlap);
   
-  // Resolve key image path with backward compatibility
-  const defaultKeyImage = resolveKeyImagePath(null);
+  // Resolve key image path with fallback chain:
+  // 1. If imagePath provided and valid -> use custom image
+  // 2. If imagePath null/undefined -> use default Key.png
+  // 3. If Key.png missing -> fallback to Keychain.jpeg (legacy)
+  // 4. If both missing -> return Key.png path anyway (renderer shows broken image)
+  const resolvedKeyImage = resolveKeyImagePath(imagePath);
   
-  // 确定要使用的HTML内容，保持向后兼容性
-  const htmlContent = otherContents || `pictureViewer.html?imagePath=${encodeURIComponent(defaultKeyImage)}&fitMode=cover`;
+  // Build HTML content for the key window
+  // Supports both custom HTML (for backward compatibility) and default picture viewer
+  const htmlContent = otherContents || `pictureViewer.html?imagePath=${encodeURIComponent(resolvedKeyImage)}&fitMode=cover`;
   
-  // 如果使用自定义内容，需要通过查询参数传递keyId
+  // Prepare final content with keyId parameter
   let finalContent;
   if (otherContents) {
-    // 检查是否已包含查询参数
+    // Custom HTML content provided - append keyId to query string
     if (otherContents.includes('?')) {
       finalContent = `${otherContents}&keyId=${encodeURIComponent(keyId)}`;
     } else {
       finalContent = `${otherContents}?keyId=${encodeURIComponent(keyId)}`;
     }
   } else {
-    // 使用默认内容，通过createWindow的机制自动传递id参数
+    // Use default picture viewer with resolved key image
     finalContent = htmlContent;
   }
   
