@@ -53,6 +53,33 @@ export function establishRelation(doorId, keyId) {
  * @returns {boolean} 是否有权限开门
  */
 export function canOpenDoor(doorId, keyId) {
+  // NEW: Check for custom authorization callback
+  const authCallback = authorizationCallbacks.get(doorId);
+  
+  if (authCallback) {
+    try {
+      const result = authCallback(doorId, keyId);
+      
+      // Validate boolean return
+      if (typeof result !== 'boolean') {
+        console.warn(`[AUTH_CALLBACK] Callback for door '${doorId}' returned non-boolean: ${result}, treating as false`);
+        return false;
+      }
+      
+      console.log(`[AUTH_CALLBACK] Custom authorization for door '${doorId}' with key '${keyId}': ${result}`);
+      return result;
+    } catch (error) {
+      console.error(`[AUTH_CALLBACK] Error in authorization callback for door '${doorId}':`, {
+        doorId,
+        keyId,
+        error: error.message,
+        stack: error.stack
+      });
+      return false; // Deny access on error
+    }
+  }
+  
+  // EXISTING: Default authorization logic continues unchanged
   // 首先检查钥匙是否可用（一次性钥匙使用状态检查）
   if (!isKeyUsable(keyId)) {
     console.log(`[DOOR_ACCESS] Key '${keyId}' is not usable (already used)`);
@@ -911,6 +938,87 @@ function executeDoorOpenCallback(doorId, keyId) {
   }
 }
 
+// ==================== 授权回调系统 ====================
+
+// 授权回调存储
+const authorizationCallbacks = new Map(); // doorId -> callback function
+
+/**
+ * 注册授权回调函数
+ * @param {string} doorId - 门ID
+ * @param {Function} callback - 授权回调函数 (doorId, keyId) => boolean
+ * @throws {Error} 当doorId或callback无效时抛出错误
+ */
+export function registerAuthorizationCallback(doorId, callback) {
+  // 验证doorId
+  if (!doorId || typeof doorId !== 'string') {
+    const error = new Error('Door ID must be a non-empty string');
+    error.name = 'ValidationError';
+    console.error('[AUTH_CALLBACK] Validation error:', error.message, { doorId, type: typeof doorId });
+    throw error;
+  }
+  
+  // 验证callback
+  if (typeof callback !== 'function') {
+    const error = new Error('Callback must be a function');
+    error.name = 'ValidationError';
+    console.error('[AUTH_CALLBACK] Validation error:', error.message, { callback, type: typeof callback });
+    throw error;
+  }
+  
+  // 如果已存在回调，将被替换
+  if (authorizationCallbacks.has(doorId)) {
+    console.log(`[AUTH_CALLBACK] Replacing existing authorization callback for door '${doorId}'`);
+  }
+  
+  // 存储回调
+  authorizationCallbacks.set(doorId, callback);
+  console.log(`[AUTH_CALLBACK] Registered authorization callback for door '${doorId}'`);
+}
+
+/**
+ * 注销授权回调函数
+ * @param {string} doorId - 门ID
+ * @throws {Error} 当doorId无效时抛出错误
+ */
+export function unregisterAuthorizationCallback(doorId) {
+  // 验证doorId
+  if (!doorId || typeof doorId !== 'string') {
+    const error = new Error('Door ID must be a non-empty string');
+    error.name = 'ValidationError';
+    console.error('[AUTH_CALLBACK] Validation error:', error.message, { doorId, type: typeof doorId });
+    throw error;
+  }
+  
+  // 检查是否存在回调
+  if (!authorizationCallbacks.has(doorId)) {
+    console.warn(`[AUTH_CALLBACK] No authorization callback registered for door '${doorId}', skipping unregister`);
+    return;
+  }
+  
+  // 移除回调
+  authorizationCallbacks.delete(doorId);
+  console.log(`[AUTH_CALLBACK] Unregistered authorization callback for door '${doorId}'`);
+}
+
+/**
+ * 获取授权回调信息
+ * @param {string|null} doorId - 门ID（可选，null表示查询所有门）
+ * @returns {Object|Array} 回调信息
+ */
+export function getAuthorizationCallbackInfo(doorId = null) {
+  if (doorId === null) {
+    // 返回所有注册了授权回调的门ID列表
+    return Array.from(authorizationCallbacks.keys());
+  }
+  
+  // 返回特定门的授权回调信息
+  return {
+    doorId,
+    hasCallback: authorizationCallbacks.has(doorId)
+  };
+}
+
 // ==================== 消息配置系统 ====================
 
 /**
@@ -1535,6 +1643,254 @@ function normalizePath(dirPath) {
   } catch (error) {
     console.warn('[DIR_ACCESS] Path normalization failed:', error);
     return dirPath;
+  }
+}
+
+// ==================== 状态导出/导入系统 ====================
+
+/**
+ * 导出所有门钥匙关系状态用于序列化
+ * @returns {Object} 完整的关系状态对象
+ */
+export function exportRelationshipState() {
+  console.log('[STATE_EXPORT] Exporting door-key relationship state');
+  
+  // 将Map和Set转换为可序列化的对象和数组
+  const state = {
+    doorKeyRelations: {},
+    keyDoorRelations: {},
+    encryptedItems: Array.from(encryptedItems),
+    doorStates: {},
+    oneTimeKeys: {
+      keys: Array.from(oneTimeKeys),
+      usedKeys: Array.from(usedKeys),
+      closeAfterUse: Array.from(closeAfterUse)
+    },
+    multiKeyDoors: {},
+    globalMessages: Object.fromEntries(globalMessages),
+    doorMessages: {},
+    keyMessages: {},
+    directoryAccessMap: {},
+    doorOpenCallbacks: Array.from(doorOpenCallbacks.keys()),
+    authorizationCallbacks: Array.from(authorizationCallbacks.keys())
+  };
+  
+  // 转换 doorKeyRelations (Map<string, Set<string>>)
+  for (const [doorId, keySet] of doorKeyRelations.entries()) {
+    state.doorKeyRelations[doorId] = Array.from(keySet);
+  }
+  
+  // 转换 keyDoorRelations (Map<string, Set<string>>)
+  for (const [keyId, doorSet] of keyDoorRelations.entries()) {
+    state.keyDoorRelations[keyId] = Array.from(doorSet);
+  }
+  
+  // 转换 doorStates (Map<string, Object>)
+  for (const [doorId, doorState] of doorStates.entries()) {
+    // 创建状态副本，排除不可序列化的字段（如timeoutId）
+    state.doorStates[doorId] = {
+      isOpen: doorState.isOpen,
+      lastKeyUsed: doorState.lastKeyUsed,
+      requiredKeys: doorState.requiredKeys ? [...doorState.requiredKeys] : undefined,
+      usedKeys: doorState.usedKeys ? [...doorState.usedKeys] : undefined,
+      timeoutDuration: doorState.timeoutDuration
+      // 注意：不导出 timeoutId，因为它不可序列化且在恢复时需要重新创建
+    };
+  }
+  
+  // 转换 multiKeyDoors (Map<string, Object>)
+  for (const [doorId, config] of multiKeyDoors.entries()) {
+    state.multiKeyDoors[doorId] = {
+      requiredKeys: [...config.requiredKeys],
+      timeoutDuration: config.timeoutDuration
+    };
+  }
+  
+  // 转换 doorMessages (Map<string, Map<string, string>>)
+  for (const [doorId, msgMap] of doorMessages.entries()) {
+    state.doorMessages[doorId] = Object.fromEntries(msgMap);
+  }
+  
+  // 转换 keyMessages (Map<string, Map<string, string>>)
+  for (const [keyId, msgMap] of keyMessages.entries()) {
+    state.keyMessages[keyId] = Object.fromEntries(msgMap);
+  }
+  
+  // 转换 directoryAccessMap (Map<string, Object>)
+  for (const [dirPath, accessInfo] of directoryAccessMap.entries()) {
+    state.directoryAccessMap[dirPath] = {
+      doorId: accessInfo.doorId,
+      isLocked: accessInfo.isLocked,
+      requiredKeys: [...accessInfo.requiredKeys]
+    };
+  }
+  
+  console.log('[STATE_EXPORT] Export complete', {
+    doorKeyRelations: Object.keys(state.doorKeyRelations).length,
+    keyDoorRelations: Object.keys(state.keyDoorRelations).length,
+    encryptedItems: state.encryptedItems.length,
+    doorStates: Object.keys(state.doorStates).length,
+    oneTimeKeys: state.oneTimeKeys.keys.length,
+    multiKeyDoors: Object.keys(state.multiKeyDoors).length
+  });
+  
+  return state;
+}
+
+/**
+ * 导入并恢复门钥匙关系状态
+ * @param {Object} relationshipState - 之前导出的状态对象
+ */
+export function importRelationshipState(relationshipState) {
+  if (!relationshipState || typeof relationshipState !== 'object') {
+    console.error('[STATE_IMPORT] Invalid relationship state provided:', relationshipState);
+    throw new Error('Invalid relationship state: must be an object');
+  }
+  
+  console.log('[STATE_IMPORT] Importing door-key relationship state');
+  
+  try {
+    // 清除现有状态
+    doorKeyRelations.clear();
+    keyDoorRelations.clear();
+    encryptedItems.clear();
+    doorStates.clear();
+    oneTimeKeys.clear();
+    usedKeys.clear();
+    closeAfterUse.clear();
+    multiKeyDoors.clear();
+    globalMessages.clear();
+    doorMessages.clear();
+    keyMessages.clear();
+    directoryAccessMap.clear();
+    doorOpenCallbacks.clear();
+    authorizationCallbacks.clear();
+    
+    // 恢复 doorKeyRelations
+    if (relationshipState.doorKeyRelations) {
+      for (const [doorId, keyArray] of Object.entries(relationshipState.doorKeyRelations)) {
+        doorKeyRelations.set(doorId, new Set(keyArray));
+      }
+    }
+    
+    // 恢复 keyDoorRelations
+    if (relationshipState.keyDoorRelations) {
+      for (const [keyId, doorArray] of Object.entries(relationshipState.keyDoorRelations)) {
+        keyDoorRelations.set(keyId, new Set(doorArray));
+      }
+    }
+    
+    // 恢复 encryptedItems
+    if (Array.isArray(relationshipState.encryptedItems)) {
+      relationshipState.encryptedItems.forEach(itemId => encryptedItems.add(itemId));
+    }
+    
+    // 恢复 doorStates
+    if (relationshipState.doorStates) {
+      for (const [doorId, doorState] of Object.entries(relationshipState.doorStates)) {
+        // 恢复状态，但不恢复 timeoutId（需要在多钥匙门逻辑中重新创建）
+        doorStates.set(doorId, {
+          isOpen: doorState.isOpen,
+          lastKeyUsed: doorState.lastKeyUsed,
+          requiredKeys: doorState.requiredKeys ? [...doorState.requiredKeys] : undefined,
+          usedKeys: doorState.usedKeys ? [...doorState.usedKeys] : undefined,
+          timeoutDuration: doorState.timeoutDuration,
+          timeoutId: null // 将在需要时重新创建
+        });
+      }
+    }
+    
+    // 恢复 oneTimeKeys 系统
+    if (relationshipState.oneTimeKeys) {
+      if (Array.isArray(relationshipState.oneTimeKeys.keys)) {
+        relationshipState.oneTimeKeys.keys.forEach(keyId => oneTimeKeys.add(keyId));
+      }
+      if (Array.isArray(relationshipState.oneTimeKeys.usedKeys)) {
+        relationshipState.oneTimeKeys.usedKeys.forEach(keyId => usedKeys.add(keyId));
+      }
+      if (Array.isArray(relationshipState.oneTimeKeys.closeAfterUse)) {
+        relationshipState.oneTimeKeys.closeAfterUse.forEach(keyId => closeAfterUse.add(keyId));
+      }
+    }
+    
+    // 恢复 multiKeyDoors
+    if (relationshipState.multiKeyDoors) {
+      for (const [doorId, config] of Object.entries(relationshipState.multiKeyDoors)) {
+        multiKeyDoors.set(doorId, {
+          requiredKeys: [...config.requiredKeys],
+          timeoutDuration: config.timeoutDuration
+        });
+        
+        // 如果门有进度且未完成，重新启动超时计时器
+        const doorState = doorStates.get(doorId);
+        if (doorState && doorState.usedKeys && doorState.usedKeys.length > 0 && !doorState.isOpen) {
+          startMultiKeyTimeout(doorId);
+          console.log(`[STATE_IMPORT] Restarted timeout for multi-key door '${doorId}'`);
+        }
+      }
+    }
+    
+    // 恢复 globalMessages
+    if (relationshipState.globalMessages) {
+      for (const [messageType, template] of Object.entries(relationshipState.globalMessages)) {
+        globalMessages.set(messageType, template);
+      }
+    }
+    
+    // 恢复 doorMessages
+    if (relationshipState.doorMessages) {
+      for (const [doorId, messages] of Object.entries(relationshipState.doorMessages)) {
+        const msgMap = new Map();
+        for (const [messageType, template] of Object.entries(messages)) {
+          msgMap.set(messageType, template);
+        }
+        doorMessages.set(doorId, msgMap);
+      }
+    }
+    
+    // 恢复 keyMessages
+    if (relationshipState.keyMessages) {
+      for (const [keyId, messages] of Object.entries(relationshipState.keyMessages)) {
+        const msgMap = new Map();
+        for (const [messageType, template] of Object.entries(messages)) {
+          msgMap.set(messageType, template);
+        }
+        keyMessages.set(keyId, msgMap);
+      }
+    }
+    
+    // 恢复 directoryAccessMap
+    if (relationshipState.directoryAccessMap) {
+      for (const [dirPath, accessInfo] of Object.entries(relationshipState.directoryAccessMap)) {
+        directoryAccessMap.set(dirPath, {
+          doorId: accessInfo.doorId,
+          isLocked: accessInfo.isLocked,
+          requiredKeys: [...accessInfo.requiredKeys]
+        });
+      }
+    }
+    
+    // 注意：不恢复 doorOpenCallbacks 和 authorizationCallbacks
+    // 这些是运行时回调函数，不能序列化，需要在应用启动时重新注册
+    if (relationshipState.doorOpenCallbacks && relationshipState.doorOpenCallbacks.length > 0) {
+      console.log('[STATE_IMPORT] Note: Door open callbacks need to be re-registered for doors:', relationshipState.doorOpenCallbacks);
+    }
+    if (relationshipState.authorizationCallbacks && relationshipState.authorizationCallbacks.length > 0) {
+      console.log('[STATE_IMPORT] Note: Authorization callbacks need to be re-registered for doors:', relationshipState.authorizationCallbacks);
+    }
+    
+    console.log('[STATE_IMPORT] Import complete', {
+      doorKeyRelations: doorKeyRelations.size,
+      keyDoorRelations: keyDoorRelations.size,
+      encryptedItems: encryptedItems.size,
+      doorStates: doorStates.size,
+      oneTimeKeys: oneTimeKeys.size,
+      multiKeyDoors: multiKeyDoors.size
+    });
+    
+  } catch (error) {
+    console.error('[STATE_IMPORT] Error during import:', error);
+    throw new Error(`Failed to import relationship state: ${error.message}`);
   }
 }
 

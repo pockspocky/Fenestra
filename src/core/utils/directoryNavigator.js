@@ -10,6 +10,16 @@ import {
   logError,
   withErrorHandling 
 } from './errorHandler.js';
+import {
+  hasWindowsDriveLetter,
+  isReservedFilename,
+  sanitizeFilename,
+  validatePathCharacters as validatePathCharsUtil,
+  toForwardSlashes
+} from './pathUtils.js';
+
+// Platform detection
+const isWindows = process.platform === 'win32';
 
 /**
  * Directory Navigator
@@ -527,6 +537,7 @@ export function findCommonPrefixWithSpecialChars(filenames, options = {}) {
 
 /**
  * Normalizes a path for completion display with enhanced special character handling
+ * Handles Windows paths including drive letters and UNC paths
  * @param {string} inputPath - The path to normalize
  * @param {string} basePath - The base path for relative resolution
  * @returns {string} Normalized path for display
@@ -552,16 +563,29 @@ export function normalizePathForCompletion(inputPath, basePath = '') {
     }
   }
 
+  // Preserve Windows drive letter before processing escape sequences
+  // This is important because backslashes in Windows paths should not be treated as escape sequences
+  const hasDriveLetter = hasWindowsDriveLetter(normalized);
+  let driveLetter = '';
+  
+  if (hasDriveLetter) {
+    // Extract drive letter (e.g., 'C:')
+    driveLetter = normalized.substring(0, 2);
+    normalized = normalized.substring(2);
+  }
+
   // Handle escaped characters more comprehensively
-  // Unescape common shell escape sequences
-  normalized = normalized
-    .replace(/\\(.)/g, '$1')  // Basic escape sequences
-    .replace(/\\\\/g, '\\')   // Double backslashes
-    .replace(/\\"/g, '"')     // Escaped quotes
-    .replace(/\\'/g, "'");    // Escaped single quotes
+  // Only unescape if this is not a Windows path (where backslashes are path separators)
+  if (!hasDriveLetter) {
+    // Unescape common shell escape sequences for Unix paths
+    normalized = normalized
+      .replace(/\\"/g, '"')     // Escaped quotes
+      .replace(/\\'/g, "'")     // Escaped single quotes
+      .replace(/\\(.)/g, '$1'); // Other escape sequences
+  }
 
   // Handle relative paths with better error handling
-  if (!path.isAbsolute(normalized) && basePath) {
+  if (!path.isAbsolute(normalized) && basePath && !hasDriveLetter) {
     try {
       normalized = path.join(basePath, normalized);
     } catch (error) {
@@ -581,12 +605,31 @@ export function normalizePathForCompletion(inputPath, basePath = '') {
   // Convert backslashes to forward slashes for consistency across platforms
   normalized = normalized.replace(/\\/g, '/');
 
-  // Remove duplicate slashes but preserve leading slashes for absolute paths
-  normalized = normalized.replace(/\/+/g, '/');
+  // Restore drive letter if it was present
+  if (hasDriveLetter) {
+    // Ensure there's a leading slash after drive letter
+    if (!normalized.startsWith('/')) {
+      normalized = '/' + normalized;
+    }
+    normalized = driveLetter + normalized;
+  }
 
-  // Clean up trailing slashes unless it's the root directory
+  // Remove duplicate slashes but preserve leading slashes for absolute paths
+  // Also preserve drive letter format (C:/)
+  if (hasDriveLetter) {
+    // For Windows paths, preserve C:/ format
+    normalized = normalized.replace(/([a-zA-Z]:)\/+/g, '$1/');
+    normalized = normalized.replace(/([^:])\/+/g, '$1/');
+  } else {
+    normalized = normalized.replace(/\/+/g, '/');
+  }
+
+  // Clean up trailing slashes unless it's the root directory or drive root
   if (normalized.length > 1 && normalized.endsWith('/')) {
-    normalized = normalized.slice(0, -1);
+    // Don't remove trailing slash if it's a drive root like C:/
+    if (!hasDriveLetter || normalized.length > 3) {
+      normalized = normalized.slice(0, -1);
+    }
   }
 
   return normalized;
@@ -594,6 +637,7 @@ export function normalizePathForCompletion(inputPath, basePath = '') {
 
 /**
  * Escapes a filename for safe shell usage
+ * Handles both Unix and Windows shell escaping
  * @param {string} filename - The filename to escape
  * @param {Object} options - Escaping options
  * @returns {string} Escaped filename
@@ -605,6 +649,24 @@ export function escapeFilenameForShell(filename, options = {}) {
     return '';
   }
 
+  // Windows shell (cmd.exe and PowerShell) has different escaping rules
+  if (isWindows) {
+    // Check if escaping is needed for Windows
+    // Windows special characters: space, &, |, <, >, ^, %, !, etc.
+    const needsEscaping = /[\s&|<>^%!()"]/.test(filename);
+    
+    if (!needsEscaping && !forceQuotes) {
+      return filename;
+    }
+
+    // For Windows, double quotes are the primary escaping mechanism
+    // Escape any existing double quotes by doubling them (cmd.exe style)
+    // or using backslash (PowerShell style - we'll use this as it's more universal)
+    const escaped = filename.replace(/"/g, '\\"');
+    return `"${escaped}"`;
+  }
+
+  // Unix shell escaping
   // Check if escaping is needed
   const needsEscaping = /[\s'"\\!*?[\]{}()&|;><$`~#]/.test(filename);
   
@@ -621,10 +683,10 @@ export function escapeFilenameForShell(filename, options = {}) {
     return filename.replace(/(['"\\!*?[\]{}()&|;><$`~#\s])/g, '\\$1');
   } else if (hasSingleQuote || (!hasDoubleQuote && !preferSingleQuotes)) {
     // Use double quotes
-    return `"${filename.replace(/([\\"])/g, '\\$1')}"`;
+    return `"${filename.replace(/([\\"`$])/g, '\\$1')}"`;
   } else {
-    // Use single quotes
-    return `'${filename.replace(/'/g, "\\'")}'`;
+    // Use single quotes (safest on Unix - no escaping needed inside single quotes)
+    return `'${filename.replace(/'/g, "'\\''")}'`;
   }
 }
 
@@ -658,6 +720,7 @@ export function unescapeFilenameFromShell(escapedFilename) {
 
 /**
  * Validates if a path contains only safe characters
+ * Enhanced for Windows compatibility - checks for Windows reserved characters and filenames
  * @param {string} inputPath - The path to validate
  * @returns {Object} Validation result with details
  */
@@ -666,32 +729,48 @@ export function validatePathCharacters(inputPath) {
     return {
       isValid: false,
       error: 'Path must be a non-empty string',
-      unsafeCharacters: []
+      unsafeCharacters: [],
+      reservedName: null
     };
   }
 
-  // Characters that are generally unsafe in file paths across platforms
-  const unsafeChars = /[<>:"|?*\x00-\x1f\x7f]/;
-  const matches = inputPath.match(new RegExp(unsafeChars.source, 'g'));
+  // Use the pathUtils validation for character checking
+  const charValidation = validatePathCharsUtil(inputPath);
+  
+  if (!charValidation.isValid) {
+    return {
+      isValid: false,
+      error: charValidation.errors.join('; '),
+      unsafeCharacters: [],
+      reservedName: null
+    };
+  }
+
+  // Check for Windows reserved characters (apply to all platforms for consistency)
+  // Windows reserved: < > : " | ? * and control characters (0x00-0x1F)
+  const windowsReservedChars = /[<>:"|?*\x00-\x1f\x7f]/;
+  const matches = inputPath.match(new RegExp(windowsReservedChars.source, 'g'));
   
   if (matches) {
     return {
       isValid: false,
-      error: `Path contains unsafe characters: ${matches.join(', ')}`,
-      unsafeCharacters: [...new Set(matches)] // Remove duplicates
+      error: `Path contains Windows reserved characters: ${[...new Set(matches)].join(', ')}`,
+      unsafeCharacters: [...new Set(matches)], // Remove duplicates
+      reservedName: null
     };
   }
 
-  // Check for reserved names on Windows (even on other platforms for compatibility)
+  // Check for reserved filenames on Windows (even on other platforms for compatibility)
   const pathParts = inputPath.split(/[/\\]/);
-  const reservedNames = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
   
   for (const part of pathParts) {
-    const baseName = part.split('.')[0]; // Remove extension
-    if (reservedNames.test(baseName)) {
+    if (!part) continue; // Skip empty parts
+    
+    // Check using pathUtils function
+    if (isReservedFilename(part)) {
       return {
         isValid: false,
-        error: `Path contains reserved name: ${part}`,
+        error: `Path contains Windows reserved filename: ${part}`,
         unsafeCharacters: [],
         reservedName: part
       };
@@ -701,6 +780,7 @@ export function validatePathCharacters(inputPath) {
   return {
     isValid: true,
     error: null,
-    unsafeCharacters: []
+    unsafeCharacters: [],
+    reservedName: null
   };
 }

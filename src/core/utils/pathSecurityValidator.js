@@ -5,9 +5,17 @@ import { getGameDataDirectory } from '../config.js';
 import { 
   FileCompletionError, 
   ERROR_CODES, 
-  createErrorResponse, 
   logError 
 } from './errorHandler.js';
+import {
+  hasWindowsDriveLetter,
+  isUNCPath,
+  isReservedFilename,
+  validatePathCharacters as validatePathChars
+} from './pathUtils.js';
+
+// Platform detection
+const isWindows = process.platform === 'win32';
 
 /**
  * Path Security Validator
@@ -58,8 +66,29 @@ export function validateAndResolvePath(inputPath, currentDir, gameDataRoot = nul
     // Handle quoted paths
     normalizedInput = removeQuotes(normalizedInput);
     
-    // Check for potential path traversal attempts
-    if (normalizedInput.includes('..') || normalizedInput.includes('~')) {
+    // Validate Windows-specific path requirements
+    if (isWindows) {
+      const windowsValidation = validateWindowsPath(normalizedInput);
+      if (!windowsValidation.isValid) {
+        const error = new FileCompletionError(
+          windowsValidation.error,
+          ERROR_CODES.MALFORMED_PATH,
+          { inputPath, normalizedInput, validationErrors: windowsValidation.errors }
+        );
+        logError(error);
+        
+        return {
+          isValid: false,
+          resolvedPath: '',
+          error: error.message,
+          errorCode: error.code,
+          isWithinScope: false
+        };
+      }
+    }
+    
+    // Check for potential path traversal attempts (both forward and backslashes)
+    if (detectPathTraversal(normalizedInput)) {
       const error = new FileCompletionError(
         'Path traversal attempts are not allowed',
         ERROR_CODES.PATH_TRAVERSAL_ATTEMPT,
@@ -153,15 +182,16 @@ export function validateAndResolvePath(inputPath, currentDir, gameDataRoot = nul
 
 /**
  * Checks if a target path is within the allowed game scope
+ * Uses case-insensitive comparison on Windows
  * @param {string} targetPath - The path to check
  * @param {string} gameDataRoot - The root directory for game data
  * @returns {boolean} True if path is within scope, false otherwise
  */
 export function isWithinGameScope(targetPath, gameDataRoot) {
   try {
-    // Normalize both paths to handle different formats
-    const normalizedTarget = path.resolve(targetPath);
-    const normalizedRoot = path.resolve(gameDataRoot);
+    // Normalize both paths for comparison
+    const normalizedTarget = normalizeForComparison(targetPath);
+    const normalizedRoot = normalizeForComparison(gameDataRoot);
     
     // Check if target path starts with the game root path
     const relativePath = path.relative(normalizedRoot, normalizedTarget);
@@ -177,6 +207,127 @@ export function isWithinGameScope(targetPath, gameDataRoot) {
     console.error(`[PATH_SECURITY] Scope check failed:`, error);
     return false;
   }
+}
+
+/**
+ * Validates Windows-specific path requirements
+ * @param {string} inputPath - The path to validate
+ * @returns {Object} Validation result with isValid flag and errors array
+ */
+export function validateWindowsPath(inputPath) {
+  const result = {
+    isValid: true,
+    errors: [],
+    error: null
+  };
+  
+  if (!inputPath || typeof inputPath !== 'string') {
+    result.isValid = false;
+    result.errors.push('Path must be a non-empty string');
+    result.error = 'Path must be a non-empty string';
+    return result;
+  }
+  
+  // Validate drive letter format if present
+  if (hasWindowsDriveLetter(inputPath)) {
+    const driveMatch = inputPath.match(/^([a-zA-Z]):([\\/].*)?$/);
+    if (!driveMatch) {
+      result.isValid = false;
+      result.errors.push('Invalid Windows drive letter format');
+    }
+  }
+  
+  // Validate UNC path format if present
+  if (isUNCPath(inputPath)) {
+    // UNC paths should have format \\server\share
+    const uncMatch = inputPath.match(/^[\\/]{2}([^\\/]+)[\\/]+([^\\/]+)/);
+    if (!uncMatch) {
+      result.isValid = false;
+      result.errors.push('Invalid UNC path format');
+    }
+  }
+  
+  // Check for reserved filenames in path components
+  const pathComponents = inputPath.split(/[\\/]+/);
+  for (const component of pathComponents) {
+    if (component && isReservedFilename(component)) {
+      result.isValid = false;
+      result.errors.push(`Path contains reserved filename: ${component}`);
+    }
+  }
+  
+  // Validate path characters, but exclude the colon if it's part of a valid drive letter
+  let pathToValidate = inputPath;
+  if (hasWindowsDriveLetter(inputPath)) {
+    // Remove the drive letter and colon for character validation
+    pathToValidate = inputPath.substring(2);
+  }
+  
+  const charValidation = validatePathChars(pathToValidate);
+  if (!charValidation.isValid) {
+    result.isValid = false;
+    result.errors.push(...charValidation.errors);
+  }
+  
+  if (!result.isValid && result.errors.length > 0) {
+    result.error = result.errors[0];
+  }
+  
+  return result;
+}
+
+/**
+ * Normalizes a path for comparison, handling case sensitivity based on platform
+ * @param {string} inputPath - The path to normalize
+ * @returns {string} Normalized path suitable for comparison
+ */
+export function normalizeForComparison(inputPath) {
+  if (!inputPath || typeof inputPath !== 'string') {
+    return '';
+  }
+  
+  // Resolve to absolute path
+  const resolved = path.resolve(inputPath);
+  
+  // On Windows, convert to lowercase for case-insensitive comparison
+  if (isWindows) {
+    return resolved.toLowerCase();
+  }
+  
+  return resolved;
+}
+
+/**
+ * Detects path traversal attempts using both forward and backslashes
+ * @param {string} inputPath - The path to check
+ * @returns {boolean} True if path traversal is detected
+ */
+export function detectPathTraversal(inputPath) {
+  if (!inputPath || typeof inputPath !== 'string') {
+    return false;
+  }
+  
+  // Check for .. sequences with any separator
+  if (inputPath.includes('..')) {
+    return true;
+  }
+  
+  // Check for home directory expansion
+  if (inputPath.includes('~')) {
+    return true;
+  }
+  
+  // Check for encoded path traversal attempts
+  if (inputPath.includes('%2e%2e') || inputPath.includes('%2E%2E')) {
+    return true;
+  }
+  
+  // Check for backslash-based traversal (Windows)
+  if (inputPath.includes('..\\') || inputPath.includes('../')) {
+    return true;
+  }
+  
+  return false;
 }
 
 /**

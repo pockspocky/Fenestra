@@ -143,6 +143,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getWorkingDirectory: () => {
     console.log(`[PRELOAD] 获取工作目录`);
     return ipcRenderer.invoke('terminal/get-working-directory');
+  },
+  // Start menu APIs
+  startNewGame: () => {
+    console.log(`[PRELOAD] 开始新游戏`);
+    return ipcRenderer.invoke('start-menu/new-game');
+  },
+  startContinueGame: () => {
+    console.log(`[PRELOAD] 继续游戏`);
+    return ipcRenderer.invoke('start-menu/continue-game');
+  },
+  checkSaveExists: () => {
+    console.log(`[PRELOAD] 检查存档是否存在`);
+    return ipcRenderer.invoke('start-menu/check-save-exists');
+  },
+  getSaveMetadata: () => {
+    console.log(`[PRELOAD] 获取存档元数据`);
+    return ipcRenderer.invoke('start-menu/get-save-metadata');
   }
 });
 

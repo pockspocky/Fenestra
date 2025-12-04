@@ -8,21 +8,29 @@ import {
   createLensWindow
 } from './windowManager.js';
 import { getLensSystemInfo } from './lensSystem.js';
+import { getGameDataDirectory } from './config.js';
+import {
+  joinPaths,
+  resolvePath,
+  toRelativePath,
+  toAbsolutePath,
+  hasWindowsDriveLetter,
+  toForwardSlashes
+} from './utils/pathUtils.js';
 import '../../logger.js';
 
 // Storage configuration
 const STORAGE_DIR = '.fenestra-storage';
 const FILE_EXTENSION = '.fenestra';
 const STORAGE_VERSION = '1.0';
-const STORAGE_PATH = '/Users/ericzhong/Documents/GitHub/Fenestra/game-data'
 
 /**
  * Ensure storage directory exists
  * @returns {string} Storage directory path
  */
 export function ensureStorageDirectory() {
-  // const storageDir = path.join(process.cwd(), STORAGE_DIR);
-  const storageDir = path.join(STORAGE_PATH, STORAGE_DIR)
+  const gameDataDir = getGameDataDirectory();
+  const storageDir = joinPaths(gameDataDir, STORAGE_DIR);
 
   if (!fs.existsSync(storageDir)) {
     try {
@@ -42,7 +50,8 @@ export function ensureStorageDirectory() {
  * @returns {string} Storage directory path
  */
 export function getStorageDirectory() {
-  return path.join(STORAGE_PATH, STORAGE_DIR);
+  const gameDataDir = getGameDataDirectory();
+  return joinPaths(gameDataDir, STORAGE_DIR);
 }
 
 /**
@@ -328,12 +337,12 @@ export function saveWindowToFile(windowId, customPath = null) {
       if (path.isAbsolute(customPath)) {
         filePath = customPath;
       } else {
-        filePath = path.join(storageDir, customPath);
+        filePath = joinPaths(storageDir, customPath);
       }
     } else {
       // Generate automatic filename
       const filename = generateFilename(windowId, serializedData.metadata.windowType);
-      filePath = path.join(storageDir, filename);
+      filePath = joinPaths(storageDir, filename);
     }
 
     // Ensure directory exists for the file path
@@ -436,12 +445,12 @@ export function loadWindowFromFile(filePath) {
     } else {
       // Try relative to storage directory first, then current directory
       const storageDir = getStorageDirectory();
-      const storagePath = path.join(storageDir, filePath);
+      const storagePath = joinPaths(storageDir, filePath);
 
       if (fs.existsSync(storagePath)) {
         fullPath = storagePath;
       } else {
-        fullPath = path.join(process.cwd(), filePath);
+        fullPath = joinPaths(process.cwd(), filePath);
       }
     }
 
@@ -522,7 +531,7 @@ export function listStoredWindows() {
     const files = fs.readdirSync(storageDir)
       .filter(file => file.endsWith(FILE_EXTENSION))
       .map(file => {
-        const filePath = path.join(storageDir, file);
+        const filePath = joinPaths(storageDir, file);
         const stats = fs.statSync(filePath);
 
         return {
@@ -562,7 +571,7 @@ export function deleteStoredWindow(filename) {
 
   try {
     const storageDir = getStorageDirectory();
-    const filePath = path.join(storageDir, filename);
+    const filePath = joinPaths(storageDir, filename);
 
     if (!fs.existsSync(filePath)) {
       return {
@@ -681,7 +690,7 @@ function validateContentFiles(windowData) {
         // Check if local file exists
         const fullPath = path.isAbsolute(contentPath)
           ? contentPath
-          : path.join(process.cwd(), contentPath);
+          : joinPaths(process.cwd(), contentPath);
 
         if (!fs.existsSync(fullPath)) {
           warnings.push(`Content file not found: ${contentPath}`);
@@ -695,7 +704,7 @@ function validateContentFiles(windowData) {
       if (imagePath && !imagePath.startsWith('http')) {
         const fullPath = path.isAbsolute(imagePath)
           ? imagePath
-          : path.join(process.cwd(), imagePath);
+          : joinPaths(process.cwd(), imagePath);
 
         if (!fs.existsSync(fullPath)) {
           warnings.push(`Image file not found: ${imagePath}`);
@@ -1002,11 +1011,32 @@ export function makePathRelative(filePath) {
 
   try {
     const cwd = process.cwd();
-
-    if (path.isAbsolute(filePath) && filePath.startsWith(cwd)) {
-      const relativePath = path.relative(cwd, filePath);
-      console.debug(`[STORAGE] Converted absolute path to relative: ${filePath} -> ${relativePath}`);
-      return relativePath;
+    
+    // Handle Windows drive letters - normalize both paths for comparison
+    if (path.isAbsolute(filePath)) {
+      const normalizedFilePath = path.resolve(filePath);
+      const normalizedCwd = path.resolve(cwd);
+      
+      // Check if paths are on the same drive (Windows) or same root (Unix)
+      const filePathRoot = path.parse(normalizedFilePath).root;
+      const cwdRoot = path.parse(normalizedCwd).root;
+      
+      // On Windows, if paths are on different drives, cannot make relative
+      if (hasWindowsDriveLetter(normalizedFilePath) && hasWindowsDriveLetter(normalizedCwd)) {
+        if (filePathRoot.toLowerCase() !== cwdRoot.toLowerCase()) {
+          console.debug(`[STORAGE] Cannot convert to relative path - different drives: ${filePath}`);
+          return filePath;
+        }
+      }
+      
+      // Check if file path is within cwd
+      if (normalizedFilePath.startsWith(normalizedCwd)) {
+        const relativePath = toRelativePath(normalizedFilePath, normalizedCwd);
+        // Store with forward slashes for cross-platform compatibility
+        const portablePath = toForwardSlashes(relativePath);
+        console.debug(`[STORAGE] Converted absolute path to relative: ${filePath} -> ${portablePath}`);
+        return portablePath;
+      }
     }
 
     return filePath;
@@ -1026,9 +1056,12 @@ export function resolveRelativePath(filePath) {
     return filePath;
   }
 
+  // If already absolute, return as-is (handles Windows drive letters)
   if (path.isAbsolute(filePath)) {
     return filePath;
   }
 
-  return path.join(process.cwd(), filePath);
+  // Resolve relative path from current working directory
+  // This properly handles Windows drive letters in the base path
+  return toAbsolutePath(filePath, process.cwd());
 }

@@ -108,3 +108,40 @@ export function getGameState() {
   };
 }
 
+/**
+ * Export game logic state for serialization
+ * @returns {Object} Complete game logic state
+ */
+export function exportGameLogicState() {
+  console.log('[GAME] Exporting game logic state');
+  
+  const state = {
+    level1Completed
+  };
+  
+  console.log('[GAME] Game logic state exported', { state });
+  return state;
+}
+
+/**
+ * Import and restore game logic state
+ * @param {Object} state - Previously exported game logic state
+ * @returns {void}
+ */
+export function importGameLogicState(state) {
+  console.log('[GAME] Importing game logic state', { state });
+  
+  if (!state || typeof state !== 'object') {
+    console.warn('[GAME] Invalid game logic state provided, skipping import');
+    return;
+  }
+  
+  // Restore level completion status
+  if (typeof state.level1Completed === 'boolean') {
+    level1Completed = state.level1Completed;
+    console.log('[GAME] Restored level1Completed:', level1Completed);
+  }
+  
+  console.log('[GAME] Game logic state imported successfully');
+}
+

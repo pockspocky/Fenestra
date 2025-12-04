@@ -523,6 +523,107 @@ export function initializeIpcHandlers() {
     }
   });
 
+  // Start menu handlers
+  ipcMain.handle('start-menu/new-game', async (_e) => {
+    console.debug('[IPC] 收到新游戏请求');
+    
+    try {
+      const { handleNewGame } = await import('./startMenuManager.js');
+      const result = await handleNewGame();
+      
+      if (result.success) {
+        console.log('[IPC] 新游戏启动成功');
+      } else {
+        console.warn('[IPC] 新游戏启动失败:', result.message);
+      }
+      
+      return result;
+      
+    } catch (error) {
+      console.error('[IPC] 新游戏启动失败:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  });
+
+  ipcMain.handle('start-menu/continue-game', async (_e) => {
+    console.debug('[IPC] 收到继续游戏请求');
+    
+    try {
+      const { handleContinueGame } = await import('./startMenuManager.js');
+      const result = await handleContinueGame();
+      
+      if (result.success) {
+        console.log('[IPC] 游戏继续成功');
+      } else {
+        console.warn('[IPC] 游戏继续失败:', result.message);
+      }
+      
+      return result;
+      
+    } catch (error) {
+      console.error('[IPC] 游戏继续失败:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  });
+
+  ipcMain.handle('start-menu/check-save-exists', async (_e) => {
+    console.debug('[IPC] 检查存档是否存在');
+    
+    try {
+      const { hasSavedState } = await import('./gameStateManager.js');
+      const exists = hasSavedState();
+      
+      console.debug(`[IPC] 存档存在: ${exists}`);
+      
+      return {
+        success: true,
+        exists
+      };
+      
+    } catch (error) {
+      console.error('[IPC] 检查存档失败:', error);
+      return {
+        success: false,
+        error: error.message,
+        exists: false
+      };
+    }
+  });
+
+  ipcMain.handle('start-menu/get-save-metadata', async (_e) => {
+    console.debug('[IPC] 获取存档元数据');
+    
+    try {
+      const { getSaveMetadata } = await import('./gameStateManager.js');
+      const metadata = getSaveMetadata();
+      
+      if (metadata) {
+        console.debug('[IPC] 存档元数据获取成功');
+      } else {
+        console.debug('[IPC] 没有找到存档');
+      }
+      
+      return {
+        success: true,
+        metadata
+      };
+      
+    } catch (error) {
+      console.error('[IPC] 获取存档元数据失败:', error);
+      return {
+        success: false,
+        error: error.message,
+        metadata: null
+      };
+    }
+  });
+
   console.debug('[IPC] 所有IPC处理程序已设置完成');
 }
 
@@ -2193,6 +2294,10 @@ export function cleanupIpcHandlers() {
   ipcMain.removeAllListeners('email/mark-read');
   ipcMain.removeAllListeners('email/get-inbox-path');
   ipcMain.removeAllListeners('email/execute-action');
+  ipcMain.removeAllListeners('start-menu/new-game');
+  ipcMain.removeAllListeners('start-menu/continue-game');
+  ipcMain.removeAllListeners('start-menu/check-save-exists');
+  ipcMain.removeAllListeners('start-menu/get-save-metadata');
 
   console.debug('[IPC] IPC处理程序已清理');
 }
