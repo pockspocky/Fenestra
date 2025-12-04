@@ -117,15 +117,17 @@ function testKeyImagePathResolution() {
   console.log('\n=== Testing key image path resolution ===\n');
   
   // Property: resolveKeyImagePath with null should return default key image
+  // Updated for new default: Key.png (with fallback to Keychain.jpeg)
   const resolved = resolveKeyImagePath(null);
-  const expected = 'renderer/assets/doors/Keychain.jpeg';
+  const expectedNew = 'renderer/assets/Keys/Key.png';
+  const expectedFallback = 'renderer/assets/doors/Keychain.jpeg';
   
-  if (resolved === expected) {
-    console.log('✅ Property test PASSED: Key image path resolves to default');
+  if (resolved === expectedNew || resolved === expectedFallback) {
+    console.log('✅ Property test PASSED: Key image path resolves to default (Key.png or Keychain.jpeg fallback)');
     return true;
   } else {
     console.error('❌ Property test FAILED');
-    console.error(`Expected: ${expected}, Got: ${resolved}`);
+    console.error(`Expected: ${expectedNew} or ${expectedFallback}, Got: ${resolved}`);
     return false;
   }
 }

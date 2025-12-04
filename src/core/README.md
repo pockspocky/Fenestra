@@ -40,7 +40,10 @@ src/core/
 - `createVideo()` - 创建视频窗口
 - `createTerminal()` - 创建终端窗口
 - `createDoor(doorId, title, encrypt, otherContents)` - 创建门窗口
-- `createKey(keyId, title, encrypt, relatedDoors, otherContents)` - 创建钥匙窗口
+- `createKey(keyId, title, encrypt, relatedDoors, otherContents, imagePath)` - 创建钥匙窗口
+  - `imagePath` (可选) - 自定义钥匙图片路径。如果未提供，使用默认的 Key.png
+  - 支持相对路径（从项目根目录解析）和绝对路径
+  - 无效路径自动回退到默认图片
 - `createPicture(pictureId, imagePath, fitMode, title, width, height)` - 创建图片窗口
 
 #### 内容窗口系统（模糊/镜头）
@@ -370,7 +373,7 @@ createLensWindow('lens1', 'content1', {
 // 创建图片内容窗口（清晰化模式）
 createContentWindow('imageContent', {
   contentType: 'image',
-  contentPath: 'doors/Door.png',
+  contentPath: 'renderer/assets/doors/DoorClosed.png',
   blurAmount: 15,
   width: 400,
   height: 600
@@ -391,7 +394,10 @@ import {
 
 // 创建加密门和钥匙
 createDoor('door1', 'Secret Door', true);
-createKey('key1', 'Master Key', true, ['door1']);
+createKey('key1', 'Master Key', true, ['door1']); // 使用默认 Key.png 图片
+
+// 创建带自定义图片的钥匙
+createKey('key2', 'Gold Key', false, [], null, 'renderer/assets/Keys/GoldKey.png');
 
 // 建立关系
 addEncryptedItem('door1');
@@ -465,10 +471,10 @@ if (loadResult.success) {
 import { createPicture, setPicture, setFitMode } from './src/core/windowManager.js';
 
 // 创建图片窗口
-createPicture('pic1', 'doors/Door.png', 'contain', 'My Picture', 400, 300);
+createPicture('pic1', 'renderer/assets/doors/DoorClosed.png', 'contain', 'My Picture', 400, 300);
 
 // 更改显示的图片
-setPicture('pic1', 'doors/Keychain.jpeg', 'cover');
+setPicture('pic1', 'renderer/assets/doors/Keychain.jpeg', 'cover');
 
 // 更改缩放模式
 setFitMode('pic1', 'fill');

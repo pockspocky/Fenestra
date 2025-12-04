@@ -133,13 +133,16 @@ fenestra/
 │   ├── gameLogic.js           # Game logic
 │   ├── workerManager.js       # Background processing
 │   └── ipcHandlers.js         # IPC communication
-├── renderer/                   # HTML templates
+├── renderer/                   # HTML templates & assets
+│   ├── assets/                # Game assets
+│   │   ├── doors/             # Door images
+│   │   └── Keys/              # Key images (Key.png default)
 │   ├── terminal.html          # Terminal interface
 │   ├── contentViewer.html     # Content display
 │   ├── lensViewer.html        # Lens overlay
+│   ├── door.html              # Door display
 │   └── pictureViewer.html     # Picture display
 ├── .fenestra-storage/          # Saved configurations
-├── doors/                      # Demo images
 ├── main.js                     # Application entry
 └── package.json               # Dependencies
 ```

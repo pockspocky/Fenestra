@@ -66,7 +66,7 @@ create-content [窗口ID] [类型] [路径] [模糊度] [是否模糊]
 create-content msg1 text "" 10 true
 
 # 创建模糊图片窗口
-create-content pic1 image doors/Door.png 15 true
+create-content pic1 image renderer/assets/doors/DoorClosed.png 15 true
 
 # 创建清晰图片窗口（不模糊）
 create-content clear1 image doors/Squirrel.jpg 0 false
