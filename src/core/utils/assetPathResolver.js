@@ -72,16 +72,116 @@ export function resolveDoorImagePath(imagePath, state = 'closed') {
 }
 
 /**
- * Resolve key image path
- * @param {string} imagePath - Key image path
- * @returns {string} Resolved key image path
+ * Resolve key image path with new default and fallback logic
+ * 
+ * This function determines which key image to use based on the following priority:
+ * 1. Custom image path (if provided and valid)
+ * 2. Default key image (Key.png)
+ * 3. Fallback to legacy image (Keychain.jpeg) if default doesn't exist
+ * 
+ * @param {string|null|undefined} imagePath - Optional custom key image path. 
+ *   Can be relative (resolved from project root) or absolute path.
+ *   If null, undefined, or empty string, uses default Key.png.
+ * @returns {string} Resolved key image path (relative to project root for relative paths, 
+ *   or absolute path for absolute paths)
+ * @throws {never} Does not throw - returns a path even if files don't exist, 
+ *   allowing renderer to handle missing images
+ * 
+ * @since 1.2.0 - Changed default from Keychain.jpeg to Key.png with fallback
+ * @since 1.3.0 - Enhanced validation for relative and absolute paths
+ * 
+ * @example
+ * // Use default key image
+ * const defaultPath = resolveKeyImagePath(null);
+ * // Returns: 'renderer/assets/Keys/Key.png'
+ * 
+ * @example
+ * // Use custom relative path
+ * const customPath = resolveKeyImagePath('renderer/assets/Keys/GoldKey.png');
+ * // Returns: 'renderer/assets/Keys/GoldKey.png' (if exists)
+ * 
+ * @example
+ * // Use custom absolute path
+ * const absolutePath = resolveKeyImagePath('/Users/dev/custom-key.png');
+ * // Returns: '/Users/dev/custom-key.png' (if exists)
  */
 export function resolveKeyImagePath(imagePath) {
   if (!imagePath) {
-    return 'renderer/assets/doors/Keychain.jpeg';
+    // Default key image path - new standard location
+    const defaultPath = 'renderer/assets/Keys/Key.png';
+    const fullDefaultPath = path.join(process.cwd(), defaultPath);
+    
+    // Verify the new default exists, fallback to legacy image if not
+    if (fs.existsSync(fullDefaultPath)) {
+      console.debug('[ASSET_RESOLVER] Using new default key image: Key.png');
+      return defaultPath;
+    } else {
+      // Fallback to legacy key image for backward compatibility
+      const fallbackPath = 'renderer/assets/doors/Keychain.jpeg';
+      const fullFallbackPath = path.join(process.cwd(), fallbackPath);
+      
+      // Check if fallback exists
+      if (fs.existsSync(fullFallbackPath)) {
+        console.warn('[ASSET_RESOLVER] New default key image not found, falling back to Keychain.jpeg');
+        return fallbackPath;
+      } else {
+        // Both default and fallback are missing - critical error
+        // Return default path anyway and let renderer display broken image placeholder
+        console.error('[ASSET_RESOLVER] CRITICAL: Neither default key image (Key.png) nor fallback (Keychain.jpeg) found! Returning default path anyway.');
+        return defaultPath;
+      }
+    }
   }
   
-  return resolveAssetPath(imagePath);
+  // Validate custom image path type
+  if (typeof imagePath !== 'string') {
+    console.warn(`[ASSET_RESOLVER] Invalid custom key image path type: ${typeof imagePath}, using default`);
+    return resolveKeyImagePath(null); // Recursive call to get default
+  }
+  
+  // Handle empty string as request for default
+  if (imagePath.trim() === '') {
+    console.debug('[ASSET_RESOLVER] Empty custom key image path provided, using default');
+    return resolveKeyImagePath(null); // Recursive call to get default
+  }
+  
+  let fullResolvedPath;
+  let resolvedPath;
+  
+  try {
+    // Check if path is absolute
+    if (path.isAbsolute(imagePath)) {
+      // Absolute path - use directly after validation
+      fullResolvedPath = path.normalize(imagePath);
+      resolvedPath = imagePath;
+      
+      // Validate absolute path exists
+      if (!fs.existsSync(fullResolvedPath)) {
+        console.warn(`[ASSET_RESOLVER] Custom key image not found at absolute path: ${imagePath}, using default`);
+        return resolveKeyImagePath(null); // Fallback to default via recursive call
+      }
+      
+      console.debug(`[ASSET_RESOLVER] Using custom key image from absolute path: ${resolvedPath}`);
+      return resolvedPath;
+    } else {
+      // Relative path - resolve through asset resolver for backward compatibility
+      resolvedPath = resolveAssetPath(imagePath);
+      fullResolvedPath = path.join(process.cwd(), resolvedPath);
+      
+      // Validate relative path exists
+      if (!fs.existsSync(fullResolvedPath)) {
+        console.warn(`[ASSET_RESOLVER] Custom key image not found at relative path: ${imagePath} (resolved to: ${resolvedPath}), using default`);
+        return resolveKeyImagePath(null); // Fallback to default via recursive call
+      }
+      
+      console.debug(`[ASSET_RESOLVER] Using custom key image from relative path: ${resolvedPath}`);
+      return resolvedPath;
+    }
+  } catch (error) {
+    // Handle any path resolution errors gracefully
+    console.warn(`[ASSET_RESOLVER] Error validating custom key image path: ${imagePath}, error: ${error.message}, using default`);
+    return resolveKeyImagePath(null); // Fallback to default via recursive call
+  }
 }
 
 /**

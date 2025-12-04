@@ -24,7 +24,10 @@ export function handleVideoWindowClosed(windowId) {
     
     if (!windows.has('door1')) {
       console.debug('[GAME] 创建门窗口');
-      createDoor('door1', 'Main Door', false);
+      createDoor('door1', 'Main Door', false, {
+        initialState: 'closed',
+        isLocked: false
+      });
       initializeDoorRelation('door1');
     } else {
       console.debug('[GAME] 门窗口已存在，跳过创建');
@@ -47,9 +50,20 @@ export function createDemoDoorsAndKeys() {
   console.log('[DEMO] 创建演示门和钥匙...');
   
   // 创建加密门和对应的钥匙
-  createDoor('door1', 'Main Door (locked)', false);
-  createDoor('door2', 'Secret Room (locked)', true);
-  createDoor('door3', 'Back Door (locked)', true);
+  createDoor('door1', 'Main Door (locked)', false, {
+    initialState: 'closed',
+    isLocked: true
+  });
+  
+  createDoor('door2', 'Secret Room (locked)', true, {
+    initialState: 'closed',
+    isLocked: true
+  });
+  
+  createDoor('door3', 'Back Door (locked)', true, {
+    initialState: 'closed',
+    isLocked: true
+  });
 
   // 初始化门关系
   initializeDoorRelation('door1');
