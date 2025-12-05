@@ -624,6 +624,115 @@ export function initializeIpcHandlers() {
     }
   });
 
+  // Door state management handlers
+  ipcMain.handle('door/get-state', async (_e, doorId) => {
+    console.debug(`[IPC] 获取门状态: ${doorId}`);
+    
+    try {
+      const { getDoorState, getDoorStateValue, isDoorLocked } = await import('./doorKeySystem.js');
+      
+      const fullState = getDoorState(doorId);
+      if (!fullState) {
+        return {
+          success: false,
+          error: 'Door not found'
+        };
+      }
+      
+      const state = getDoorStateValue(doorId);
+      const isLocked = isDoorLocked(doorId);
+      
+      return {
+        success: true,
+        state,
+        isLocked,
+        isEncrypted: fullState.isEncrypted || false
+      };
+      
+    } catch (error) {
+      console.error(`[IPC] 获取门状态失败: ${doorId}`, error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  });
+
+  ipcMain.handle('door/set-state', async (_e, { doorId, state }) => {
+    console.debug(`[IPC] 设置门状态: ${doorId} -> ${state}`);
+    
+    try {
+      const { setDoorState } = await import('./doorKeySystem.js');
+      
+      const result = setDoorState(doorId, state);
+      
+      if (result.success) {
+        console.log(`[IPC] 门状态已更新: ${doorId} -> ${state}`);
+      } else {
+        console.warn(`[IPC] 设置门状态失败: ${result.error}`);
+      }
+      
+      return result;
+      
+    } catch (error) {
+      console.error(`[IPC] 设置门状态失败: ${doorId}`, error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  });
+
+  ipcMain.handle('door/toggle-state', async (_e, doorId) => {
+    console.debug(`[IPC] 切换门状态: ${doorId}`);
+    
+    try {
+      const { toggleDoorState } = await import('./doorKeySystem.js');
+      
+      const result = toggleDoorState(doorId);
+      
+      if (result.success) {
+        console.log(`[IPC] 门状态已切换: ${doorId} -> ${result.newState}`);
+      } else {
+        console.warn(`[IPC] 切换门状态失败: ${result.error}`);
+      }
+      
+      return result;
+      
+    } catch (error) {
+      console.error(`[IPC] 切换门状态失败: ${doorId}`, error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  });
+
+  ipcMain.handle('door/set-locked', async (_e, { doorId, isLocked }) => {
+    console.debug(`[IPC] 设置门锁定状态: ${doorId} -> ${isLocked}`);
+    
+    try {
+      const { setDoorLocked } = await import('./doorKeySystem.js');
+      
+      const result = setDoorLocked(doorId, isLocked);
+      
+      if (result.success) {
+        console.log(`[IPC] 门锁定状态已更新: ${doorId} -> ${isLocked}`);
+      } else {
+        console.warn(`[IPC] 设置门锁定状态失败: ${result.error}`);
+      }
+      
+      return result;
+      
+    } catch (error) {
+      console.error(`[IPC] 设置门锁定状态失败: ${doorId}`, error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  });
+
   console.debug('[IPC] 所有IPC处理程序已设置完成');
 }
 

@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background-color: #2c2c2c;
+            font-family: Arial, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .door-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        
+        .door-image {
+            width: 100%;
+            height: 100%;
+            object-fit: fill;
+            display: none;
+            transition: filter 0.3s ease, opacity 0.3s ease;
+        }
+        
+        /* Lock icon overlay */
+        .lock-icon {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 48px;
+            color: #ffffff;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+            display: none;
+            z-index: 10;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+         
+        /* Visual states */
+        .door-image.locked {
+            filter: brightness(1.0);
+        }
+        
+        .door-image.unlocked {
+            filter: brightness(1.0);
+        }
+        
+        .door-image.encrypted {
+            filter: brightness(1.0) drop-shadow(0 0 10px rgba(100, 200, 255, 0.6));
+        }
+        
+        /* Loading state */
+        .loading-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #ffffff;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top: 4px solid #ffffff;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            font-size: 16px;
+            color: #cccccc;
+        }
+        
+        /* Error state */
+        .error-container {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #ffffff;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .error-icon {
+            font-size: 60px;
+            margin-bottom: 20px;
+            color: #ff6b6b;
+        }
+        
+        .error-title {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #ff6b6b;
+        }
+        
+        .error-message {
+            font-size: 16px;
+            line-height: 1.6;
+            color: #cccccc;
+        }
+        
+        /* Animation for state transitions */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        .door-image.transitioning {
+            animation: fadeIn 0.3s ease;
+        }
+        
+        /* Lock/unlock animation */
+        @keyframes lockPulse {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); }
+            50% { transform: translate(-50%, -50%) scale(1.2); }
+        }
+        
+        .lock-icon.animating {
+            animation: lockPulse 0.5s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="door-container">
+        <!-- Loading state -->
+        <div class="loading-container" id="loading">
+            <div class="spinner"></div>
+            <div class="loading-text">Loading door...</div>
+        </div>
+        
+        <!-- Door image -->
+        <img id="doorImage" class="door-image" alt="Door">
+        
+        <!-- Lock icon overlay -->
+        <div id="lockIcon" class="lock-icon">🔒</div>
+        
+        <!-- Error state -->
+        <div class="error-container" id="error">
+            <div class="error-icon">⚠️</div>
+            <div class="error-title">Failed to load door</div>
+            <div class="error-message" id="errorMessage"></div>
+        </div>
+    </div>
+
+    <script>
+        console.log('[DOOR] Initializing door window');
+        console.log('[DOOR] URL:', window.location.href);
+        
+        // Parse URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const doorId = urlParams.get('doorId') || urlParams.get('id');
+        const state = urlParams.get('state') || 'closed';
+        const isLocked = urlParams.get('isLocked') === 'true';
+        const isEncrypted = urlParams.get('isEncrypted') === 'true';
+        const closedImagePath = urlParams.get('closedImagePath');
+        const openedImagePath = urlParams.get('openedImagePath');
+        
+        console.log('[DOOR] Parameters:', {
+            doorId,
+            state,
+            isLocked,
+            isEncrypted,
+            closedImagePath,
+            openedImagePath
+        });
+        
+        // Get elements
+        const loadingEl = document.getElementById('loading');
+        const errorEl = document.getElementById('error');
+        const imageEl = document.getElementById('doorImage');
+        const lockIconEl = document.getElementById('lockIcon');
+        const errorMessageEl = document.getElementById('errorMessage');
+        
+        // Current state
+        let currentState = state;
+        let currentLocked = isLocked;
+        let currentEncrypted = isEncrypted;
+        
+        /**
+         * Get image path based on current state
+         * Converts relative paths to absolute file URLs for Electron
+         */
+        function getImagePath(doorState) {
+            let relativePath;
+            if (doorState === 'open') {
+                relativePath = openedImagePath || 'renderer/assets/doors/DoorOpened.png';
+            } else {
+                relativePath = closedImagePath || 'renderer/assets/doors/DoorClosed.png';
+            }
+            
+            // Convert relative path to absolute path
+            // In Electron, we need to use the file:// protocol
+            // The path is relative to the app root, so we go up from renderer/door.html
+            if (!relativePath.startsWith('file://') && !relativePath.startsWith('http')) {
+                // Remove leading './' if present
+                relativePath = relativePath.replace(/^\.\//, '');
+                // Construct path relative to door.html location
+                return `../${relativePath}`;
+            }
+            
+            return relativePath;
+        }
+        
+        /**
+         * Update door visual state
+         */
+        function updateDoorVisuals() {
+            console.log('[DOOR] Updating visuals:', {
+                state: currentState,
+                locked: currentLocked,
+                encrypted: currentEncrypted
+            });
+            
+            // Update image classes
+            imageEl.classList.remove('locked', 'unlocked', 'encrypted');
+            
+            if (currentEncrypted) {
+                imageEl.classList.add('encrypted');
+            } else if (currentLocked) {
+                imageEl.classList.add('locked');
+            } else {
+                imageEl.classList.add('unlocked');
+            }
+            
+            // Update lock icon visibility
+            if (currentLocked) {
+                lockIconEl.style.display = 'block';
+            } else {
+                lockIconEl.style.display = 'none';
+            }
+        }
+        
+        /**
+         * Load door image
+         */
+        async function loadDoorImage(doorState) {
+            console.log('[DOOR] Loading image for state:', doorState);
+            
+            const imagePath = getImagePath(doorState);
+            console.log('[DOOR] Image path:', imagePath);
+            
+            // Show loading
+            loadingEl.style.display = 'flex';
+            errorEl.style.display = 'none';
+            imageEl.style.display = 'none';
+            
+            try {
+                // Load image
+                const img = new Image();
+                
+                img.onload = () => {
+                    console.log('[DOOR] Image loaded successfully');
+                    imageEl.src = imagePath;
+                    imageEl.classList.add('transitioning');
+                    imageEl.style.display = 'block';
+                    loadingEl.style.display = 'none';
+                    
+                    // Update visuals
+                    updateDoorVisuals();
+                    
+                    // Remove transition class after animation
+                    setTimeout(() => {
+                        imageEl.classList.remove('transitioning');
+                    }, 300);
+                };
+                
+                img.onerror = (e) => {
+                    console.error('[DOOR] Image load failed:', e);
+                    showError(`Failed to load image: ${imagePath}`);
+                };
+                
+                img.src = imagePath;
+                
+            } catch (error) {
+                console.error('[DOOR] Load error:', error);
+                showError(error.message);
+            }
+        }
+        
+        /**
+         * Show error message
+         */
+        function showError(message) {
+            loadingEl.style.display = 'none';
+            errorEl.style.display = 'flex';
+            imageEl.style.display = 'none';
+            errorMessageEl.textContent = message;
+        }
+        
+        /**
+         * Handle door state change
+         */
+        function handleStateChange(newState) {
+            console.log('[DOOR] State change:', currentState, '->', newState);
+            
+            if (newState !== currentState) {
+                currentState = newState;
+                loadDoorImage(newState);
+            }
+        }
+        
+        /**
+         * Handle lock state change
+         */
+        function handleLockChange(locked) {
+            console.log('[DOOR] Lock change:', currentLocked, '->', locked);
+            
+            if (locked !== currentLocked) {
+                currentLocked = locked;
+                
+                // Animate lock icon
+                if (locked) {
+                    lockIconEl.classList.add('animating');
+                    setTimeout(() => {
+                        lockIconEl.classList.remove('animating');
+                    }, 500);
+                }
+                
+                updateDoorVisuals();
+            }
+        }
+        
+        // Listen for IPC events
+        if (window.electronAPI) {
+            // Door state change event
+            if (window.electronAPI.onDoorStateChange) {
+                window.electronAPI.onDoorStateChange((data) => {
+                    console.log('[DOOR] Received state change event:', data);
+                    if (data.doorId === doorId) {
+                        handleStateChange(data.newState);
+                    }
+                });
+                console.log('[DOOR] Registered onDoorStateChange listener');
+            }
+            
+            // Door lock change event
+            if (window.electronAPI.onDoorLockChange) {
+                window.electronAPI.onDoorLockChange((data) => {
+                    console.log('[DOOR] Received lock change event:', data);
+                    if (data.doorId === doorId) {
+                        handleLockChange(data.isLocked);
+                    }
+                });
+                console.log('[DOOR] Registered onDoorLockChange listener');
+            }
+        } else {
+            console.warn('[DOOR] electronAPI not available - IPC events will not work');
+        }
+        
+        // Initial load
+        loadDoorImage(currentState);
+    </script>
+</body>
+</html>

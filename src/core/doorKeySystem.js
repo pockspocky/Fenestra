@@ -12,7 +12,7 @@ import {
 const doorKeyRelations = new Map(); // doorId -> Set of keyIds
 const keyDoorRelations = new Map(); // keyId -> Set of doorIds
 const encryptedItems = new Set(); // 存储加密的物品ID
-const doorStates = new Map(); // doorId -> { isOpen: boolean, lastKeyUsed: string }
+const doorStates = new Map(); // doorId -> { isOpen: boolean, lastKeyUsed: string, state: 'open'|'closed', isLocked: boolean, isEncrypted: boolean, closedImagePath: string, openedImagePath: string, createdAt: number, lastStateChange: number }
 
 // 消息配置系统
 const globalMessages = new Map(); // messageType -> template
@@ -151,6 +151,10 @@ export function handleFailedOpen(doorId, keyId) {
         const baseTitle = currentTitle.replace(/\s*\([^)]*\)$/, ''); // 移除现有状态
         const resetTitle = `${baseTitle} (locked)`;
         doorWin.setTitle(resetTitle);
+        
+        // Update door visual state to closed and locked
+        setDoorState(doorId, 'closed');
+        setDoorLocked(doorId, true);
         
         // 显示序列重置消息
         const resetVariables = { doorId, keyId };
@@ -345,6 +349,10 @@ export function handleDoorToggle(doorId, keyId) {
         // 更新门标题
         doorWin.setTitle(currentTitle.replace('(locked)', '(opened)').replace('(encrypted)', '(opened)'));
         
+        // Update door visual state
+        setDoorState(doorId, 'open');
+        setDoorLocked(doorId, false);
+        
         // 执行门开启回调
         executeDoorOpenCallback(doorId, keyId);
         
@@ -423,6 +431,10 @@ export function handleDoorToggle(doorId, keyId) {
     // 更新状态
     doorStates.set(doorId, { isOpen: true, lastKeyUsed: keyId });
     
+    // Update door visual state
+    setDoorState(doorId, 'open');
+    setDoorLocked(doorId, false);
+    
     // 执行门开启回调
     executeDoorOpenCallback(doorId, keyId);
     
@@ -490,6 +502,10 @@ export function handleDoorToggle(doorId, keyId) {
       doorStates.set(doorId, { isOpen: false, lastKeyUsed: keyId });
     }
     
+    // Update door visual state
+    setDoorState(doorId, 'closed');
+    setDoorLocked(doorId, true);
+    
     // 获取自定义关门消息
     const variables = { doorId, keyId };
     const closeMessage = getFormattedMessage('door_closed', variables, 'Door closed!');    
@@ -543,6 +559,277 @@ export function initializeKeyRelation(keyId, relatedDoors = []) {
  */
 export function getDoorState(doorId) {
   return doorStates.get(doorId);
+}
+
+// ==================== 新门状态管理系统 ====================
+
+/**
+ * 初始化门状态
+ * @param {string} doorId - 门ID
+ * @param {Object} initialState - 初始状态配置
+ */
+export function initializeDoorState(doorId, initialState = {}) {
+  if (!doorId || typeof doorId !== 'string') {
+    console.error('[DOOR_STATE] Invalid doorId provided to initializeDoorState:', doorId);
+    return;
+  }
+
+  const now = Date.now();
+  const state = {
+    isOpen: initialState.state === 'open',
+    lastKeyUsed: null,
+    state: initialState.state || 'closed',
+    isLocked: initialState.isLocked !== undefined ? initialState.isLocked : true,
+    isEncrypted: initialState.isEncrypted || false,
+    closedImagePath: initialState.closedImagePath || null,
+    openedImagePath: initialState.openedImagePath || null,
+    createdAt: now,
+    lastStateChange: now,
+    ...initialState
+  };
+
+  doorStates.set(doorId, state);
+  console.log(`[DOOR_STATE] Initialized state for door '${doorId}':`, state);
+}
+
+/**
+ * 设置门的状态
+ * @param {string} doorId - 门ID
+ * @param {string} state - 状态 ('open' 或 'closed')
+ * @returns {Object} 操作结果
+ */
+export function setDoorState(doorId, state) {
+  if (!doorId || typeof doorId !== 'string') {
+    console.error('[DOOR_STATE] Invalid doorId provided to setDoorState:', doorId);
+    return { success: false, error: 'Invalid door ID' };
+  }
+
+  if (!['open', 'closed'].includes(state)) {
+    console.warn('[DOOR_STATE] Invalid door state:', { doorId, state });
+    return { success: false, error: 'Invalid state value. Must be "open" or "closed"' };
+  }
+
+  const doorState = doorStates.get(doorId);
+  if (!doorState) {
+    console.warn('[DOOR_STATE] Door not found:', doorId);
+    return { success: false, error: 'Door not found' };
+  }
+
+  const oldState = doorState.state;
+  doorState.state = state;
+  doorState.isOpen = (state === 'open');
+  doorState.lastStateChange = Date.now();
+
+  console.log(`[DOOR_STATE] Door '${doorId}' state changed from '${oldState}' to '${state}'`);
+
+  // Emit state change event
+  emitDoorStateChangeEvent(doorId, oldState, state);
+
+  // Notify door window via IPC
+  notifyDoorWindow(doorId, state);
+
+  return { success: true, oldState, newState: state };
+}
+
+/**
+ * 获取门的当前状态
+ * @param {string} doorId - 门ID
+ * @returns {string|null} 状态 ('open', 'closed') 或 null
+ */
+export function getDoorStateValue(doorId) {
+  if (!doorId || typeof doorId !== 'string') {
+    console.warn('[DOOR_STATE] Invalid doorId provided to getDoorStateValue:', doorId);
+    return null;
+  }
+
+  const doorState = doorStates.get(doorId);
+  if (!doorState) {
+    console.warn('[DOOR_STATE] Door not found:', doorId);
+    return null;
+  }
+
+  return doorState.state || (doorState.isOpen ? 'open' : 'closed');
+}
+
+/**
+ * 切换门的状态
+ * @param {string} doorId - 门ID
+ * @returns {Object} 操作结果
+ */
+export function toggleDoorState(doorId) {
+  if (!doorId || typeof doorId !== 'string') {
+    console.error('[DOOR_STATE] Invalid doorId provided to toggleDoorState:', doorId);
+    return { success: false, error: 'Invalid door ID' };
+  }
+
+  const doorState = doorStates.get(doorId);
+  if (!doorState) {
+    console.warn('[DOOR_STATE] Door not found:', doorId);
+    return { success: false, error: 'Door not found' };
+  }
+
+  const currentState = doorState.state || (doorState.isOpen ? 'open' : 'closed');
+  const newState = currentState === 'open' ? 'closed' : 'open';
+
+  return setDoorState(doorId, newState);
+}
+
+/**
+ * 设置门的锁定状态
+ * @param {string} doorId - 门ID
+ * @param {boolean} isLocked - 是否锁定
+ * @returns {Object} 操作结果
+ */
+export function setDoorLocked(doorId, isLocked) {
+  if (!doorId || typeof doorId !== 'string') {
+    console.error('[DOOR_STATE] Invalid doorId provided to setDoorLocked:', doorId);
+    return { success: false, error: 'Invalid door ID' };
+  }
+
+  if (typeof isLocked !== 'boolean') {
+    console.error('[DOOR_STATE] isLocked must be a boolean:', isLocked);
+    return { success: false, error: 'isLocked must be a boolean' };
+  }
+
+  const doorState = doorStates.get(doorId);
+  if (!doorState) {
+    console.warn('[DOOR_STATE] Door not found:', doorId);
+    return { success: false, error: 'Door not found' };
+  }
+
+  const oldLocked = doorState.isLocked;
+  doorState.isLocked = isLocked;
+
+  console.log(`[DOOR_STATE] Door '${doorId}' lock state changed from ${oldLocked} to ${isLocked}`);
+
+  // Emit lock change event
+  emitDoorLockChangeEvent(doorId, isLocked);
+
+  // Notify door window via IPC
+  notifyDoorLockChange(doorId, isLocked);
+
+  return { success: true, oldLocked, newLocked: isLocked };
+}
+
+/**
+ * 检查门是否锁定
+ * @param {string} doorId - 门ID
+ * @returns {boolean} 是否锁定
+ */
+export function isDoorLocked(doorId) {
+  if (!doorId || typeof doorId !== 'string') {
+    console.warn('[DOOR_STATE] Invalid doorId provided to isDoorLocked:', doorId);
+    return false;
+  }
+
+  const doorState = doorStates.get(doorId);
+  if (!doorState) {
+    console.warn('[DOOR_STATE] Door not found:', doorId);
+    return false;
+  }
+
+  return doorState.isLocked !== undefined ? doorState.isLocked : true;
+}
+
+// ==================== 事件系统 ====================
+
+// Event listeners storage
+const stateChangeListeners = [];
+const lockChangeListeners = [];
+
+/**
+ * 注册状态变化监听器
+ * @param {Function} callback - 回调函数 (doorId, oldState, newState) => void
+ */
+export function onDoorStateChange(callback) {
+  if (typeof callback === 'function') {
+    stateChangeListeners.push(callback);
+    console.log('[DOOR_STATE] Registered state change listener');
+  }
+}
+
+/**
+ * 注册锁定状态变化监听器
+ * @param {Function} callback - 回调函数 (doorId, isLocked) => void
+ */
+export function onDoorLockChange(callback) {
+  if (typeof callback === 'function') {
+    lockChangeListeners.push(callback);
+    console.log('[DOOR_STATE] Registered lock change listener');
+  }
+}
+
+/**
+ * 触发状态变化事件
+ * @param {string} doorId - 门ID
+ * @param {string} oldState - 旧状态
+ * @param {string} newState - 新状态
+ */
+function emitDoorStateChangeEvent(doorId, oldState, newState) {
+  const event = { doorId, oldState, newState, timestamp: Date.now() };
+  
+  for (const listener of stateChangeListeners) {
+    try {
+      listener(doorId, oldState, newState);
+    } catch (error) {
+      console.error('[DOOR_STATE] Error in state change listener:', error);
+    }
+  }
+
+  console.log('[DOOR_STATE] Emitted state change event:', event);
+}
+
+/**
+ * 触发锁定状态变化事件
+ * @param {string} doorId - 门ID
+ * @param {boolean} isLocked - 是否锁定
+ */
+function emitDoorLockChangeEvent(doorId, isLocked) {
+  const event = { doorId, isLocked, timestamp: Date.now() };
+  
+  for (const listener of lockChangeListeners) {
+    try {
+      listener(doorId, isLocked);
+    } catch (error) {
+      console.error('[DOOR_STATE] Error in lock change listener:', error);
+    }
+  }
+
+  console.log('[DOOR_STATE] Emitted lock change event:', event);
+}
+
+/**
+ * 通知门窗口状态变化 (via IPC)
+ * @param {string} doorId - 门ID
+ * @param {string} newState - 新状态
+ */
+function notifyDoorWindow(doorId, newState) {
+  const doorWin = getWindow(doorId);
+  if (doorWin && !doorWin.isDestroyed()) {
+    try {
+      doorWin.webContents.send('door-state-change', { doorId, newState });
+      console.log(`[DOOR_STATE] Notified door window '${doorId}' of state change to '${newState}'`);
+    } catch (error) {
+      console.error(`[DOOR_STATE] Failed to notify door window '${doorId}':`, error);
+    }
+  }
+}
+
+/**
+ * 通知门窗口锁定状态变化 (via IPC)
+ * @param {string} doorId - 门ID
+ * @param {boolean} isLocked - 是否锁定
+ */
+function notifyDoorLockChange(doorId, isLocked) {
+  const doorWin = getWindow(doorId);
+  if (doorWin && !doorWin.isDestroyed()) {
+    try {
+      doorWin.webContents.send('door-lock-change', { doorId, isLocked });
+      console.log(`[DOOR_STATE] Notified door window '${doorId}' of lock change to ${isLocked}`);
+    } catch (error) {
+      console.error(`[DOOR_STATE] Failed to notify door window '${doorId}':`, error);
+    }
+  }
 }
 
 /**
@@ -1693,7 +1980,15 @@ export function exportRelationshipState() {
       lastKeyUsed: doorState.lastKeyUsed,
       requiredKeys: doorState.requiredKeys ? [...doorState.requiredKeys] : undefined,
       usedKeys: doorState.usedKeys ? [...doorState.usedKeys] : undefined,
-      timeoutDuration: doorState.timeoutDuration
+      timeoutDuration: doorState.timeoutDuration,
+      // New door visual state fields
+      state: doorState.state,
+      isLocked: doorState.isLocked,
+      isEncrypted: doorState.isEncrypted,
+      closedImagePath: doorState.closedImagePath,
+      openedImagePath: doorState.openedImagePath,
+      createdAt: doorState.createdAt,
+      lastStateChange: doorState.lastStateChange
       // 注意：不导出 timeoutId，因为它不可序列化且在恢复时需要重新创建
     };
   }
@@ -1795,7 +2090,15 @@ export function importRelationshipState(relationshipState) {
           requiredKeys: doorState.requiredKeys ? [...doorState.requiredKeys] : undefined,
           usedKeys: doorState.usedKeys ? [...doorState.usedKeys] : undefined,
           timeoutDuration: doorState.timeoutDuration,
-          timeoutId: null // 将在需要时重新创建
+          timeoutId: null, // 将在需要时重新创建
+          // Restore new door visual state fields
+          state: doorState.state,
+          isLocked: doorState.isLocked,
+          isEncrypted: doorState.isEncrypted,
+          closedImagePath: doorState.closedImagePath,
+          openedImagePath: doorState.openedImagePath,
+          createdAt: doorState.createdAt,
+          lastStateChange: doorState.lastStateChange
         });
       }
     }
