@@ -3,7 +3,14 @@
  * 管理镜头窗口与内容窗口的同步
  */
 
-import '../../logger.js';
+import '../../../logger.js';
+import {
+  triggerLensCreated,
+  triggerLensMoved,
+  triggerLensDestroyed,
+  triggerLensTrackingStarted,
+  triggerLensTrackingStopped
+} from '../callbacks/lensCallbacks.js';
 
 // 存储镜头系统的映射关系
 const lensSystems = new Map(); // lensId -> { lensWindow, targetWindow, targetWindowId }
@@ -32,6 +39,13 @@ export function registerLensSystem(lensId, lensWindow, targetWindowId, targetWin
 
   lensSystems.set(lensId, system);
   
+  // Trigger lens created callback
+  triggerLensCreated(lensId, {
+    targetWindowId,
+    lensWindow,
+    targetWindow
+  });
+  
   // 开始位置追踪
   startPositionTracking(lensId, system);
 
@@ -53,6 +67,9 @@ export function unregisterLensSystem(lensId) {
 
   // 停止位置追踪
   stopPositionTracking(lensId, system);
+
+  // Trigger lens destroyed callback
+  triggerLensDestroyed(lensId);
 
   lensSystems.delete(lensId);
   console.log(`[LENS_SYS] 镜头系统注销成功，当前总数: ${lensSystems.size}`);
@@ -132,6 +149,14 @@ function startPositionTracking(lensId, system) {
 
     console.debug(`[LENS_SYS] 镜头 ${lensId} 移动: 相对位置 (${relativeX}, ${relativeY})`);
 
+    // Trigger lens moved callback
+    triggerLensMoved(lensId, {
+      x: lensBounds.x,
+      y: lensBounds.y,
+      relativeX,
+      relativeY
+    });
+
     // 通知镜头窗口更新显示区域
     if (!lensWindow.isDestroyed()) {
       lensWindow.webContents.send('lens-position-update', {
@@ -178,6 +203,9 @@ function startPositionTracking(lensId, system) {
   system.isTracking = true;
   console.log(`[LENS_SYS] 镜头 ${lensId} 开始位置追踪`);
 
+  // Trigger lens tracking started callback
+  triggerLensTrackingStarted(lensId);
+
   // 立即触发一次更新
   lensMoveListener();
 }
@@ -207,6 +235,9 @@ function stopPositionTracking(lensId, system) {
 
   system.isTracking = false;
   system.moveListener = null;
+
+  // Trigger lens tracking stopped callback
+  triggerLensTrackingStopped(lensId);
 
   console.log(`[LENS_SYS] 镜头 ${lensId} 停止位置追踪`);
 }

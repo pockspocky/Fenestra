@@ -4,10 +4,11 @@
  */
 
 import '../../logger.js';
-import { createWindow, createDoor, createKey } from './windowManager.js';
-import { createLensWindow } from './windowManager.js';
+import { createWindow, createDoor, createKey } from './systems/windowManager.js';
+import { createLensWindow } from './systems/windowManager.js';
 import { shell } from 'electron';
 import path from 'node:path';
+import { triggerEmailActionExecuted } from './callbacks/emailCallbacks.js';
 
 // Callback registry for custom functions
 const callbackRegistry = new Map();
@@ -481,10 +482,11 @@ const PARAM_VALIDATORS = {
 /**
  * Executes an email action
  * @param {Object} action - Action object from email JSON
+ * @param {string} emailId - Email ID that triggered the action (optional)
  * @returns {Promise<Object>} Execution result
  */
-export async function executeEmailAction(action) {
-  console.log('[EMAIL_ACTION] Executing email action', { action });
+export async function executeEmailAction(action, emailId = null) {
+  console.log('[EMAIL_ACTION] Executing email action', { action, emailId });
 
   try {
     // Validate action structure
@@ -529,6 +531,16 @@ export async function executeEmailAction(action) {
       type: action.type,
       success: result.success
     });
+
+    // Trigger email action executed callback
+    if (emailId) {
+      triggerEmailActionExecuted(emailId, {
+        actionType: action.type,
+        actionLabel: action.label,
+        parameters: action.parameters,
+        result
+      });
+    }
 
     return result;
   } catch (error) {

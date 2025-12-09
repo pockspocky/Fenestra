@@ -1,12 +1,19 @@
 import { dialog } from 'electron';
 import path from 'node:path';
 import { getWindow } from './windowManager.js';
-import '../../logger.js'; // 导入日志系统
+import '../../../logger.js'; // 导入日志系统
 import { 
   FileCompletionError, 
   ERROR_CODES, 
   logError 
-} from './utils/errorHandler.js';
+} from '../utils/errorHandler.js';
+import {
+  triggerDoorOpened,
+  triggerDoorClosed,
+  triggerKeyUsed,
+  triggerAccessDenied,
+  triggerDoorStateChanged
+} from '../callbacks/doorKeyCallbacks.js';
 
 // 门钥匙关系管理系统
 const doorKeyRelations = new Map(); // doorId -> Set of keyIds
@@ -133,6 +140,40 @@ export function canOpenDoor(doorId, keyId) {
  * @param {string} keyId - 钥匙ID
  */
 export function handleFailedOpen(doorId, keyId) {
+  // Determine denial reason
+  let reason = 'insufficient permissions';
+  const isDoorEncrypted = encryptedItems.has(doorId);
+  const isKeyEncrypted = encryptedItems.has(keyId);
+  
+  if (!isDoorEncrypted) {
+    reason = 'door is not encrypted but access still denied';
+  } else if (!isKeyEncrypted) {
+    reason = 'key is not encrypted for encrypted door';
+  } else {
+    const authorizedKeys = doorKeyRelations.get(doorId);
+    if (!authorizedKeys || !authorizedKeys.has(keyId)) {
+      reason = 'key is not authorized for this door';
+    }
+  }
+  
+  // Check if it's a used one-time key
+  if (!isKeyUsable(keyId)) {
+    reason = 'key has already been used and is no longer functional';
+  }
+  
+  // Check if it's a multi-key door with wrong sequence
+  if (isMultiKeyDoor(doorId)) {
+    const progress = getMultiKeyProgress(doorId);
+    if (progress && progress.progress > 0) {
+      reason = 'wrong key in multi-key sequence';
+    } else {
+      reason = 'not the first required key in sequence';
+    }
+  }
+  
+  // Trigger access denied callback
+  triggerAccessDenied(doorId, keyId, reason);
+  
   // 弹出错误窗口
   const doorWin = getWindow(doorId);
   const keyWin = getWindow(keyId);
@@ -332,6 +373,15 @@ export function handleDoorToggle(doorId, keyId) {
       doorState.usedKeys.push(keyId);
       doorState.lastKeyUsed = keyId;
       
+      // Trigger key used callback
+      const isComplete = doorState.usedKeys.length === doorState.requiredKeys.length;
+      triggerKeyUsed(keyId, doorId, true, {
+        multiKey: true,
+        progress: doorState.usedKeys.length,
+        total: doorState.requiredKeys.length,
+        isComplete
+      });
+      
       // 启动或重新启动超时计时器
       startMultiKeyTimeout(doorId);
       
@@ -352,6 +402,12 @@ export function handleDoorToggle(doorId, keyId) {
         // Update door visual state
         setDoorState(doorId, 'open');
         setDoorLocked(doorId, false);
+        
+        // Trigger door opened callback
+        triggerDoorOpened(doorId, keyId, { 
+          multiKey: true, 
+          keysUsed: doorState.usedKeys 
+        });
         
         // 执行门开启回调
         executeDoorOpenCallback(doorId, keyId);
@@ -435,6 +491,12 @@ export function handleDoorToggle(doorId, keyId) {
     setDoorState(doorId, 'open');
     setDoorLocked(doorId, false);
     
+    // Trigger door opened callback
+    triggerDoorOpened(doorId, keyId);
+    
+    // Trigger key used callback
+    triggerKeyUsed(keyId, doorId, true);
+    
     // 执行门开启回调
     executeDoorOpenCallback(doorId, keyId);
     
@@ -506,6 +568,9 @@ export function handleDoorToggle(doorId, keyId) {
     setDoorState(doorId, 'closed');
     setDoorLocked(doorId, true);
     
+    // Trigger door closed callback
+    triggerDoorClosed(doorId, keyId);
+    
     // 获取自定义关门消息
     const variables = { doorId, keyId };
     const closeMessage = getFormattedMessage('door_closed', variables, 'Door closed!');    
@@ -550,6 +615,35 @@ export function initializeKeyRelation(keyId, relatedDoors = []) {
   relatedDoors.forEach(doorId => {
     establishRelation(doorId, keyId);
   });
+}
+
+/**
+ * Get related doors for a key
+ * @param {string} keyId - Key ID
+ * @returns {Array<string>} Array of related door IDs
+ */
+export function getRelatedDoorsForKey(keyId) {
+  const doorSet = keyDoorRelations.get(keyId);
+  return doorSet ? Array.from(doorSet) : [];
+}
+
+/**
+ * Get related keys for a door
+ * @param {string} doorId - Door ID
+ * @returns {Array<string>} Array of related key IDs
+ */
+export function getRelatedKeysForDoor(doorId) {
+  const keySet = doorKeyRelations.get(doorId);
+  return keySet ? Array.from(keySet) : [];
+}
+
+/**
+ * Check if an item (door or key) is encrypted
+ * @param {string} itemId - Item ID (door or key)
+ * @returns {boolean} True if item is encrypted
+ */
+export function isItemEncrypted(itemId) {
+  return encryptedItems.has(itemId);
 }
 
 /**
@@ -767,6 +861,9 @@ export function onDoorLockChange(callback) {
  */
 function emitDoorStateChangeEvent(doorId, oldState, newState) {
   const event = { doorId, oldState, newState, timestamp: Date.now() };
+  
+  // Trigger callback system event
+  triggerDoorStateChanged(doorId, oldState, newState);
   
   for (const listener of stateChangeListeners) {
     try {

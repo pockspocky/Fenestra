@@ -1,12 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { dialog } from 'electron';
-import { getGameDataDirectory } from './config.js';
+import { getGameDataDirectory } from '../config.js';
 import { getAllWindows } from './windowManager.js';
-import { serializeWindow } from './windowStorage.js';
+import { serializeWindow } from '../windowStorage.js';
 import { exportRelationshipState } from './doorKeySystem.js';
 import { exportGameLogicState } from './gameLogic.js';
-import '../../logger.js';
+import { triggerStateSaved, triggerStateLoaded } from '../callbacks/gameStateCallbacks.js';
+import '../../../logger.js';
 
 // Storage configuration
 const STORAGE_DIR = '.fenestra-storage';
@@ -150,7 +151,7 @@ export async function saveGameState(savePath = null, options = {}) {
       failedWindows: failedWindows.length
     });
     
-    return {
+    const result = {
       success: true,
       message: 'Game state saved successfully',
       filePath: saveFilePath,
@@ -158,6 +159,11 @@ export async function saveGameState(savePath = null, options = {}) {
       relationshipCount: Object.keys(relationships.doorKeyRelations || {}).length,
       failedWindows: failedWindows.length
     };
+    
+    // Trigger state-saved callback
+    triggerStateSaved(result);
+    
+    return result;
     
   } catch (error) {
     console.error('[GAME_STATE] Failed to save game state:', { 
@@ -315,7 +321,7 @@ export async function loadGameState(savePath = null, options = {}) {
       version: gameState.version
     });
     
-    return {
+    const result = {
       success: true,
       message: 'Game state loaded successfully',
       data: gameState,
@@ -323,6 +329,11 @@ export async function loadGameState(savePath = null, options = {}) {
       windowCount: gameState.windows?.length || 0,
       relationshipCount: Object.keys(gameState.relationships?.doorKeyRelations || {}).length
     };
+    
+    // Trigger state-loaded callback
+    triggerStateLoaded(result);
+    
+    return result;
     
   } catch (error) {
     console.error('[GAME_STATE] Failed to load game state:', { 

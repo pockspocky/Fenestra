@@ -4,14 +4,14 @@
  */
 
 import { globalShortcut } from 'electron';
-import '../../logger.js';
+import '../../../logger.js';
 import { createWindow } from './windowManager.js';
 import { 
   initializeEmailStorage, 
   watchInboxDirectory, 
   stopWatching,
   getInboxPath 
-} from './emailStorage.js';
+} from '../emailStorage.js';
 
 // Email window reference
 let emailWindow = null;

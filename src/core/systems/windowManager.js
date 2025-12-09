@@ -2,7 +2,7 @@ import { BrowserWindow } from 'electron';
 import path from 'node:path';
 import url from 'node:url';
 import fs from 'node:fs';
-import '../../logger.js'; // 导入日志系统
+import '../../../logger.js'; // 导入日志系统
 import {
   registerLensSystem,
   unregisterLensSystem,
@@ -11,8 +11,15 @@ import {
   getLensSystemCount,
   lensSystemExists
 } from './lensSystem.js';
-import { resolveAssetPath, resolveDoorImagePath, resolveKeyImagePath } from './utils/assetPathResolver.js';
+import { resolveAssetPath, resolveDoorImagePath, resolveKeyImagePath } from '../utils/assetPathResolver.js';
 import { initializeDoorState } from './doorKeySystem.js';
+import {
+  triggerWindowCreated,
+  triggerWindowClosed,
+  triggerWindowMoved,
+  triggerWindowResized,
+  triggerWindowReady
+} from '../callbacks/windowCallbacks.js';
 
 // 全局窗口映射
 export const windows = new Map(); // id -> BrowserWindow
@@ -229,6 +236,24 @@ export function createWindow(id, opts = {}) {
   // 设置窗口事件监听器
   setupWindowEvents(win, id);
   
+  // Trigger window-created callback before adding to windows map
+  const bounds = win.getBounds();
+  const createdResult = triggerWindowCreated(id, {
+    width: bounds.width,
+    height: bounds.height,
+    x: bounds.x,
+    y: bounds.y,
+    title: win.getTitle(),
+    options: opts
+  });
+  
+  // Check if default behavior was prevented
+  if (createdResult.prevented) {
+    console.log(`[WINDOW] Window creation prevented by callback, ID: ${id}`);
+    win.destroy();
+    return null;
+  }
+  
   windows.set(id, win);
   console.debug(`[WINDOW] 窗口已添加到映射, ID: ${id}, 总窗口数: ${windows.size}`);
   
@@ -244,6 +269,9 @@ function setupWindowEvents(win, id) {
   win.on('closed', () => {
     console.debug(`[WINDOW] 窗口关闭事件触发, ID: ${id}`);
     
+    // Trigger window-closed callback before cleanup
+    triggerWindowClosed(id);
+    
     // 如果是镜头窗口，先注销镜头系统（在删除窗口之前）
     if (lensSystemExists(id)) {
       console.debug(`[WINDOW] 检测到镜头窗口关闭，先注销镜头系统: ${id}`);
@@ -253,7 +281,7 @@ function setupWindowEvents(win, id) {
     windows.delete(id);
     console.log(`[WINDOW] 从窗口映射中移除 ID: ${id}, 剩余窗口数量: ${windows.size}`);
     
-    // 触发窗口关闭回调
+    // 触发窗口关闭回调 (legacy support)
     if (windowCloseCallback) {
       windowCloseCallback(id);
     }
@@ -261,16 +289,25 @@ function setupWindowEvents(win, id) {
   
   win.on('ready-to-show', () => {
     console.debug(`[WINDOW] 窗口准备显示, ID: ${id}`);
+    
+    // Trigger window-ready callback
+    triggerWindowReady(id);
   });
   
   win.on('moved', () => {
     const bounds = win.getBounds();
     console.debug(`[WINDOW] 窗口移动, ID: ${id}, 新位置: (${bounds.x}, ${bounds.y})`);
+    
+    // Trigger window-moved callback
+    triggerWindowMoved(id, { x: bounds.x, y: bounds.y });
   });
   
   win.on('resized', () => {
     const bounds = win.getBounds();
     console.debug(`[WINDOW] 窗口调整大小, ID: ${id}, 新尺寸: ${bounds.width}x${bounds.height}`);
+    
+    // Trigger window-resized callback
+    triggerWindowResized(id, { width: bounds.width, height: bounds.height });
   });
 }
 

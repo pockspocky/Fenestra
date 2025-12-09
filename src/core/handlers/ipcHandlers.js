@@ -19,7 +19,7 @@ import {
   destroyLensSystem,
   getLensSystems,
   getLensSystem
-} from './windowManager.js';
+} from '../systems/windowManager.js';
 import {
   saveWindowToFile,
   loadWindowFromFile,
@@ -27,8 +27,8 @@ import {
   listStoredWindows,
   deleteStoredWindow,
   validateWindowData
-} from './windowStorage.js';
-import { validateAndResolvePath, getDefaultGameDataDirectory, isWithinGameScope } from './utils/pathSecurityValidator.js';
+} from '../windowStorage.js';
+import { validateAndResolvePath, getDefaultGameDataDirectory, isWithinGameScope } from '../utils/pathSecurityValidator.js';
 import { 
   navigateToDirectory, 
   getDirectoryContents, 
@@ -38,8 +38,8 @@ import {
   escapeFilenameForShell,
   unescapeFilenameFromShell,
   validatePathCharacters
-} from './utils/directoryNavigator.js';
-import { checkDirectoryAccess, filterAccessibleDirectories } from './doorKeySystem.js';
+} from '../utils/directoryNavigator.js';
+import { checkDirectoryAccess, filterAccessibleDirectories } from '../systems/doorKeySystem.js';
 import { 
   FileCompletionError, 
   ERROR_CODES, 
@@ -48,10 +48,11 @@ import {
   withErrorHandling,
   validateInput,
   logError 
-} from './utils/errorHandler.js';
+} from '../utils/errorHandler.js';
+import { wrapIpcHandler } from '../callbacks/ipcCallbacks.js';
 import fs from 'node:fs';
 import path from 'node:path';
-import '../../logger.js'; // 导入日志系统
+import '../../../logger.js'; // 导入日志系统
 
 /**
  * 初始化 IPC 处理程序
@@ -59,7 +60,7 @@ import '../../logger.js'; // 导入日志系统
 export function initializeIpcHandlers() {
   console.debug('[IPC] 设置IPC处理程序...');
 
-  ipcMain.handle('game/window/create', (_e, payload) => {
+  ipcMain.handle('game/window/create', wrapIpcHandler('game/window/create', (_e, payload) => {
     console.debug('[IPC] 收到创建窗口请求:', payload);
     const { id, bounds = {}, title } = payload ?? {};
 
@@ -74,9 +75,9 @@ export function initializeIpcHandlers() {
 
     console.debug('[IPC] 窗口创建响应:', response);
     return response;
-  });
+  }));
 
-  ipcMain.handle('game/window/set-bounds', (_e, { id, bounds }) => {
+  ipcMain.handle('game/window/set-bounds', wrapIpcHandler('game/window/set-bounds', (_e, { id, bounds }) => {
     console.debug(`[IPC] 收到设置边界请求, ID: ${id}, 边界:`, bounds);
 
     if (!id || !bounds) {
@@ -89,9 +90,9 @@ export function initializeIpcHandlers() {
 
     console.debug('[IPC] 设置边界响应:', response);
     return response;
-  });
+  }));
 
-  ipcMain.handle('game/window/get-bounds', (_e, { id }) => {
+  ipcMain.handle('game/window/get-bounds', wrapIpcHandler('game/window/get-bounds', (_e, { id }) => {
     console.debug(`[IPC] 收到获取边界请求, ID: ${id}`);
 
     const b = getBounds(id);
@@ -99,10 +100,10 @@ export function initializeIpcHandlers() {
 
     console.debug('[IPC] 获取边界响应:', response);
     return response;
-  });
+  }));
 
   // 终端命令处理程序
-  ipcMain.handle('terminal/execute-command', (_e, { command, args }) => {
+  ipcMain.handle('terminal/execute-command', wrapIpcHandler('terminal/execute-command', (_e, { command, args }) => {
     console.debug(`[IPC] 收到终端命令: ${command}, 参数:`, args);
 
     try {
@@ -111,10 +112,10 @@ export function initializeIpcHandlers() {
       console.error('[IPC] 终端命令执行错误:', error);
       return { success: false, message: error.message };
     }
-  });
+  }));
 
   // 图片加载处理程序
-  ipcMain.handle('picture/load', (_e, imagePath) => {
+  ipcMain.handle('picture/load', wrapIpcHandler('picture/load', (_e, imagePath) => {
     console.debug(`[IPC] 收到图片加载请求: ${imagePath}`);
 
     try {
@@ -123,26 +124,26 @@ export function initializeIpcHandlers() {
       console.error('[IPC] 图片加载错误:', error);
       return { success: false, error: error.message };
     }
-  });
+  }));
 
   // 镜头系统处理程序
-  ipcMain.handle('lens/get-position', (_e, lensId) => {
+  ipcMain.handle('lens/get-position', wrapIpcHandler('lens/get-position', (_e, lensId) => {
     console.debug(`[IPC] 获取镜头位置: ${lensId}`);
     const lensInfo = getLensSystem(lensId);
     if (lensInfo && lensInfo.lensBounds) {
       return { success: true, bounds: lensInfo.lensBounds };
     }
     return { success: false, error: '镜头不存在或缺少位置信息' };
-  });
+  }));
 
-  ipcMain.handle('window/get-info', (_e, windowId) => {
+  ipcMain.handle('window/get-info', wrapIpcHandler('window/get-info', (_e, windowId) => {
     console.debug(`[IPC] 获取窗口信息: ${windowId}`);
     const info = getWindowInfo(windowId);
     if (info) {
       return { success: true, bounds: { x: info.x, y: info.y, width: info.width, height: info.height } };
     }
     return { success: false, error: '窗口不存在' };
-  });
+  }));
 
   // Window storage validation handler
   ipcMain.handle('storage/validate-fenestra-file', (_e, filePath) => {
@@ -244,7 +245,7 @@ export function initializeIpcHandlers() {
     console.debug('[IPC] 获取游戏数据目录配置');
     
     try {
-      const { getGameDataDirectory } = await import('./config.js');
+      const { getGameDataDirectory } = await import('../config.js');
       const gameDataDir = getGameDataDirectory();
       
       console.debug(`[IPC] 游戏数据目录: ${gameDataDir}`);
@@ -267,7 +268,7 @@ export function initializeIpcHandlers() {
     console.debug(`[IPC] 设置游戏数据目录: ${newPath}`);
     
     try {
-      const { setGameDataDirectory } = await import('./config.js');
+      const { setGameDataDirectory } = await import('../config.js');
       const result = setGameDataDirectory(newPath);
       
       if (result.success) {
@@ -291,7 +292,7 @@ export function initializeIpcHandlers() {
     console.debug('[IPC] 获取完整配置');
     
     try {
-      const { getConfig } = await import('./config.js');
+      const { getConfig } = await import('../config.js');
       const config = getConfig();
       
       console.debug('[IPC] 配置获取成功');
@@ -314,7 +315,7 @@ export function initializeIpcHandlers() {
     console.debug('[IPC] 重置配置为默认值');
     
     try {
-      const { resetConfigToDefaults } = await import('./config.js');
+      const { resetConfigToDefaults } = await import('../config.js');
       const result = resetConfigToDefaults();
       
       if (result.success) {
@@ -339,7 +340,7 @@ export function initializeIpcHandlers() {
     console.debug(`[IPC] 获取邮件列表: limit=${limit}, offset=${offset}`);
     
     try {
-      const { getEmails, getInboxPath } = await import('./emailStorage.js');
+      const { getEmails, getInboxPath } = await import('../emailStorage.js');
       const emails = await getEmails(limit, offset);
       
       console.debug(`[IPC] 返回 ${emails.length} 封邮件`);
@@ -356,7 +357,7 @@ export function initializeIpcHandlers() {
       // Import getInboxPath to provide context in error
       let inboxPath = null;
       try {
-        const { getInboxPath } = await import('./emailStorage.js');
+        const { getInboxPath } = await import('../emailStorage.js');
         inboxPath = getInboxPath();
       } catch (e) {
         // Ignore if we can't get inbox path
@@ -376,7 +377,7 @@ export function initializeIpcHandlers() {
     console.debug(`[IPC] 获取邮件: ${emailId}`);
     
     try {
-      const { getEmailById } = await import('./emailStorage.js');
+      const { getEmailById } = await import('../emailStorage.js');
       const email = await getEmailById(emailId);
       
       if (!email) {
@@ -409,7 +410,7 @@ export function initializeIpcHandlers() {
     console.debug(`[IPC] 标记邮件为已读: ${emailId}`);
     
     try {
-      const { markEmailAsRead } = await import('./emailStorage.js');
+      const { markEmailAsRead } = await import('../emailStorage.js');
       const result = await markEmailAsRead(emailId);
       
       if (result.success) {
@@ -466,8 +467,8 @@ export function initializeIpcHandlers() {
     console.debug(`[IPC] 执行邮件操作: emailId=${emailId}, actionIndex=${actionIndex}`);
     
     try {
-      const { getEmailById } = await import('./emailStorage.js');
-      const { executeEmailAction } = await import('./emailActions.js');
+      const { getEmailById } = await import('../emailStorage.js');
+      const { executeEmailAction } = await import('../emailActions.js');
       
       // Get the email to retrieve the action
       const email = await getEmailById(emailId);
@@ -528,7 +529,7 @@ export function initializeIpcHandlers() {
     console.debug('[IPC] 收到新游戏请求');
     
     try {
-      const { handleNewGame } = await import('./startMenuManager.js');
+      const { handleNewGame } = await import('../startMenuManager.js');
       const result = await handleNewGame();
       
       if (result.success) {
@@ -552,7 +553,7 @@ export function initializeIpcHandlers() {
     console.debug('[IPC] 收到继续游戏请求');
     
     try {
-      const { handleContinueGame } = await import('./startMenuManager.js');
+      const { handleContinueGame } = await import('../startMenuManager.js');
       const result = await handleContinueGame();
       
       if (result.success) {
@@ -576,7 +577,7 @@ export function initializeIpcHandlers() {
     console.debug('[IPC] 检查存档是否存在');
     
     try {
-      const { hasSavedState } = await import('./gameStateManager.js');
+      const { hasSavedState } = await import('../systems/gameStateManager.js');
       const exists = hasSavedState();
       
       console.debug(`[IPC] 存档存在: ${exists}`);
@@ -600,7 +601,7 @@ export function initializeIpcHandlers() {
     console.debug('[IPC] 获取存档元数据');
     
     try {
-      const { getSaveMetadata } = await import('./gameStateManager.js');
+      const { getSaveMetadata } = await import('../systems/gameStateManager.js');
       const metadata = getSaveMetadata();
       
       if (metadata) {
@@ -629,7 +630,7 @@ export function initializeIpcHandlers() {
     console.debug(`[IPC] 获取门状态: ${doorId}`);
     
     try {
-      const { getDoorState, getDoorStateValue, isDoorLocked } = await import('./doorKeySystem.js');
+      const { getDoorState, getDoorStateValue, isDoorLocked } = await import('../systems/doorKeySystem.js');
       
       const fullState = getDoorState(doorId);
       if (!fullState) {
@@ -662,7 +663,7 @@ export function initializeIpcHandlers() {
     console.debug(`[IPC] 设置门状态: ${doorId} -> ${state}`);
     
     try {
-      const { setDoorState } = await import('./doorKeySystem.js');
+      const { setDoorState } = await import('../systems/doorKeySystem.js');
       
       const result = setDoorState(doorId, state);
       
@@ -687,7 +688,7 @@ export function initializeIpcHandlers() {
     console.debug(`[IPC] 切换门状态: ${doorId}`);
     
     try {
-      const { toggleDoorState } = await import('./doorKeySystem.js');
+      const { toggleDoorState } = await import('../systems/doorKeySystem.js');
       
       const result = toggleDoorState(doorId);
       
@@ -712,7 +713,7 @@ export function initializeIpcHandlers() {
     console.debug(`[IPC] 设置门锁定状态: ${doorId} -> ${isLocked}`);
     
     try {
-      const { setDoorLocked } = await import('./doorKeySystem.js');
+      const { setDoorLocked } = await import('../systems/doorKeySystem.js');
       
       const result = setDoorLocked(doorId, isLocked);
       
@@ -2096,7 +2097,7 @@ async function changeDirectory(targetPath, currentDir = null) {
     // Handle special paths
     if (targetPath === '..') {
       // Go to parent directory
-      const { getParentDirectory } = await import('./utils/directoryNavigator.js');
+      const { getParentDirectory } = await import('../utils/directoryNavigator.js');
       const parentResult = getParentDirectory(workingDir, gameDataRoot);
       
       if (!parentResult.success) {

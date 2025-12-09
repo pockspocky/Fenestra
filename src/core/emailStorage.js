@@ -10,6 +10,12 @@ import { app } from 'electron';
 import chokidar from 'chokidar';
 import '../../logger.js';
 import { joinPaths, validatePathCharacters, normalizePath } from './utils/pathUtils.js';
+import { 
+  triggerEmailReceived, 
+  triggerEmailRead, 
+  triggerInboxChanged, 
+  triggerEmailValidationFailed 
+} from './callbacks/emailCallbacks.js';
 
 // Error codes for email storage operations
 const EMAIL_ERROR_CODES = {
@@ -453,6 +459,10 @@ async function loadEmailFile(filePath) {
         errorCode: EMAIL_ERROR_CODES.VALIDATION_ERROR,
         userMessage: `Email file ${path.basename(filePath)} is invalid and will be skipped`
       });
+      
+      // Trigger validation failed callback
+      triggerEmailValidationFailed(filePath, validation);
+      
       return;
     }
 
@@ -475,6 +485,9 @@ async function loadEmailFile(filePath) {
       emailId: emailData.id,
       subject: emailData.subject
     });
+
+    // Trigger email received callback
+    triggerEmailReceived(emailData);
   } catch (error) {
     console.error('[EMAIL] Unexpected error loading email file', {
       filePath,
@@ -719,6 +732,9 @@ export async function markEmailAsRead(emailId) {
       subject: email.subject
     });
 
+    // Trigger email read callback
+    triggerEmailRead(emailId, { subject: email.subject });
+
     return {
       success: true,
       emailId
@@ -809,8 +825,12 @@ export function watchInboxDirectory(callback) {
       try {
         await loadEmailFile(filePath);
         
+        const fileName = path.basename(filePath);
+        
+        // Trigger inbox changed callback
+        triggerInboxChanged('add', fileName);
+        
         if (watcherCallback) {
-          const fileName = path.basename(filePath);
           watcherCallback('add', fileName);
         }
       } catch (error) {
@@ -832,8 +852,12 @@ export function watchInboxDirectory(callback) {
       try {
         await loadEmailFile(filePath);
         
+        const fileName = path.basename(filePath);
+        
+        // Trigger inbox changed callback
+        triggerInboxChanged('change', fileName);
+        
         if (watcherCallback) {
-          const fileName = path.basename(filePath);
           watcherCallback('change', fileName);
         }
       } catch (error) {
@@ -863,8 +887,12 @@ export function watchInboxDirectory(callback) {
           }
         }
         
+        const fileName = path.basename(filePath);
+        
+        // Trigger inbox changed callback
+        triggerInboxChanged('unlink', fileName);
+        
         if (watcherCallback) {
-          const fileName = path.basename(filePath);
           watcherCallback('unlink', fileName);
         }
       } catch (error) {

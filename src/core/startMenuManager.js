@@ -1,11 +1,11 @@
 import { BrowserWindow } from 'electron';
 import path from 'node:path';
 import '../../logger.js';
-import { hasSavedState, getSaveMetadata, loadGameState, deleteSavedState } from './gameStateManager.js';
-import { createDemoDoorsAndKeys } from './gameLogic.js';
+import { hasSavedState, getSaveMetadata, loadGameState, deleteSavedState } from './systems/gameStateManager.js';
+import { createDemoDoorsAndKeys } from './systems/gameLogic.js';
 import { deserializeWindow } from './windowStorage.js';
-import { importRelationshipState } from './doorKeySystem.js';
-import { importGameLogicState } from './gameLogic.js';
+import { importRelationshipState } from './systems/doorKeySystem.js';
+import { importGameLogicState } from './systems/gameLogic.js';
 
 // Start menu state
 let startMenuWindow = null;
@@ -43,7 +43,7 @@ export async function createStartMenu() {
   // Create start menu window
   startMenuWindow = new BrowserWindow({
     width: 600,
-    height: 400,
+    height: 800,
     center: true,
     resizable: false,
     frame: true,

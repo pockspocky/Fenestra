@@ -6,8 +6,14 @@ import {
   createPicture,
   createContentWindow,
   createLensWindow
-} from './windowManager.js';
-import { getLensSystemInfo } from './lensSystem.js';
+} from './systems/windowManager.js';
+import { resolveKeyImagePath } from './utils/assetPathResolver.js';
+import { getLensSystemInfo } from './systems/lensSystem.js';
+import { 
+  getRelatedDoorsForKey, 
+  getRelatedKeysForDoor, 
+  isItemEncrypted 
+} from './systems/doorKeySystem.js';
 import { getGameDataDirectory } from './config.js';
 import {
   joinPaths,
@@ -56,8 +62,19 @@ export function getStorageDirectory() {
 
 /**
  * Extract window data for serialization
+ * 
+ * Enhanced for key windows (Requirements 1.1, 2.2):
+ * - Captures key image paths in contentConfig.path (primary location)
+ * - Stores image paths in specialConfig.pictureSettings.imagePath (fallback location)
+ * - Extracts actual encryption status from doorKeySystem
+ * - Preserves door-key relationships from doorKeySystem
+ * 
  * @param {string} windowId - Window ID
- * @returns {Object|null} Window serialization data
+ * @returns {Object|null} Window serialization data with the following structure:
+ *   - windowConfig: Basic window properties (bounds, title, etc.)
+ *   - contentConfig: Content-specific data including image paths for keys
+ *   - specialConfig: Type-specific data including doorKeySettings for keys/doors
+ *   - windowType: Window type identifier
  */
 export function getWindowSerializationData(windowId) {
   console.debug(`[STORAGE] Extracting serialization data for window: ${windowId}`);
@@ -166,6 +183,7 @@ function extractContentConfig(windowId, win, windowType) {
 
   try {
     const url = win.webContents.getURL();
+    console.debug(`[STORAGE] Extracting content config for ${windowId}, URL: ${url}`);
 
     if (url.includes('?')) {
       const urlObj = new URL(url);
@@ -182,11 +200,15 @@ function extractContentConfig(windowId, win, windowType) {
 
       // Extract query parameters
       contentConfig.type = params.get('type') || 'text';
+      // For keys, this captures the image path from pictureViewer.html?imagePath=...
+      // This is the primary storage location for key image paths (Requirement 1.1, 2.2)
       contentConfig.path = params.get('path') || params.get('imagePath') || '';
       contentConfig.surfaceContent = params.get('surfaceContent') || '';
       contentConfig.hiddenContent = params.get('hiddenContent') || '';
       contentConfig.blurAmount = parseInt(params.get('blur')) || 0;
       contentConfig.blurred = params.get('blurred') === 'true';
+
+      console.debug(`[STORAGE] Extracted imagePath for ${windowId}: "${contentConfig.path}"`);
 
       // Store all other parameters
       for (const [key, value] of params) {
@@ -217,15 +239,23 @@ function extractSpecialConfig(windowId, win, windowType) {
     switch (windowType) {
       case 'picture':
       case 'door':
+      case 'key':
+        // Extract picture settings for picture windows, doors, and keys
         const url = win.webContents.getURL();
+        console.debug(`[STORAGE] Extracting special config for ${windowType} ${windowId}, URL: ${url}`);
         if (url.includes('?')) {
           const urlObj = new URL(url);
           const params = urlObj.searchParams;
 
+          const extractedImagePath = params.get('imagePath') || params.get('path') || '';
+          console.debug(`[STORAGE] Extracted imagePath from URL params for ${windowId}: "${extractedImagePath}"`);
+
           specialConfig.pictureSettings = {
-            imagePath: params.get('imagePath') || params.get('path') || '',
+            imagePath: extractedImagePath,
             fitMode: params.get('fitMode') || 'fill'
           };
+        } else {
+          console.warn(`[STORAGE] No query parameters in URL for ${windowType} ${windowId}`);
         }
         break;
 
@@ -241,19 +271,31 @@ function extractSpecialConfig(windowId, win, windowType) {
         }
         break;
 
-      case 'door':
-      case 'key':
-        specialConfig.doorKeySettings = {
-          isDoor: windowType === 'door',
-          isKey: windowType === 'key',
-          encrypted: false, // TODO: Extract from actual door/key state
-          relatedItems: [] // TODO: Extract related doors/keys
-        };
-        break;
-
       case 'content':
         // Content-specific settings are already in contentConfig
         break;
+    }
+    
+    // Add door/key specific settings if applicable
+    if (windowType === 'door' || windowType === 'key') {
+      // Extract actual encryption status and relationships from doorKeySystem
+      const encrypted = isItemEncrypted(windowId);
+      const relatedItems = windowType === 'key' 
+        ? getRelatedDoorsForKey(windowId)  // For keys, get related doors
+        : getRelatedKeysForDoor(windowId); // For doors, get related keys
+      
+      console.debug(`[STORAGE] Extracted ${windowType} relationships for ${windowId}:`, {
+        encrypted,
+        relatedItemsCount: relatedItems.length,
+        relatedItems
+      });
+      
+      specialConfig.doorKeySettings = {
+        isDoor: windowType === 'door',
+        isKey: windowType === 'key',
+        encrypted: encrypted,
+        relatedItems: relatedItems
+      };
     }
 
   } catch (error) {
@@ -659,6 +701,17 @@ export function deserializeWindow(windowData, options = {}) {
         warnings: result.warnings || []
       };
     } else {
+      // Check if this is a failure that should allow restoration to continue (Requirement 3.4)
+      // This is specifically for key windows where individual failures shouldn't break the entire restoration
+      if (result.continueRestoration) {
+        console.warn(`[STORAGE] Window ${targetId} restoration failed but continuing with other windows:`, result.message);
+        return {
+          success: false,
+          message: result.message,
+          windowId: targetId,
+          continueRestoration: true // Signal to caller that restoration should continue
+        };
+      }
       return result;
     }
 
@@ -742,6 +795,34 @@ function recreateWindowByType(windowId, windowData) {
         createdWindow = recreatePictureWindow(windowId, windowData);
         break;
 
+      case 'key':
+        // Key restoration has its own comprehensive error handling
+        // Wrap in try-catch to ensure exceptions don't break the restoration process (Requirement 3.4)
+        try {
+          createdWindow = recreateKeyWindow(windowId, windowData);
+          if (!createdWindow) {
+            console.error(`[STORAGE] Key window ${windowId} restoration failed, but continuing with other windows`);
+            return {
+              success: false,
+              message: `Failed to restore key window ${windowId}, but restoration continues`,
+              continueRestoration: true // Signal to continue with other windows
+            };
+          }
+        } catch (keyError) {
+          // Catch any exceptions from key restoration and continue with other windows (Requirement 3.4)
+          console.error(`[STORAGE] Exception during key window ${windowId} restoration:`, {
+            error: keyError.message,
+            stack: keyError.stack,
+            windowId: windowId
+          });
+          return {
+            success: false,
+            message: `Key window ${windowId} restoration threw exception: ${keyError.message}`,
+            continueRestoration: true // Signal to continue with other windows
+          };
+        }
+        break;
+
       case 'content':
         createdWindow = recreateContentWindow(windowId, windowData);
         break;
@@ -758,7 +839,6 @@ function recreateWindowByType(windowId, windowData) {
       case 'terminal':
       case 'desktop':
       case 'video':
-      case 'key':
       case 'generic':
       default:
         createdWindow = recreateGenericWindow(windowId, windowData);
@@ -766,7 +846,12 @@ function recreateWindowByType(windowId, windowData) {
     }
 
     if (!createdWindow) {
-      return { success: false, message: `Failed to create ${windowType} window` };
+      console.error(`[STORAGE] Failed to create ${windowType} window ${windowId}`);
+      return { 
+        success: false, 
+        message: `Failed to create ${windowType} window`,
+        continueRestoration: windowType === 'key' // Continue for keys, stop for others
+      };
     }
 
     // Apply window properties after creation
@@ -779,7 +864,24 @@ function recreateWindowByType(windowId, windowData) {
     };
 
   } catch (error) {
-    console.error(`[STORAGE] Error recreating ${windowType} window:`, error);
+    // Enhanced error logging with context (Requirement 3.3)
+    console.error(`[STORAGE] Error recreating ${windowType} window ${windowId}:`, {
+      error: error.message,
+      stack: error.stack,
+      windowType: windowType,
+      windowId: windowId
+    });
+    
+    // For key windows, continue restoration despite errors (Requirement 3.4)
+    if (windowType === 'key') {
+      console.warn(`[STORAGE] Key window ${windowId} restoration failed, continuing with other windows`);
+      return {
+        success: false,
+        message: `Failed to recreate key window: ${error.message}`,
+        continueRestoration: true
+      };
+    }
+    
     return {
       success: false,
       message: `Failed to recreate ${windowType} window: ${error.message}`
@@ -789,19 +891,34 @@ function recreateWindowByType(windowId, windowData) {
 
 /**
  * Recreate picture window (including doors)
+ * Note: Keys are now handled separately by recreateKeyWindow()
  * @param {string} windowId - Window ID
  * @param {Object} windowData - Window data
  * @returns {BrowserWindow|null} Created window
  */
 function recreatePictureWindow(windowId, windowData) {
-  const { windowConfig, specialConfig } = windowData;
+  const { windowConfig, specialConfig, contentConfig, metadata } = windowData;
 
-  let imagePath = 'renderer/assets/doors/DoorClosed.png'; // Default
+  let imagePath = null;
   let fitMode = 'fill';
 
-  if (specialConfig && specialConfig.pictureSettings) {
-    imagePath = specialConfig.pictureSettings.imagePath || imagePath;
+  // Check specialConfig first (for doors and some picture windows)
+  if (specialConfig && specialConfig.pictureSettings && specialConfig.pictureSettings.imagePath) {
+    imagePath = specialConfig.pictureSettings.imagePath;
     fitMode = specialConfig.pictureSettings.fitMode || fitMode;
+    console.debug(`[STORAGE] Using specialConfig.pictureSettings.imagePath: ${imagePath}`);
+  }
+  
+  // Fallback to contentConfig.path for picture windows
+  if (!imagePath && contentConfig && contentConfig.path) {
+    imagePath = contentConfig.path;
+    console.debug(`[STORAGE] Using contentConfig.path for image: ${imagePath}`);
+  }
+  
+  // Final fallback for doors and picture windows
+  if (!imagePath) {
+    imagePath = 'renderer/assets/doors/DoorClosed.png';
+    console.log(`[STORAGE] No image path found for ${windowId}, using default door image: ${imagePath}`);
   }
 
   const { bounds } = windowConfig;
@@ -814,6 +931,246 @@ function recreatePictureWindow(windowId, windowData) {
     bounds.width,
     bounds.height
   );
+}
+
+/**
+ * Extract key-specific parameters from saved window data
+ * Handles multiple data storage patterns and provides graceful fallbacks
+ * 
+ * @param {Object} windowData - Saved window data
+ * @returns {Object} Extracted key parameters
+ * @property {string|null} imagePath - Custom image path or null for default
+ * @property {boolean} encrypt - Whether the key is encrypted
+ * @property {Array<string>} relatedDoors - Array of related door IDs
+ * @property {Object} bounds - Window bounds {x, y, width, height}
+ * @property {string} title - Window title
+ */
+function extractKeyParameters(windowData) {
+  console.debug(`[STORAGE] Extracting key parameters from window data`);
+  
+  try {
+    // Validate input data structure
+    if (!windowData) {
+      console.error(`[STORAGE] extractKeyParameters called with null/undefined windowData`);
+      throw new Error('Window data is required');
+    }
+    
+    const { windowConfig, specialConfig, contentConfig } = windowData;
+    
+    // Validate windowConfig exists
+    if (!windowConfig) {
+      console.error(`[STORAGE] Missing windowConfig in window data`);
+      throw new Error('Window configuration is required');
+    }
+    
+    // Initialize default parameters with validation
+    const parameters = {
+      imagePath: null,
+      encrypt: false,
+      relatedDoors: [],
+      bounds: windowConfig.bounds || { x: 100, y: 100, width: 200, height: 200 },
+      title: windowConfig.title || 'Key'
+    };
+    
+    // Validate bounds structure
+    if (!parameters.bounds.width || !parameters.bounds.height) {
+      console.warn(`[STORAGE] Invalid bounds in window data, using defaults:`, parameters.bounds);
+      parameters.bounds = { x: 100, y: 100, width: 200, height: 200 };
+    }
+    
+    // Extract image path - try multiple locations with priority order
+    // Priority 1: contentConfig.path (primary location for keys)
+    if (contentConfig && contentConfig.path) {
+      parameters.imagePath = contentConfig.path;
+      console.debug(`[STORAGE] Extracted image path from contentConfig.path: ${parameters.imagePath}`);
+    }
+    
+    // Priority 2: specialConfig.pictureSettings.imagePath (fallback location)
+    if (!parameters.imagePath && specialConfig && specialConfig.pictureSettings && specialConfig.pictureSettings.imagePath) {
+      parameters.imagePath = specialConfig.pictureSettings.imagePath;
+      console.debug(`[STORAGE] Extracted image path from specialConfig.pictureSettings: ${parameters.imagePath}`);
+    }
+    
+    // Log if no image path was found (will use default)
+    if (!parameters.imagePath) {
+      console.debug(`[STORAGE] No custom image path found in saved data, will use default key image`);
+    }
+    
+    // Extract encryption status and related doors from specialConfig
+    if (specialConfig && specialConfig.doorKeySettings) {
+      // Handle missing or corrupted doorKeySettings gracefully
+      try {
+        parameters.encrypt = specialConfig.doorKeySettings.encrypted || false;
+        parameters.relatedDoors = Array.isArray(specialConfig.doorKeySettings.relatedItems) 
+          ? specialConfig.doorKeySettings.relatedItems 
+          : [];
+        
+        console.debug(`[STORAGE] Extracted encryption status: ${parameters.encrypt}`);
+        console.debug(`[STORAGE] Extracted related doors: [${parameters.relatedDoors.join(', ')}]`);
+      } catch (error) {
+        // Enhanced error logging (Requirement 3.3)
+        console.warn(`[STORAGE] Error extracting doorKeySettings, using defaults:`, {
+          error: error.message,
+          doorKeySettings: specialConfig.doorKeySettings
+        });
+        // Keep default values (encrypt: false, relatedDoors: [])
+      }
+    } else {
+      console.debug(`[STORAGE] No doorKeySettings found, using default values`);
+    }
+    
+    // Validate extracted data with detailed logging
+    if (parameters.imagePath && typeof parameters.imagePath !== 'string') {
+      console.warn(`[STORAGE] Invalid imagePath type (${typeof parameters.imagePath}), resetting to null:`, parameters.imagePath);
+      parameters.imagePath = null;
+    }
+    
+    if (typeof parameters.encrypt !== 'boolean') {
+      console.warn(`[STORAGE] Invalid encrypt type (${typeof parameters.encrypt}), resetting to false:`, parameters.encrypt);
+      parameters.encrypt = false;
+    }
+    
+    if (!Array.isArray(parameters.relatedDoors)) {
+      console.warn(`[STORAGE] Invalid relatedDoors type (${typeof parameters.relatedDoors}), resetting to empty array:`, parameters.relatedDoors);
+      parameters.relatedDoors = [];
+    }
+    
+    console.debug(`[STORAGE] Key parameters extracted successfully:`, {
+      hasImagePath: !!parameters.imagePath,
+      imagePath: parameters.imagePath || '(using default)',
+      encrypt: parameters.encrypt,
+      relatedDoorsCount: parameters.relatedDoors.length,
+      bounds: parameters.bounds,
+      title: parameters.title
+    });
+    
+    return parameters;
+    
+  } catch (error) {
+    // Enhanced error logging with full context (Requirement 3.3)
+    console.error(`[STORAGE] Critical error extracting key parameters:`, {
+      error: error.message,
+      stack: error.stack,
+      hasWindowData: !!windowData,
+      hasWindowConfig: !!(windowData && windowData.windowConfig),
+      hasContentConfig: !!(windowData && windowData.contentConfig),
+      hasSpecialConfig: !!(windowData && windowData.specialConfig)
+    });
+    
+    // Return safe defaults to allow graceful degradation (Requirement 3.2)
+    console.warn(`[STORAGE] Returning default key parameters due to extraction error`);
+    return {
+      imagePath: null,
+      encrypt: false,
+      relatedDoors: [],
+      bounds: { x: 100, y: 100, width: 200, height: 200 },
+      title: 'Key'
+    };
+  }
+}
+
+/**
+ * Recreate key window with proper image path resolution
+ * @param {string} windowId - Window ID
+ * @param {Object} windowData - Window data
+ * @returns {BrowserWindow|null} Created window
+ */
+function recreateKeyWindow(windowId, windowData) {
+  console.debug(`[STORAGE] Recreating key window: ${windowId}`);
+  
+  try {
+    // Extract key-specific parameters from saved window data
+    const keyParams = extractKeyParameters(windowData);
+    
+    const { imagePath, encrypt, relatedDoors, bounds, title } = keyParams;
+    
+    // Apply resolveKeyImagePath for consistent image path resolution
+    // This ensures the same fallback logic as new key creation:
+    // 1. If imagePath is valid -> use it
+    // 2. If imagePath is null/invalid -> use default Key.png
+    // 3. If Key.png missing -> fallback to Keychain.jpeg
+    const resolvedImagePath = resolveKeyImagePath(imagePath);
+    console.log(`[STORAGE] Resolved key image path for ${windowId}: ${resolvedImagePath}`);
+    
+    // Log warning for missing custom images (Requirement 3.1)
+    if (imagePath && imagePath !== resolvedImagePath) {
+      console.warn(`[STORAGE] Custom image path "${imagePath}" was not found or invalid for key ${windowId}, using fallback: ${resolvedImagePath}`);
+    }
+    
+    // Validate that we have a resolved path before proceeding
+    if (!resolvedImagePath) {
+      console.error(`[STORAGE] Failed to resolve image path for key ${windowId}, cannot create key window`);
+      throw new Error(`Image path resolution failed for key ${windowId}`);
+    }
+    
+    // Build HTML content using the same logic as createKey
+    // Use pictureViewer.html with the resolved image path and cover fit mode
+    const htmlContent = `pictureViewer.html?imagePath=${encodeURIComponent(resolvedImagePath)}&fitMode=cover`;
+    
+    // Create the key window using createWindow with the resolved image path
+    const createdWindow = createWindow(windowId, {
+      width: bounds.width,
+      height: bounds.height,
+      x: bounds.x,
+      y: bounds.y,
+      title: title,
+      otherContents: htmlContent
+    });
+    
+    // Verify window was created successfully
+    if (!createdWindow) {
+      console.error(`[STORAGE] Failed to create key window ${windowId} - createWindow returned null`);
+      throw new Error(`Window creation failed for key ${windowId}`);
+    }
+    
+    console.log(`[STORAGE] Successfully recreated key window: ${windowId} with image: ${resolvedImagePath}`);
+    console.debug(`[STORAGE] Key window parameters - encrypt: ${encrypt}, relatedDoors: [${relatedDoors.join(', ')}]`);
+    
+    return createdWindow;
+    
+  } catch (error) {
+    // Log detailed error information for debugging (Requirement 3.3)
+    console.error(`[STORAGE] Error recreating key window ${windowId}:`, {
+      error: error.message,
+      stack: error.stack,
+      windowData: {
+        hasContentConfig: !!windowData.contentConfig,
+        hasSpecialConfig: !!windowData.specialConfig,
+        hasWindowConfig: !!windowData.windowConfig
+      }
+    });
+    
+    // Attempt graceful degradation with fallback image (Requirement 3.2)
+    try {
+      console.warn(`[STORAGE] Attempting to create key window ${windowId} with default fallback image`);
+      
+      const fallbackImagePath = resolveKeyImagePath(null); // Get default image
+      const fallbackHtmlContent = `pictureViewer.html?imagePath=${encodeURIComponent(fallbackImagePath)}&fitMode=cover`;
+      
+      const bounds = windowData.windowConfig?.bounds || { x: 100, y: 100, width: 200, height: 200 };
+      const title = windowData.windowConfig?.title || 'Key';
+      
+      const fallbackWindow = createWindow(windowId, {
+        width: bounds.width,
+        height: bounds.height,
+        x: bounds.x,
+        y: bounds.y,
+        title: title,
+        otherContents: fallbackHtmlContent
+      });
+      
+      if (fallbackWindow) {
+        console.warn(`[STORAGE] Successfully created key window ${windowId} with fallback image: ${fallbackImagePath}`);
+        return fallbackWindow;
+      }
+    } catch (fallbackError) {
+      console.error(`[STORAGE] Fallback creation also failed for key ${windowId}:`, fallbackError.message);
+    }
+    
+    // Return null to allow restoration to continue with other windows (Requirement 3.2, 3.4)
+    console.error(`[STORAGE] Unable to recreate key window ${windowId}, restoration will continue with other windows`);
+    return null;
+  }
 }
 
 /**

@@ -1,6 +1,7 @@
 import { createDoor, createKey, getAllWindows } from './windowManager.js';
 import { initializeDoorRelation, initializeKeyRelation, addEncryptedItem } from './doorKeySystem.js';
-import '../../logger.js'; // 导入日志系统
+import { triggerStateReset, triggerLevelCompleted, triggerStateExported } from '../callbacks/gameStateCallbacks.js';
+import '../../../logger.js'; // 导入日志系统
 
 // 游戏状态
 let level1Completed = false;
@@ -100,7 +101,13 @@ export function isLevel1Completed() {
  * @param {boolean} completed - 是否完成
  */
 export function setLevel1Completed(completed) {
+  const wasCompleted = level1Completed;
   level1Completed = completed;
+  
+  // Trigger level-completed callback if level was just completed
+  if (completed && !wasCompleted) {
+    triggerLevelCompleted('level-1', { completed: true });
+  }
 }
 
 /**
@@ -109,6 +116,9 @@ export function setLevel1Completed(completed) {
 export function resetGameState() {
   level1Completed = false;
   console.log('[GAME] 游戏状态已重置');
+  
+  // Trigger state-reset callback
+  triggerStateReset();
 }
 
 /**
@@ -134,6 +144,10 @@ export function exportGameLogicState() {
   };
   
   console.log('[GAME] Game logic state exported', { state });
+  
+  // Trigger state-exported callback
+  triggerStateExported({ exportedState: state });
+  
   return state;
 }
 

@@ -26,7 +26,7 @@
 
 import { app, globalShortcut, Notification } from 'electron';
 import '../../logger.js';
-import { saveGameState } from './gameStateManager.js';
+import { saveGameState } from './systems/gameStateManager.js';
 import { isGameStarted } from '../../main.js';
 
 // Platform detection
