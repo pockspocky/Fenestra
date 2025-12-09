@@ -26,14 +26,14 @@ import {
   getWindowOffset,
   setKeyDoorMaxOverlap,
   getKeyDoorMaxOverlap
-} from './src/core/windowManager.js';
+} from './src/core/systems/windowManager.js';
 
 import {
   initializeGameLogic,
   handleVideoWindowClosed,
   createDemoDoorsAndKeys,
   getGameState
-} from './src/core/gameLogic.js';
+} from './src/core/systems/gameLogic.js';
 
 import {
   initializeWorker,
@@ -44,17 +44,17 @@ import {
 import {
   initializeIpcHandlers,
   cleanupIpcHandlers
-} from './src/core/ipcHandlers.js';
+} from './src/core/handlers/ipcHandlers.js';
 
 import {
   getRelationsDebugInfo
-} from './src/core/doorKeySystem.js';
+} from './src/core/systems/doorKeySystem.js';
 
 import {
   initializeEmailSystem,
   toggleEmailWindow,
   cleanupEmailSystem
-} from './src/core/emailSystem.js';
+} from './src/core/systems/emailSystem.js';
 
 import {
   createStartMenu,
@@ -63,7 +63,7 @@ import {
 
 import {
   saveGameState
-} from './src/core/gameStateManager.js';
+} from './src/core/systems/gameStateManager.js';
 
 import {
   registerGameHotkeys,
