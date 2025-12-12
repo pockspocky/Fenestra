@@ -1,16 +1,86 @@
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, dialog } from 'electron';
 import path from 'node:path';
+import fs from 'node:fs';
 import '../../logger.js';
 import { hasSavedState, getSaveMetadata, loadGameState, deleteSavedState } from './systems/gameStateManager.js';
 import { createDemoDoorsAndKeys } from './systems/gameLogic.js';
 import { deserializeWindow } from './windowStorage.js';
 import { importRelationshipState } from './systems/doorKeySystem.js';
 import { importGameLogicState } from './systems/gameLogic.js';
+import { getGameDataDirectory } from './config.js';
 
 // Start menu state
 let startMenuWindow = null;
 let isMenuActive = false;
 let gameStartedCallback = null;
+
+/**
+ * Clear all files from the storage directory
+ * @returns {Promise<Object>} Result object with files removed count and any errors
+ */
+export async function clearStorageDirectory() {
+  console.log('[START_MENU] Clearing storage directory');
+  
+  const result = {
+    success: true,
+    filesRemoved: 0,
+    errors: []
+  };
+  
+  try {
+    // Get storage directory path
+    const gameDataDir = getGameDataDirectory();
+    const storageDir = path.join(gameDataDir, '.fenestra-storage');
+    
+    console.log(`[START_MENU] Storage directory path: ${storageDir}`);
+    
+    // Check if directory exists
+    if (!fs.existsSync(storageDir)) {
+      console.log('[START_MENU] Storage directory does not exist, nothing to clear');
+      return result;
+    }
+    
+    // Read all files in directory
+    const files = fs.readdirSync(storageDir);
+    console.log(`[START_MENU] Found ${files.length} files in storage directory`);
+    
+    // Delete each file individually
+    for (const file of files) {
+      const filePath = path.join(storageDir, file);
+      
+      try {
+        // Check if it's a file (not a directory)
+        const stats = fs.statSync(filePath);
+        if (stats.isFile()) {
+          fs.unlinkSync(filePath);
+          result.filesRemoved++;
+          console.log(`[START_MENU] Deleted file: ${file}`);
+        } else {
+          console.log(`[START_MENU] Skipping non-file: ${file}`);
+        }
+      } catch (error) {
+        const errorMsg = `Failed to delete ${file}: ${error.message}`;
+        result.errors.push(errorMsg);
+        console.error(`[START_MENU] ${errorMsg}`);
+      }
+    }
+    
+    console.log(`[START_MENU] Storage clearing complete: ${result.filesRemoved} files removed, ${result.errors.length} errors`);
+    
+    // Set success to false if there were errors
+    if (result.errors.length > 0) {
+      result.success = false;
+    }
+    
+    return result;
+    
+  } catch (error) {
+    console.error('[START_MENU] Failed to clear storage directory:', error);
+    result.success = false;
+    result.errors.push(`Storage clearing failed: ${error.message}`);
+    return result;
+  }
+}
 
 /**
  * Create and display start menu window
@@ -105,8 +175,69 @@ export async function handleNewGame() {
   console.log('[START_MENU] Handling new game selection');
   
   try {
+    // Check if saved state exists (Requirement 1.1)
+    if (hasSavedState()) {
+      console.log('[START_MENU] Saved state exists, displaying confirmation dialog');
+      
+      // Display confirmation dialog (Requirements 1.1, 2.1, 2.2, 2.3, 2.4, 2.5)
+      let response;
+      try {
+        const result = await dialog.showMessageBox({
+          type: 'warning',
+          title: 'Start New Game?',
+          message: 'Start New Game?',
+          detail: 'This will delete your current saved game. Are you sure you want to start a new game?',
+          buttons: ['Cancel', 'Start New Game'],
+          defaultId: 0,  // Default to Cancel for safety (Requirement 2.3)
+          cancelId: 0,   // Escape key maps to Cancel (Requirement 2.5)
+          noLink: true   // Prevent button grouping on macOS
+        });
+        
+        response = result.response;
+        console.log(`[START_MENU] User response to confirmation dialog: ${response === 0 ? 'Cancel' : 'Start New Game'}`);
+        
+      } catch (error) {
+        // Error handling for dialog display failures (Requirement 5.5)
+        console.error('[START_MENU] Failed to display confirmation dialog:', {
+          error: error.message,
+          stack: error.stack
+        });
+        console.log('[START_MENU] Proceeding with new game as fallback');
+        // Proceed with new game as fallback (safer than blocking user)
+        response = 1;
+      }
+      
+      // Handle user cancellation (Requirement 1.4, 5.4)
+      if (response === 0) {
+        console.log('[START_MENU] User cancelled new game action');
+        return {
+          success: false,
+          cancelled: true,
+          message: 'New game cancelled by user'
+        };
+      }
+    } else {
+      // No saved state exists, proceed directly (Requirement 1.5)
+      console.log('[START_MENU] No saved state exists, proceeding directly to new game');
+    }
+    
     // Close start menu
     closeStartMenu();
+    
+    // Clear storage directory before creating demo content (Requirements 1.3, 5.3)
+    console.log('[START_MENU] Clearing storage directory before creating demo content');
+    const clearResult = await clearStorageDirectory();
+    
+    // Log storage clearing results (Requirement 4.5)
+    console.log(`[START_MENU] Storage cleared: ${clearResult.filesRemoved} files removed, ${clearResult.errors.length} errors`);
+    
+    // Handle storage clearing errors but continue with demo content (Requirement 5.6)
+    if (!clearResult.success || clearResult.errors.length > 0) {
+      console.warn('[START_MENU] Storage clearing encountered errors, but continuing with demo content creation');
+      clearResult.errors.forEach(error => {
+        console.error(`[START_MENU] Storage clearing error: ${error}`);
+      });
+    }
     
     // Delete any existing saved state
     if (hasSavedState()) {
@@ -119,7 +250,7 @@ export async function handleNewGame() {
       }
     }
     
-    // Initialize demo content
+    // Initialize demo content after storage is cleared (Requirements 1.3, 5.3)
     console.log('[START_MENU] Creating demo content');
     createDemoDoorsAndKeys();
     
@@ -131,7 +262,11 @@ export async function handleNewGame() {
     console.log('[START_MENU] New game started successfully');
     return {
       success: true,
-      message: 'New game started successfully'
+      message: 'New game started successfully',
+      storageCleared: {
+        filesRemoved: clearResult.filesRemoved,
+        errors: clearResult.errors
+      }
     };
     
   } catch (error) {
