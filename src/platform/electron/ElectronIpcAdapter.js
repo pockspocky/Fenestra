@@ -1,0 +1,562 @@
+/**
+ * Electron IPC Adapter
+ * 
+ * Provides a wrapper around Electron's IPC system with enhanced logging,
+ * action callbacks, and error handling.
+ */
+
+import electron from 'electron';
+
+const { ipcMain } = electron || {};
+
+export class ElectronIpcAdapter {
+  constructor(options = {}) {
+    this.logger = options.logger;
+    this.actionCallbacks = null; // Temporarily disabled for testing
+    this.handlers = new Map(); // channel -> handler info
+    this.middleware = [];
+    this.isElectronAvailable = !!ipcMain;
+    
+    this.logger?.debug('[ElectronIpcAdapter] Initialized', { 
+      options,
+      electronAvailable: this.isElectronAvailable 
+    });
+  }
+
+  /**
+   * Register an IPC handler
+   * @param {string} channel - IPC channel name
+   * @param {Function} handler - Handler function
+   * @param {Object} options - Handler options
+   */
+  handle(channel, handler, options = {}) {
+    const context = {
+      action: 'ipc-handler-register',
+      source: 'ElectronIpcAdapter',
+      channel,
+      options
+    };
+
+    try {
+      this.actionCallbacks?.trigger('ipc-handler-register', 'before', context).catch(err => {
+        this.logger?.warn('[ElectronIpcAdapter] Handler register before callback failed', { error: err.message });
+      });
+
+      this.logger?.debug('[ElectronIpcAdapter] Registering IPC handler', context);
+
+      // Wrap handler with logging and action callbacks
+      const wrappedHandler = async (event, ...args) => {
+        const handlerContext = {
+          action: 'ipc-handler-execute',
+          source: 'ElectronIpcAdapter',
+          channel,
+          args,
+          timestamp: Date.now()
+        };
+
+        try {
+          // Execute before callbacks
+          await this.actionCallbacks?.trigger('ipc-handler-execute', 'before', handlerContext);
+
+          this.logger?.debug('[ElectronIpcAdapter] Executing IPC handler', {
+            channel,
+            argsCount: args.length
+          });
+
+          // Execute middleware
+          let result = args;
+          for (const middleware of this.middleware) {
+            result = await middleware(channel, result, event);
+          }
+
+          // Execute the actual handler
+          const handlerResult = await handler(event, ...result);
+
+          handlerContext.success = true;
+          handlerContext.result = handlerResult;
+          handlerContext.duration = Date.now() - handlerContext.timestamp;
+
+          // Execute after callbacks
+          await this.actionCallbacks?.trigger('ipc-handler-execute', 'after', handlerContext);
+
+          this.logger?.info('[ElectronIpcAdapter] IPC handler executed successfully', {
+            channel,
+            duration: handlerContext.duration
+          });
+
+          return handlerResult;
+
+        } catch (error) {
+          handlerContext.success = false;
+          handlerContext.error = error;
+          handlerContext.duration = Date.now() - handlerContext.timestamp;
+
+          // Execute error callbacks
+          await this.actionCallbacks?.trigger('ipc-handler-execute', 'error', handlerContext);
+
+          this.logger?.error('[ElectronIpcAdapter] IPC handler failed', {
+            channel,
+            error: error.message,
+            duration: handlerContext.duration,
+            stack: error.stack
+          });
+
+          throw error;
+        }
+      };
+
+      // Register with Electron (if available)
+      if (this.isElectronAvailable) {
+        ipcMain.handle(channel, wrappedHandler);
+      } else {
+        this.logger?.warn('[ElectronIpcAdapter] Electron not available, handler registered in memory only', { channel });
+      }
+
+      // Store handler info
+      this.handlers.set(channel, {
+        originalHandler: handler,
+        wrappedHandler,
+        options,
+        registeredAt: Date.now()
+      });
+
+      context.success = true;
+      this.actionCallbacks?.trigger('ipc-handler-register', 'after', context).catch(err => {
+        this.logger?.warn('[ElectronIpcAdapter] Handler register after callback failed', { error: err.message });
+      });
+
+      this.logger?.info('[ElectronIpcAdapter] IPC handler registered', { channel });
+
+    } catch (error) {
+      context.success = false;
+      context.error = error;
+
+      this.actionCallbacks?.trigger('ipc-handler-register', 'error', context).catch(err => {
+        this.logger?.warn('[ElectronIpcAdapter] Handler register error callback failed', { error: err.message });
+      });
+
+      this.logger?.error('[ElectronIpcAdapter] Failed to register IPC handler', {
+        channel,
+        error: error.message
+      });
+
+      throw error;
+    }
+  }
+
+  /**
+   * Register an IPC listener (for events, not request-response)
+   * @param {string} channel - IPC channel name
+   * @param {Function} listener - Listener function
+   * @param {Object} options - Listener options
+   */
+  on(channel, listener, options = {}) {
+    const context = {
+      action: 'ipc-listener-register',
+      source: 'ElectronIpcAdapter',
+      channel,
+      options
+    };
+
+    try {
+      this.actionCallbacks?.trigger('ipc-listener-register', 'before', context).catch(err => {
+        this.logger?.warn('[ElectronIpcAdapter] Listener register before callback failed', { error: err.message });
+      });
+
+      this.logger?.debug('[ElectronIpcAdapter] Registering IPC listener', context);
+
+      // Wrap listener with logging and action callbacks
+      const wrappedListener = async (event, ...args) => {
+        const listenerContext = {
+          action: 'ipc-listener-execute',
+          source: 'ElectronIpcAdapter',
+          channel,
+          args,
+          timestamp: Date.now()
+        };
+
+        try {
+          // Execute before callbacks
+          await this.actionCallbacks?.execute('before', listenerContext);
+
+          this.logger?.debug('[ElectronIpcAdapter] Executing IPC listener', {
+            channel,
+            argsCount: args.length
+          });
+
+          // Execute the listener
+          await listener(event, ...args);
+
+          listenerContext.success = true;
+          listenerContext.duration = Date.now() - listenerContext.timestamp;
+
+          // Execute after callbacks
+          await this.actionCallbacks?.execute('after', listenerContext);
+
+          this.logger?.debug('[ElectronIpcAdapter] IPC listener executed successfully', {
+            channel,
+            duration: listenerContext.duration
+          });
+
+        } catch (error) {
+          listenerContext.success = false;
+          listenerContext.error = error;
+          listenerContext.duration = Date.now() - listenerContext.timestamp;
+
+          // Execute error callbacks
+          await this.actionCallbacks?.execute('error', listenerContext);
+
+          this.logger?.error('[ElectronIpcAdapter] IPC listener failed', {
+            channel,
+            error: error.message,
+            duration: listenerContext.duration
+          });
+
+          // Don't re-throw for listeners
+        }
+      };
+
+      // Register with Electron (if available)
+      if (this.isElectronAvailable) {
+        ipcMain.on(channel, wrappedListener);
+      } else {
+        this.logger?.warn('[ElectronIpcAdapter] Electron not available, listener registered in memory only', { channel });
+      }
+
+      // Store listener info (note: we can't easily track individual listeners with ipcMain.on)
+      const existingInfo = this.handlers.get(channel) || { listeners: [] };
+      existingInfo.listeners = existingInfo.listeners || [];
+      existingInfo.listeners.push({
+        originalListener: listener,
+        wrappedListener,
+        options,
+        registeredAt: Date.now()
+      });
+      this.handlers.set(channel, existingInfo);
+
+      context.success = true;
+      this.actionCallbacks?.execute('after', context).catch(err => {
+        this.logger?.warn('[ElectronIpcAdapter] Listener register after callback failed', { error: err.message });
+      });
+
+      this.logger?.info('[ElectronIpcAdapter] IPC listener registered', { channel });
+
+    } catch (error) {
+      context.success = false;
+      context.error = error;
+
+      this.actionCallbacks?.execute('error', context).catch(err => {
+        this.logger?.warn('[ElectronIpcAdapter] Listener register error callback failed', { error: err.message });
+      });
+
+      this.logger?.error('[ElectronIpcAdapter] Failed to register IPC listener', {
+        channel,
+        error: error.message
+      });
+
+      throw error;
+    }
+  }
+
+  /**
+   * Remove an IPC handler
+   * @param {string} channel - IPC channel name
+   */
+  removeHandler(channel) {
+    const context = {
+      action: 'ipc-handler-remove',
+      source: 'ElectronIpcAdapter',
+      channel
+    };
+
+    try {
+      this.actionCallbacks?.execute('before', context).catch(err => {
+        this.logger?.warn('[ElectronIpcAdapter] Handler remove before callback failed', { error: err.message });
+      });
+
+      this.logger?.debug('[ElectronIpcAdapter] Removing IPC handler', context);
+
+      // Remove from Electron (if available)
+      if (this.isElectronAvailable) {
+        ipcMain.removeHandler(channel);
+      }
+
+      // Remove from our tracking
+      const handlerInfo = this.handlers.get(channel);
+      if (handlerInfo) {
+        this.handlers.delete(channel);
+      }
+
+      context.success = true;
+      context.hadHandler = !!handlerInfo;
+
+      this.actionCallbacks?.execute('after', context).catch(err => {
+        this.logger?.warn('[ElectronIpcAdapter] Handler remove after callback failed', { error: err.message });
+      });
+
+      this.logger?.info('[ElectronIpcAdapter] IPC handler removed', {
+        channel,
+        hadHandler: context.hadHandler
+      });
+
+    } catch (error) {
+      context.success = false;
+      context.error = error;
+
+      this.actionCallbacks?.execute('error', context).catch(err => {
+        this.logger?.warn('[ElectronIpcAdapter] Handler remove error callback failed', { error: err.message });
+      });
+
+      this.logger?.error('[ElectronIpcAdapter] Failed to remove IPC handler', {
+        channel,
+        error: error.message
+      });
+
+      throw error;
+    }
+  }
+
+  /**
+   * Remove all listeners for a channel
+   * @param {string} channel - IPC channel name
+   */
+  removeAllListeners(channel) {
+    const context = {
+      action: 'ipc-listeners-remove-all',
+      source: 'ElectronIpcAdapter',
+      channel
+    };
+
+    try {
+      this.actionCallbacks?.execute('before', context).catch(err => {
+        this.logger?.warn('[ElectronIpcAdapter] Remove all listeners before callback failed', { error: err.message });
+      });
+
+      this.logger?.debug('[ElectronIpcAdapter] Removing all IPC listeners', context);
+
+      // Remove from Electron (if available)
+      if (this.isElectronAvailable) {
+        ipcMain.removeAllListeners(channel);
+      }
+
+      // Update our tracking
+      const handlerInfo = this.handlers.get(channel);
+      if (handlerInfo && handlerInfo.listeners) {
+        context.listenerCount = handlerInfo.listeners.length;
+        delete handlerInfo.listeners;
+        
+        if (Object.keys(handlerInfo).length === 0) {
+          this.handlers.delete(channel);
+        }
+      }
+
+      context.success = true;
+
+      this.actionCallbacks?.execute('after', context).catch(err => {
+        this.logger?.warn('[ElectronIpcAdapter] Remove all listeners after callback failed', { error: err.message });
+      });
+
+      this.logger?.info('[ElectronIpcAdapter] All IPC listeners removed', {
+        channel,
+        listenerCount: context.listenerCount || 0
+      });
+
+    } catch (error) {
+      context.success = false;
+      context.error = error;
+
+      this.actionCallbacks?.execute('error', context).catch(err => {
+        this.logger?.warn('[ElectronIpcAdapter] Remove all listeners error callback failed', { error: err.message });
+      });
+
+      this.logger?.error('[ElectronIpcAdapter] Failed to remove all IPC listeners', {
+        channel,
+        error: error.message
+      });
+
+      throw error;
+    }
+  }
+
+  /**
+   * Add middleware for IPC processing
+   * @param {Function} middleware - Middleware function
+   */
+  addMiddleware(middleware) {
+    if (typeof middleware !== 'function') {
+      throw new Error('Middleware must be a function');
+    }
+
+    this.middleware.push(middleware);
+    
+    this.logger?.info('[ElectronIpcAdapter] Middleware added', {
+      middlewareCount: this.middleware.length
+    });
+  }
+
+  /**
+   * Remove middleware
+   * @param {Function} middleware - Middleware function to remove
+   */
+  removeMiddleware(middleware) {
+    const index = this.middleware.indexOf(middleware);
+    if (index !== -1) {
+      this.middleware.splice(index, 1);
+      
+      this.logger?.info('[ElectronIpcAdapter] Middleware removed', {
+        middlewareCount: this.middleware.length
+      });
+    }
+  }
+
+  /**
+   * Get information about registered handlers and listeners
+   * @returns {Object} Handler and listener information
+   */
+  getHandlerInfo() {
+    const info = {
+      handlerCount: 0,
+      listenerCount: 0,
+      channels: [],
+      middlewareCount: this.middleware.length
+    };
+
+    for (const [channel, handlerInfo] of this.handlers) {
+      info.channels.push(channel);
+      
+      if (handlerInfo.originalHandler) {
+        info.handlerCount++;
+      }
+      
+      if (handlerInfo.listeners) {
+        info.listenerCount += handlerInfo.listeners.length;
+      }
+    }
+
+    return info;
+  }
+
+  /**
+   * Send message to all renderer processes
+   * @param {string} channel - IPC channel
+   * @param {...any} args - Arguments to send
+   */
+  broadcast(channel, ...args) {
+    const context = {
+      action: 'ipc-broadcast',
+      source: 'ElectronIpcAdapter',
+      channel,
+      argsCount: args.length
+    };
+
+    try {
+      this.actionCallbacks?.execute('before', context).catch(err => {
+        this.logger?.warn('[ElectronIpcAdapter] Broadcast before callback failed', { error: err.message });
+      });
+
+      this.logger?.debug('[ElectronIpcAdapter] Broadcasting IPC message', context);
+
+      // Get all windows and send to each
+      const windows = electron.BrowserWindow.getAllWindows();
+      
+      let sentCount = 0;
+      for (const window of windows) {
+        if (!window.isDestroyed()) {
+          window.webContents.send(channel, ...args);
+          sentCount++;
+        }
+      }
+
+      context.success = true;
+      context.windowCount = sentCount;
+
+      this.actionCallbacks?.execute('after', context).catch(err => {
+        this.logger?.warn('[ElectronIpcAdapter] Broadcast after callback failed', { error: err.message });
+      });
+
+      this.logger?.info('[ElectronIpcAdapter] IPC message broadcasted', {
+        channel,
+        windowCount: sentCount
+      });
+
+    } catch (error) {
+      context.success = false;
+      context.error = error;
+
+      this.actionCallbacks?.execute('error', context).catch(err => {
+        this.logger?.warn('[ElectronIpcAdapter] Broadcast error callback failed', { error: err.message });
+      });
+
+      this.logger?.error('[ElectronIpcAdapter] Failed to broadcast IPC message', {
+        channel,
+        error: error.message
+      });
+
+      throw error;
+    }
+  }
+
+  /**
+   * Cleanup all handlers and listeners
+   */
+  cleanup() {
+    const context = {
+      action: 'ipc-cleanup',
+      source: 'ElectronIpcAdapter'
+    };
+
+    try {
+      this.actionCallbacks?.execute('before', context).catch(err => {
+        this.logger?.warn('[ElectronIpcAdapter] Cleanup before callback failed', { error: err.message });
+      });
+
+      this.logger?.debug('[ElectronIpcAdapter] Cleaning up IPC handlers and listeners');
+
+      const channelCount = this.handlers.size;
+
+      // Remove all handlers and listeners
+      for (const channel of this.handlers.keys()) {
+        try {
+          if (this.isElectronAvailable) {
+            ipcMain.removeHandler(channel);
+            ipcMain.removeAllListeners(channel);
+          }
+        } catch (error) {
+          this.logger?.warn('[ElectronIpcAdapter] Error cleaning up channel', {
+            channel,
+            error: error.message
+          });
+        }
+      }
+
+      // Clear our tracking
+      this.handlers.clear();
+      this.middleware.length = 0;
+
+      context.success = true;
+      context.channelCount = channelCount;
+
+      this.actionCallbacks?.execute('after', context).catch(err => {
+        this.logger?.warn('[ElectronIpcAdapter] Cleanup after callback failed', { error: err.message });
+      });
+
+      this.logger?.info('[ElectronIpcAdapter] Cleanup completed', {
+        channelCount
+      });
+
+    } catch (error) {
+      context.success = false;
+      context.error = error;
+
+      this.actionCallbacks?.execute('error', context).catch(err => {
+        this.logger?.warn('[ElectronIpcAdapter] Cleanup error callback failed', { error: err.message });
+      });
+
+      this.logger?.error('[ElectronIpcAdapter] Cleanup failed', {
+        error: error.message
+      });
+
+      throw error;
+    }
+  }
+}
