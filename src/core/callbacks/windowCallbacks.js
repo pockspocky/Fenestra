@@ -8,7 +8,7 @@
  */
 
 import '../../../logger.js';
-import { callbackRegistry } from '../callbackRegistry.js';
+import { createCallbackModule } from './callbackFactory.js';
 
 /**
  * Window event types
@@ -20,6 +20,13 @@ export const WINDOW_EVENTS = {
   RESIZED: 'window-resized',
   READY: 'window-ready'
 };
+
+// Create the callback module using the factory
+const windowCallbacks = createCallbackModule({
+  eventTypes: WINDOW_EVENTS,
+  moduleName: 'windowManager',
+  debugPrefix: '[WINDOW_CALLBACK]'
+});
 
 /**
  * Register a callback for window creation events
@@ -46,9 +53,7 @@ export const WINDOW_EVENTS = {
  *   { entityId: 'window-1', priority: 10 }
  * );
  */
-export function registerWindowCreatedCallback(callback, options = {}) {
-  return callbackRegistry.register(WINDOW_EVENTS.CREATED, callback, options);
-}
+export const registerWindowCreatedCallback = windowCallbacks.registerCREATEDCallback;
 
 /**
  * Register a callback for window closed events
@@ -65,9 +70,7 @@ export function registerWindowCreatedCallback(callback, options = {}) {
  *   console.log('Window closed:', eventData.entityId);
  * });
  */
-export function registerWindowClosedCallback(callback, options = {}) {
-  return callbackRegistry.register(WINDOW_EVENTS.CLOSED, callback, options);
-}
+export const registerWindowClosedCallback = windowCallbacks.registerCLOSEDCallback;
 
 /**
  * Register a callback for window moved events
@@ -84,9 +87,7 @@ export function registerWindowClosedCallback(callback, options = {}) {
  *   console.log('Window moved:', eventData.data.position);
  * });
  */
-export function registerWindowMovedCallback(callback, options = {}) {
-  return callbackRegistry.register(WINDOW_EVENTS.MOVED, callback, options);
-}
+export const registerWindowMovedCallback = windowCallbacks.registerMOVEDCallback;
 
 /**
  * Register a callback for window resized events
@@ -103,9 +104,7 @@ export function registerWindowMovedCallback(callback, options = {}) {
  *   console.log('Window resized:', eventData.data.size);
  * });
  */
-export function registerWindowResizedCallback(callback, options = {}) {
-  return callbackRegistry.register(WINDOW_EVENTS.RESIZED, callback, options);
-}
+export const registerWindowResizedCallback = windowCallbacks.registerRESIZEDCallback;
 
 /**
  * Register a callback for window ready-to-show events
@@ -122,9 +121,7 @@ export function registerWindowResizedCallback(callback, options = {}) {
  *   console.log('Window ready:', eventData.entityId);
  * });
  */
-export function registerWindowReadyCallback(callback, options = {}) {
-  return callbackRegistry.register(WINDOW_EVENTS.READY, callback, options);
-}
+export const registerWindowReadyCallback = windowCallbacks.registerREADYCallback;
 
 /**
  * Unregister a window callback
@@ -136,9 +133,7 @@ export function registerWindowReadyCallback(callback, options = {}) {
  * const regId = registerWindowCreatedCallback(callback);
  * unregisterWindowCallback(regId);
  */
-export function unregisterWindowCallback(registrationId) {
-  return callbackRegistry.unregister(registrationId);
-}
+export const unregisterWindowCallback = windowCallbacks.unregister;
 
 /**
  * Clear all callbacks for a specific window
@@ -149,9 +144,7 @@ export function unregisterWindowCallback(registrationId) {
  * @example
  * clearWindowCallbacks('window-1');
  */
-export function clearWindowCallbacks(windowId) {
-  return callbackRegistry.clearEntity(windowId);
-}
+export const clearWindowCallbacks = windowCallbacks.clear;
 
 /**
  * Trigger window created event
@@ -161,14 +154,7 @@ export function clearWindowCallbacks(windowId) {
  * @returns {Object} Execution result
  */
 export function triggerWindowCreated(windowId, windowDetails = {}) {
-  console.debug('[WINDOW_CALLBACK] Triggering window-created event', { windowId });
-  
-  return callbackRegistry.execute(WINDOW_EVENTS.CREATED, {
-    entityId: windowId,
-    timestamp: Date.now(),
-    source: 'windowManager',
-    data: windowDetails
-  });
+  return windowCallbacks.triggerCREATED(windowId, windowDetails);
 }
 
 /**
@@ -178,14 +164,7 @@ export function triggerWindowCreated(windowId, windowDetails = {}) {
  * @returns {Object} Execution result
  */
 export function triggerWindowClosed(windowId) {
-  console.debug('[WINDOW_CALLBACK] Triggering window-closed event', { windowId });
-  
-  return callbackRegistry.execute(WINDOW_EVENTS.CLOSED, {
-    entityId: windowId,
-    timestamp: Date.now(),
-    source: 'windowManager',
-    data: {}
-  });
+  return windowCallbacks.triggerCLOSED(windowId, {});
 }
 
 /**
@@ -196,14 +175,7 @@ export function triggerWindowClosed(windowId) {
  * @returns {Object} Execution result
  */
 export function triggerWindowMoved(windowId, position) {
-  console.debug('[WINDOW_CALLBACK] Triggering window-moved event', { windowId, position });
-  
-  return callbackRegistry.execute(WINDOW_EVENTS.MOVED, {
-    entityId: windowId,
-    timestamp: Date.now(),
-    source: 'windowManager',
-    data: { position }
-  });
+  return windowCallbacks.triggerMOVED(windowId, { position });
 }
 
 /**
@@ -214,14 +186,7 @@ export function triggerWindowMoved(windowId, position) {
  * @returns {Object} Execution result
  */
 export function triggerWindowResized(windowId, size) {
-  console.debug('[WINDOW_CALLBACK] Triggering window-resized event', { windowId, size });
-  
-  return callbackRegistry.execute(WINDOW_EVENTS.RESIZED, {
-    entityId: windowId,
-    timestamp: Date.now(),
-    source: 'windowManager',
-    data: { size }
-  });
+  return windowCallbacks.triggerRESIZED(windowId, { size });
 }
 
 /**
@@ -231,12 +196,5 @@ export function triggerWindowResized(windowId, size) {
  * @returns {Object} Execution result
  */
 export function triggerWindowReady(windowId) {
-  console.debug('[WINDOW_CALLBACK] Triggering window-ready event', { windowId });
-  
-  return callbackRegistry.execute(WINDOW_EVENTS.READY, {
-    entityId: windowId,
-    timestamp: Date.now(),
-    source: 'windowManager',
-    data: {}
-  });
+  return windowCallbacks.triggerREADY(windowId, {});
 }
