@@ -1,0 +1,37 @@
+{
+  "logging": {
+    "level": "warn",
+    "transports": [
+      {
+        "type": "console",
+        "level": "error",
+        "format": "json",
+        "options": {
+          "colorize": false,
+          "timestamp": true
+        }
+      },
+      {
+        "type": "file",
+        "level": "warn",
+        "format": "json",
+        "options": {
+          "filename": "logs/fenestra.log",
+          "maxSize": "50MB",
+          "maxFiles": 10
+        }
+      }
+    ]
+  },
+  "performanceMonitoring": {
+    "sampling": {
+      "rate": 0.1
+    }
+  },
+  "resourceManagement": {
+    "cache": {
+      "maxSize": 500,
+      "ttl": 600000
+    }
+  }
+}

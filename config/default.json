@@ -1,0 +1,62 @@
+{
+  "logging": {
+    "level": "info",
+    "modules": {},
+    "transports": [
+      {
+        "type": "console",
+        "level": "info",
+        "format": "pretty",
+        "options": {
+          "colorize": true,
+          "timestamp": true
+        }
+      }
+    ]
+  },
+  "actionCallbacks": {
+    "errorIsolation": true,
+    "defaultLogging": true,
+    "performanceThreshold": 1000
+  },
+  "windowManagement": {
+    "defaults": {
+      "width": 800,
+      "height": 600,
+      "resizable": true,
+      "show": false
+    },
+    "positioning": {
+      "strategy": "cascade",
+      "offset": 30
+    }
+  },
+  "resourceManagement": {
+    "cache": {
+      "enabled": true,
+      "maxSize": 200,
+      "ttl": 600000
+    },
+    "watching": {
+      "enabled": true,
+      "debounceMs": 250
+    }
+  },
+  "performanceMonitoring": {
+    "enabled": true,
+    "thresholds": {
+      "slow": 50,
+      "warning": 200,
+      "critical": 500
+    },
+    "sampling": {
+      "rate": 0.5
+    }
+  },
+  "game": {
+    "dataDirectory": "./game-data",
+    "autoSave": true,
+    "autoSaveInterval": 30000,
+    "maxSaveFiles": 10
+  }
+}
