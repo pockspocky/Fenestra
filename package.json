@@ -18,8 +18,7 @@
     "start": "electron .",
     "dev": "electron .",
     "test": "node test-config.js && node test-path-utils.js && node test-path-security-validator.js && node test-windows-filesystem.js && node test-game-state-manager.js && node test-error-handling.js && node test-ipc-handlers-structure.js && node test-main-integration.js",
-    "test:pixelized-menu": "node test-pixelized-start-menu-functional.js",
-    "test:platform-adapters": "node test-platform-adapters-simple.js"
+    "test:pixelized-menu": "node test-pixelized-start-menu-functional.js"
   },
   "devDependencies": {
     "electron": "^30.0.0",
