@@ -26,49 +26,53 @@ import {
   getWindowOffset,
   setKeyDoorMaxOverlap,
   getKeyDoorMaxOverlap
-} from './src/core/systems/windowManager.js';
+} from './src/systems/windowManager.js';
 
 import {
   initializeGameLogic,
   handleVideoWindowClosed,
   createDemoDoorsAndKeys,
   getGameState
-} from './src/core/systems/gameLogic.js';
+} from './src/systems/gameLogic.js';
 
 import {
   initializeWorker,
   startOverlapLoop,
   cleanupWorker
-} from './src/core/workerManager.js';
+} from './src/workers/workerManager.js';
 
 import {
   initializeIpcHandlers,
   cleanupIpcHandlers
-} from './src/core/handlers/ipcHandlers.js';
+} from './src/handlers/ipcHandlers.js';
 
 import {
   getRelationsDebugInfo
-} from './src/core/systems/doorKeySystem.js';
+} from './src/systems/doorKeySystem.js';
 
 import {
   initializeEmailSystem,
   toggleEmailWindow,
   cleanupEmailSystem
-} from './src/core/systems/emailSystem.js';
+} from './src/systems/emailSystem.js';
 
 import {
   createStartMenu,
   setGameStartedCallback
-} from './src/core/startMenuManager.js';
+} from './src/handlers/startMenuManager.js';
 
 import {
   saveGameState
-} from './src/core/systems/gameStateManager.js';
+} from './src/systems/gameStateManager.js';
 
 import {
   registerGameHotkeys,
   unregisterGameHotkeys
-} from './src/core/hotkeyManager.js';
+} from './src/handlers/hotkeyManager.js';
+
+// Import security components
+import { memoryManager } from './src/utils/memoryManager.js';
+import { securityAuditSystem } from './src/security/auditSystem.js';
 
 // 设置日志级别
 setLogLevel("log"); // 可以根据需要调整
@@ -93,6 +97,30 @@ setWindowCloseCallback(handleVideoWindowClosed);
 async function initializeApp() {
   console.debug('[MAIN] 初始化应用程序核心系统...');
 
+  // Initialize security components first
+  console.log('[MAIN] Initializing security components...');
+  
+  // Start memory monitoring (memory manager is already initialized via constructor)
+  memoryManager.startMonitoring();
+  console.log('[MAIN] Memory manager monitoring started');
+
+  // Initialize audit system
+  const auditResult = securityAuditSystem.initialize();
+  if (auditResult.success) {
+    console.log('[MAIN] Security audit system initialized successfully');
+  } else {
+    console.error('[MAIN] Security audit system initialization failed:', auditResult.error);
+  }
+
+  // Log application startup
+  securityAuditSystem.logSecurityEvent('application', 'low', {
+    component: 'Main',
+    function: 'initializeApp',
+    violationType: 'authorized_application_startup',
+    mitigationAction: 'application_initialized',
+    inputData: JSON.stringify({ platform: process.platform, version: app.getVersion() })
+  });
+
   // 设置窗口偏移量（每个新窗口向右下偏移30像素）
   setWindowOffset(30, 30);
   console.log(`[MAIN] 窗口偏移量设置:`, getWindowOffset());
@@ -116,7 +144,8 @@ async function initializeApp() {
     console.log('[MAIN] 邮件系统初始化成功', {
       inboxPath: emailResult.inboxPath,
       emailCount: emailResult.emailCount,
-      hotkeyRegistered: emailResult.hotkeyRegistered
+      hotkeyRegistered: emailResult.hotkeyRegistered,
+      sandboxInitialized: emailResult.sandboxInitialized
     });
   } else {
     console.error('[MAIN] 邮件系统初始化失败', { error: emailResult.error });
@@ -221,14 +250,24 @@ function setupAppEventListeners() {
       console.error('[APP] 保存游戏状态时发生错误:', error);
     }
 
-    // 清理邮件系统
+    // Log application shutdown
+    securityAuditSystem.logSecurityEvent('application', 'low', {
+      component: 'Main',
+      function: 'beforeQuit',
+      violationType: 'authorized_application_shutdown',
+      mitigationAction: 'cleanup_initiated',
+      inputData: JSON.stringify({ gameStarted })
+    });
+
+    // 清理邮件系统 (must be done before unregisterAll)
     await cleanupEmailSystem();
 
     // 注销游戏热键
     console.log('[APP] 注销游戏热键...');
     unregisterGameHotkeys();
 
-    // 注销全局快捷键
+    // 注销所有剩余的全局快捷键
+    // Note: Email hotkey already unregistered in cleanupEmailSystem
     globalShortcut.unregisterAll();
 
     // 清理 Worker
@@ -236,6 +275,22 @@ function setupAppEventListeners() {
 
     // 清理 IPC 处理程序
     cleanupIpcHandlers();
+
+    // Cleanup security components
+    console.log('[APP] Cleaning up security components...');
+    
+    // Stop memory monitoring and trigger final cleanup
+    memoryManager.stopMonitoring();
+    memoryManager.triggerCleanup();
+    console.log('[APP] Memory manager cleaned up successfully');
+
+    // Cleanup audit system
+    const auditCleanup = securityAuditSystem.cleanup();
+    if (auditCleanup.success) {
+      console.log('[APP] Security audit system cleaned up successfully');
+    } else {
+      console.warn('[APP] Security audit system cleanup failed:', auditCleanup.error);
+    }
 
     console.debug('[APP] 资源清理完成');
 

@@ -7,43 +7,66 @@
  * @module ipcCallbacks
  */
 
-import { createCallbackModule } from './callbackFactory.js';
+import { domainEvents, IPC_EVENTS } from '../../events/domainEvents.js';
 import '../../../logger.js';
 
-/**
- * IPC event types
- */
-export const IPC_EVENTS = {
-  BEFORE: 'ipc-before',
-  AFTER: 'ipc-after',
-  ERROR: 'ipc-error'
-};
-
-// Create the callback module using the factory
-const ipcCallbacks = createCallbackModule({
-  eventTypes: IPC_EVENTS,
-  moduleName: 'ipcHandler',
-  debugPrefix: '[IPC_CALLBACK]'
-});
+// Re-export event constants for backward compatibility
+export { IPC_EVENTS };
 
 // Export all functions
-export const registerIPCBeforeCallback = ipcCallbacks.registerBEFORECallback;
-export const registerIPCAfterCallback = ipcCallbacks.registerAFTERCallback;
-export const registerIPCErrorCallback = ipcCallbacks.registerERRORCallback;
+export function registerIPCBeforeCallback(callback, options = {}) {
+  return domainEvents.on(IPC_EVENTS.BEFORE, callback, options);
+}
 
-export const unregisterIPCCallback = ipcCallbacks.unregister;
-export const clearIPCCallbacks = ipcCallbacks.clear;
+export function registerIPCAfterCallback(callback, options = {}) {
+  return domainEvents.on(IPC_EVENTS.AFTER, callback, options);
+}
+
+export function registerIPCErrorCallback(callback, options = {}) {
+  return domainEvents.on(IPC_EVENTS.ERROR, callback, options);
+}
+
+export function unregisterIPCCallback(registrationId) {
+  return domainEvents.off(registrationId);
+}
+
+export function clearIPCCallbacks(entityId) {
+  return domainEvents.cleanup(entityId);
+}
 
 export function triggerIPCBefore(channel, args = []) {
-  return ipcCallbacks.triggerBEFORE(channel, { channel, args });
+  console.debug('[IPC_CALLBACK] Triggering ipc-before', { channel });
+  return domainEvents.emit(IPC_EVENTS.BEFORE, {
+    entityId: channel,
+    channel,
+    args,
+    timestamp: Date.now(),
+    source: 'ipcHandler'
+  });
 }
 
 export function triggerIPCAfter(channel, args = [], result = null) {
-  return ipcCallbacks.triggerAFTER(channel, { channel, args, result });
+  console.debug('[IPC_CALLBACK] Triggering ipc-after', { channel });
+  return domainEvents.emit(IPC_EVENTS.AFTER, {
+    entityId: channel,
+    channel,
+    args,
+    result,
+    timestamp: Date.now(),
+    source: 'ipcHandler'
+  });
 }
 
 export function triggerIPCError(channel, args = [], error = null) {
-  return ipcCallbacks.triggerERROR(channel, { channel, args, error });
+  console.debug('[IPC_CALLBACK] Triggering ipc-error', { channel });
+  return domainEvents.emit(IPC_EVENTS.ERROR, {
+    entityId: channel,
+    channel,
+    args,
+    error,
+    timestamp: Date.now(),
+    source: 'ipcHandler'
+  });
 }
 
 /**
@@ -67,7 +90,9 @@ export function wrapIpcHandler(channel, handler, options = {}) {
       // Execute before callbacks
       const beforeResult = triggerIPCBefore(channel, args);
       
-      if (allowPrevention && beforeResult.prevented) {
+      // Note: New event system doesn't support preventDefault in the same way
+      // This is a simplified version for compatibility
+      if (allowPrevention && beforeResult.errors > 0) {
         console.debug(`[IPC_CALLBACK] Handler execution prevented for channel: ${channel}`);
         return null;
       }

@@ -9,52 +9,87 @@
 
 import path from 'node:path';
 import '../../../logger.js';
-import { createCallbackModule } from './callbackFactory.js';
+import { domainEvents, FS_EVENTS } from '../../events/domainEvents.js';
 
-/**
- * File system event types
- */
-export const FILE_SYSTEM_EVENTS = {
-  FILE_SAVED: 'file-saved',
-  FILE_LOADED: 'file-loaded',
-  FILE_DELETED: 'file-deleted',
-  DIRECTORY_CHANGED: 'directory-changed',
-  VALIDATION_FAILED: 'validation-failed'
-};
-
-// Create the callback module using the factory
-const fileSystemCallbacks = createCallbackModule({
-  eventTypes: FILE_SYSTEM_EVENTS,
-  moduleName: 'fileSystem',
-  debugPrefix: '[FILE_SYSTEM_CALLBACK]'
-});
+// Re-export event constants for backward compatibility
+export { FS_EVENTS as FILE_SYSTEM_EVENTS };
 
 // Export all functions
-export const registerFileSavedCallback = fileSystemCallbacks.registerFILE_SAVEDCallback;
-export const registerFileLoadedCallback = fileSystemCallbacks.registerFILE_LOADEDCallback;
-export const registerFileDeletedCallback = fileSystemCallbacks.registerFILE_DELETEDCallback;
-export const registerDirectoryChangedCallback = fileSystemCallbacks.registerDIRECTORY_CHANGEDCallback;
-export const registerValidationFailedCallback = fileSystemCallbacks.registerVALIDATION_FAILEDCallback;
+export function registerFileSavedCallback(callback, options = {}) {
+  return domainEvents.on(FS_EVENTS.FILE_SAVED, callback, options);
+}
 
-export const unregisterFileSystemCallback = fileSystemCallbacks.unregister;
-export const clearFileSystemCallbacks = fileSystemCallbacks.clear;
+export function registerFileLoadedCallback(callback, options = {}) {
+  return domainEvents.on(FS_EVENTS.FILE_LOADED, callback, options);
+}
+
+export function registerFileDeletedCallback(callback, options = {}) {
+  return domainEvents.on(FS_EVENTS.FILE_DELETED, callback, options);
+}
+
+export function registerDirectoryChangedCallback(callback, options = {}) {
+  return domainEvents.on(FS_EVENTS.DIRECTORY_CHANGED, callback, options);
+}
+
+export function registerValidationFailedCallback(callback, options = {}) {
+  return domainEvents.on(FS_EVENTS.VALIDATION_FAILED, callback, options);
+}
+
+export function unregisterFileSystemCallback(registrationId) {
+  return domainEvents.off(registrationId);
+}
+
+export function clearFileSystemCallbacks(entityId) {
+  return domainEvents.cleanup(entityId);
+}
 
 export function triggerFileSaved(filePath, data = {}) {
-  return fileSystemCallbacks.triggerFILE_SAVED(filePath, { filePath, ...data });
+  console.debug('[FILE_SYSTEM_CALLBACK] Triggering file-saved', { filePath });
+  return domainEvents.emit(FS_EVENTS.FILE_SAVED, {
+    entityId: filePath,
+    filePath,
+    timestamp: Date.now(),
+    source: 'fileSystem',
+    ...data
+  });
 }
 
 export function triggerFileLoaded(filePath, data = {}) {
-  return fileSystemCallbacks.triggerFILE_LOADED(filePath, { filePath, ...data });
+  console.debug('[FILE_SYSTEM_CALLBACK] Triggering file-loaded', { filePath });
+  return domainEvents.emit(FS_EVENTS.FILE_LOADED, {
+    entityId: filePath,
+    filePath,
+    timestamp: Date.now(),
+    source: 'fileSystem',
+    ...data
+  });
 }
 
 export function triggerFileDeleted(filePath, data = {}) {
-  return fileSystemCallbacks.triggerFILE_DELETED(filePath, { filePath, ...data });
+  console.debug('[FILE_SYSTEM_CALLBACK] Triggering file-deleted', { filePath });
+  return domainEvents.emit(FS_EVENTS.FILE_DELETED, {
+    entityId: filePath,
+    filePath,
+    timestamp: Date.now(),
+    source: 'fileSystem',
+    ...data
+  });
 }
 
 export function triggerDirectoryChanged(data = {}) {
-  return fileSystemCallbacks.triggerDIRECTORY_CHANGED(null, data);
+  console.debug('[FILE_SYSTEM_CALLBACK] Triggering directory-changed');
+  return domainEvents.emit(FS_EVENTS.DIRECTORY_CHANGED, {
+    timestamp: Date.now(),
+    source: 'fileSystem',
+    ...data
+  });
 }
 
 export function triggerValidationFailed(data = {}) {
-  return fileSystemCallbacks.triggerVALIDATION_FAILED(null, data);
+  console.debug('[FILE_SYSTEM_CALLBACK] Triggering validation-failed');
+  return domainEvents.emit(FS_EVENTS.VALIDATION_FAILED, {
+    timestamp: Date.now(),
+    source: 'fileSystem',
+    ...data
+  });
 }
