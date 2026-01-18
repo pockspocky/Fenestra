@@ -15,19 +15,21 @@
  */
 
 // Core system modules
-export * from './systems/windowManager.js';
-export * from './systems/doorKeySystem.js';
-export * from './systems/gameLogic.js';
-export * from './workerManager.js';
-export * from './handlers/ipcHandlers.js';
+export * from '../systems/windowManager.js';
+export * from '../systems/doorKeySystem.js';
+export * from '../systems/gameLogic.js';
+export * from '../workers/workerManager.js';
+export * from '../handlers/ipcHandlers.js';
 export * from './loggerConfig.js';
 export * from './config.js';
-export * from './systems/emailSystem.js';
-export * from './emailActions.js';
+export * from '../systems/emailSystem.js';
+export * from '../storage/emailActions.js';
 
 // Utility modules
-export * from './utils/pathUtils.js';
-export * from './utils/windowsFileSystem.js';
+export * from '../utils/pathUtils.js';
+export * from '../utils/windowsFileSystem.js';
+export * from '../utils/memoryManager.js';
+export * from '../utils/memoryIntegration.js';
 
 // ============================================================================
 // Callback System Exports

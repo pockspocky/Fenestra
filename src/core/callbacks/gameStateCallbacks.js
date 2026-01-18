@@ -8,52 +8,81 @@
  */
 
 import '../../../logger.js';
-import { createCallbackModule } from './callbackFactory.js';
+import { systemEvents, GAME_EVENTS } from '../../events/systemEvents.js';
 
-/**
- * Game state event types
- */
-export const GAME_STATE_EVENTS = {
-  SAVED: 'state-saved',
-  LOADED: 'state-loaded',
-  RESET: 'state-reset',
-  LEVEL_COMPLETED: 'level-completed',
-  EXPORTED: 'state-exported'
-};
-
-// Create the callback module using the factory
-const gameStateCallbacks = createCallbackModule({
-  eventTypes: GAME_STATE_EVENTS,
-  moduleName: 'gameStateManager',
-  debugPrefix: '[GAME_STATE_CALLBACK]'
-});
+// Re-export event constants for backward compatibility
+export { GAME_EVENTS };
 
 // Export all functions
-export const registerStateSavedCallback = gameStateCallbacks.registerSAVEDCallback;
-export const registerStateLoadedCallback = gameStateCallbacks.registerLOADEDCallback;
-export const registerStateResetCallback = gameStateCallbacks.registerRESETCallback;
-export const registerLevelCompletedCallback = gameStateCallbacks.registerLEVEL_COMPLETEDCallback;
-export const registerStateExportedCallback = gameStateCallbacks.registerEXPORTEDCallback;
+export function registerStateSavedCallback(callback, options = {}) {
+  return systemEvents.on(GAME_EVENTS.STATE_SAVED, callback, options);
+}
 
-export const unregisterGameStateCallback = gameStateCallbacks.unregister;
-export const clearGameStateCallbacks = gameStateCallbacks.clear;
+export function registerStateLoadedCallback(callback, options = {}) {
+  return systemEvents.on(GAME_EVENTS.STATE_LOADED, callback, options);
+}
+
+export function registerStateResetCallback(callback, options = {}) {
+  return systemEvents.on(GAME_EVENTS.STATE_RESET, callback, options);
+}
+
+export function registerLevelCompletedCallback(callback, options = {}) {
+  return systemEvents.on(GAME_EVENTS.LEVEL_COMPLETED, callback, options);
+}
+
+export function registerStateExportedCallback(callback, options = {}) {
+  return systemEvents.on(GAME_EVENTS.STATE_EXPORTED, callback, options);
+}
+
+export function unregisterGameStateCallback(registrationId) {
+  return systemEvents.off(registrationId);
+}
+
+export function clearGameStateCallbacks(entityId) {
+  return systemEvents.cleanup(entityId);
+}
 
 export function triggerStateSaved(data = {}) {
-  return gameStateCallbacks.triggerSAVED(null, data);
+  console.debug('[GAME_STATE_CALLBACK] Triggering state-saved');
+  return systemEvents.emit(GAME_EVENTS.STATE_SAVED, {
+    timestamp: Date.now(),
+    source: 'gameStateManager',
+    ...data
+  });
 }
 
 export function triggerStateLoaded(data = {}) {
-  return gameStateCallbacks.triggerLOADED(null, data);
+  console.debug('[GAME_STATE_CALLBACK] Triggering state-loaded');
+  return systemEvents.emit(GAME_EVENTS.STATE_LOADED, {
+    timestamp: Date.now(),
+    source: 'gameStateManager',
+    ...data
+  });
 }
 
 export function triggerStateReset(data = {}) {
-  return gameStateCallbacks.triggerRESET(null, data);
+  console.debug('[GAME_STATE_CALLBACK] Triggering state-reset');
+  return systemEvents.emit(GAME_EVENTS.STATE_RESET, {
+    timestamp: Date.now(),
+    source: 'gameStateManager',
+    ...data
+  });
 }
 
 export function triggerLevelCompleted(data = {}) {
-  return gameStateCallbacks.triggerLEVEL_COMPLETED(null, data);
+  console.debug('[GAME_STATE_CALLBACK] Triggering level-completed');
+  return systemEvents.emit(GAME_EVENTS.LEVEL_COMPLETED, {
+    timestamp: Date.now(),
+    source: 'gameStateManager',
+    ...data
+  });
 }
 
 export function triggerStateExported(data = {}) {
-  return gameStateCallbacks.triggerEXPORTED(null, data);
+  console.debug('[GAME_STATE_CALLBACK] Triggering state-exported');
+  return systemEvents.emit(GAME_EVENTS.STATE_EXPORTED, {
+    timestamp: Date.now(),
+    source: 'gameStateManager',
+    ...data
+  });
 }

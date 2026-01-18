@@ -7,7 +7,7 @@ import {
   isUNCPath,
   resolvePath,
   toRelativePath
-} from './utils/pathUtils.js';
+} from '../utils/pathUtils.js';
 
 /**
  * Configuration System for Fenestra

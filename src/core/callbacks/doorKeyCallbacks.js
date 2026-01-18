@@ -8,25 +8,10 @@
  */
 
 import '../../../logger.js';
-import { createCallbackModule } from './callbackFactory.js';
+import { systemEvents, DOOR_KEY_EVENTS } from '../../events/systemEvents.js';
 
-/**
- * Door-key event types
- */
-export const DOOR_KEY_EVENTS = {
-  DOOR_OPENED: 'door-opened',
-  DOOR_CLOSED: 'door-closed',
-  KEY_USED: 'key-used',
-  ACCESS_DENIED: 'access-denied',
-  DOOR_STATE_CHANGED: 'door-state-changed'
-};
-
-// Create the callback module using the factory
-const doorKeyCallbacks = createCallbackModule({
-  eventTypes: DOOR_KEY_EVENTS,
-  moduleName: 'doorKeySystem',
-  debugPrefix: '[DOOR_KEY_CALLBACK]'
-});
+// Re-export event constants for backward compatibility
+export { DOOR_KEY_EVENTS };
 
 /**
  * Register a callback for door opened events
@@ -34,61 +19,75 @@ const doorKeyCallbacks = createCallbackModule({
  * @param {Function} callback - Callback function to execute
  * @param {Object} options - Registration options
  * @param {string} [options.entityId] - Door ID for entity-specific callback
- * @param {number} [options.priority=0] - Execution priority
- * @param {boolean} [options.once=false] - Execute only once
  * @returns {string} Registration ID for unregistering
  * 
  * @example
  * // Register global door opened callback
- * const regId = registerDoorOpenedCallback((eventType, eventData) => {
- *   console.log('Door opened:', eventData.entityId);
+ * const regId = registerDoorOpenedCallback((data) => {
+ *   console.log('Door opened:', data.entityId);
  * });
  * 
  * @example
- * // Register entity-specific callback with priority
+ * // Register entity-specific callback
  * const regId = registerDoorOpenedCallback(
- *   (eventType, eventData) => {
- *     console.log('Specific door opened with key:', eventData.data.keyId);
+ *   (data) => {
+ *     console.log('Specific door opened with key:', data.keyId);
  *   },
- *   { entityId: 'door-1', priority: 10 }
+ *   { entityId: 'door-1' }
  * );
  */
-export const registerDoorOpenedCallback = doorKeyCallbacks.registerDOOR_OPENEDCallback;
+export function registerDoorOpenedCallback(callback, options = {}) {
+  return systemEvents.on(DOOR_KEY_EVENTS.DOOR_OPENED, callback, options);
+}
 
 /**
  * Register a callback for door closed events
  */
-export const registerDoorClosedCallback = doorKeyCallbacks.registerDOOR_CLOSEDCallback;
+export function registerDoorClosedCallback(callback, options = {}) {
+  return systemEvents.on(DOOR_KEY_EVENTS.DOOR_CLOSED, callback, options);
+}
 
 /**
  * Register a callback for key used events
  */
-export const registerKeyUsedCallback = doorKeyCallbacks.registerKEY_USEDCallback;
+export function registerKeyUsedCallback(callback, options = {}) {
+  return systemEvents.on(DOOR_KEY_EVENTS.KEY_USED, callback, options);
+}
 
 /**
  * Register a callback for access denied events
  */
-export const registerAccessDeniedCallback = doorKeyCallbacks.registerACCESS_DENIEDCallback;
+export function registerAccessDeniedCallback(callback, options = {}) {
+  return systemEvents.on(DOOR_KEY_EVENTS.ACCESS_DENIED, callback, options);
+}
 
 /**
  * Register a callback for door state changed events
  */
-export const registerDoorStateChangedCallback = doorKeyCallbacks.registerDOOR_STATE_CHANGEDCallback;
+export function registerDoorStateChangedCallback(callback, options = {}) {
+  return systemEvents.on(DOOR_KEY_EVENTS.DOOR_STATE_CHANGED, callback, options);
+}
 
 /**
  * Unregister a door-key callback
  */
-export const unregisterDoorKeyCallback = doorKeyCallbacks.unregister;
+export function unregisterDoorKeyCallback(registrationId) {
+  return systemEvents.off(registrationId);
+}
 
 /**
  * Clear all callbacks for a specific door
  */
-export const clearDoorCallbacks = doorKeyCallbacks.clear;
+export function clearDoorCallbacks(entityId) {
+  return systemEvents.cleanup(entityId);
+}
 
 /**
  * Clear all callbacks for a specific key
  */
-export const clearKeyCallbacks = doorKeyCallbacks.clear;
+export function clearKeyCallbacks(entityId) {
+  return systemEvents.cleanup(entityId);
+}
 
 /**
  * Trigger door opened event
@@ -99,7 +98,15 @@ export const clearKeyCallbacks = doorKeyCallbacks.clear;
  * @returns {Object} Execution result
  */
 export function triggerDoorOpened(doorId, keyId, additionalData = {}) {
-  return doorKeyCallbacks.triggerDOOR_OPENED(doorId, { keyId, doorId, ...additionalData });
+  console.debug('[DOOR_KEY_CALLBACK] Triggering door-opened', { doorId });
+  return systemEvents.emit(DOOR_KEY_EVENTS.DOOR_OPENED, {
+    entityId: doorId,
+    keyId,
+    doorId,
+    timestamp: Date.now(),
+    source: 'doorKeySystem',
+    ...additionalData
+  });
 }
 
 /**
@@ -111,7 +118,15 @@ export function triggerDoorOpened(doorId, keyId, additionalData = {}) {
  * @returns {Object} Execution result
  */
 export function triggerDoorClosed(doorId, keyId = null, additionalData = {}) {
-  return doorKeyCallbacks.triggerDOOR_CLOSED(doorId, { keyId, doorId, ...additionalData });
+  console.debug('[DOOR_KEY_CALLBACK] Triggering door-closed', { doorId });
+  return systemEvents.emit(DOOR_KEY_EVENTS.DOOR_CLOSED, {
+    entityId: doorId,
+    keyId,
+    doorId,
+    timestamp: Date.now(),
+    source: 'doorKeySystem',
+    ...additionalData
+  });
 }
 
 /**
@@ -124,7 +139,16 @@ export function triggerDoorClosed(doorId, keyId = null, additionalData = {}) {
  * @returns {Object} Execution result
  */
 export function triggerKeyUsed(keyId, doorId, success, additionalData = {}) {
-  return doorKeyCallbacks.triggerKEY_USED(keyId, { keyId, doorId, success, ...additionalData });
+  console.debug('[DOOR_KEY_CALLBACK] Triggering key-used', { keyId });
+  return systemEvents.emit(DOOR_KEY_EVENTS.KEY_USED, {
+    entityId: keyId,
+    keyId,
+    doorId,
+    success,
+    timestamp: Date.now(),
+    source: 'doorKeySystem',
+    ...additionalData
+  });
 }
 
 /**
@@ -137,7 +161,16 @@ export function triggerKeyUsed(keyId, doorId, success, additionalData = {}) {
  * @returns {Object} Execution result
  */
 export function triggerAccessDenied(doorId, keyId, reason, additionalData = {}) {
-  return doorKeyCallbacks.triggerACCESS_DENIED(doorId, { keyId, doorId, reason, ...additionalData });
+  console.debug('[DOOR_KEY_CALLBACK] Triggering access-denied', { doorId });
+  return systemEvents.emit(DOOR_KEY_EVENTS.ACCESS_DENIED, {
+    entityId: doorId,
+    keyId,
+    doorId,
+    reason,
+    timestamp: Date.now(),
+    source: 'doorKeySystem',
+    ...additionalData
+  });
 }
 
 /**
@@ -150,5 +183,14 @@ export function triggerAccessDenied(doorId, keyId, reason, additionalData = {}) 
  * @returns {Object} Execution result
  */
 export function triggerDoorStateChanged(doorId, oldState, newState, additionalData = {}) {
-  return doorKeyCallbacks.triggerDOOR_STATE_CHANGED(doorId, { doorId, oldState, newState, ...additionalData });
+  console.debug('[DOOR_KEY_CALLBACK] Triggering door-state-changed', { doorId });
+  return systemEvents.emit(DOOR_KEY_EVENTS.DOOR_STATE_CHANGED, {
+    entityId: doorId,
+    doorId,
+    oldState,
+    newState,
+    timestamp: Date.now(),
+    source: 'doorKeySystem',
+    ...additionalData
+  });
 }

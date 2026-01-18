@@ -1,32 +1,24 @@
 /**
  * Callback Factory - Eliminates boilerplate across callback modules
  * 
- * This factory generates all the register/trigger/unregister functions
- * that are currently duplicated across 7 callback modules.
+ * @deprecated This factory is deprecated and will be removed in a future version.
+ * The callback modules have been migrated to use the new event system directly.
  * 
  * @module callbacks/callbackFactory
  */
 
 import { callbackRegistry } from '../callbackRegistry.js';
 
+console.warn('[DEPRECATED] callbackFactory is deprecated. Callback modules now use the event system directly.');
+
 /**
  * Creates a complete callback module with all standard functions
  * 
- * @param {Object} config - Configuration for the callback module
- * @param {Object} config.eventTypes - Event type constants (e.g., {CREATED: 'window-created'})
- * @param {string} config.moduleName - Module name for source field (e.g., 'windowManager')
- * @param {string} config.debugPrefix - Debug log prefix (e.g., '[WINDOW_CALLBACK]')
- * @param {string} [config.entityIdField='entityId'] - Field name for entity ID
- * @returns {Object} Complete callback module with all functions
- * 
- * @example
- * const windowCallbacks = createCallbackModule({
- *   eventTypes: { CREATED: 'window-created', CLOSED: 'window-closed' },
- *   moduleName: 'windowManager',
- *   debugPrefix: '[WINDOW_CALLBACK]'
- * });
+ * @deprecated Use systemEvents or domainEvents directly instead
  */
 export function createCallbackModule(config) {
+  console.warn('[DEPRECATED] createCallbackModule is deprecated. Use event system directly.');
+  
   const {
     eventTypes,
     moduleName,

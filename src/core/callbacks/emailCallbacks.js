@@ -9,52 +9,146 @@
  */
 
 import '../../../logger.js';
-import { createCallbackModule } from './callbackFactory.js';
+import { domainEvents, EMAIL_EVENTS } from '../../events/domainEvents.js';
 
-/**
- * Email event types
- */
-export const EMAIL_EVENTS = {
-  RECEIVED: 'email-received',
-  READ: 'email-read',
-  ACTION_EXECUTED: 'email-action-executed',
-  INBOX_CHANGED: 'inbox-changed',
-  VALIDATION_FAILED: 'email-validation-failed'
-};
-
-// Create the callback module using the factory
-const emailCallbacks = createCallbackModule({
-  eventTypes: EMAIL_EVENTS,
-  moduleName: 'emailSystem',
-  debugPrefix: '[EMAIL_CALLBACK]'
-});
+// Re-export event constants for backward compatibility
+export { EMAIL_EVENTS };
 
 // Export all functions
-export const registerEmailReceivedCallback = emailCallbacks.registerRECEIVEDCallback;
-export const registerEmailReadCallback = emailCallbacks.registerREADCallback;
-export const registerEmailActionExecutedCallback = emailCallbacks.registerACTION_EXECUTEDCallback;
-export const registerInboxChangedCallback = emailCallbacks.registerINBOX_CHANGEDCallback;
-export const registerEmailValidationFailedCallback = emailCallbacks.registerVALIDATION_FAILEDCallback;
+export function registerEmailReceivedCallback(callback, options = {}) {
+  // Adapt old callback signature (eventType, eventData) to new signature (data)
+  const adaptedCallback = (data) => {
+    // Old callbacks expected (eventType, eventData) format
+    const eventData = {
+      entityId: data.entityId,
+      timestamp: data.timestamp,
+      source: data.source || 'emailStorage',
+      data: data.data || data
+    };
+    return callback(EMAIL_EVENTS.RECEIVED, eventData);
+  };
+  return domainEvents.on(EMAIL_EVENTS.RECEIVED, adaptedCallback, options);
+}
 
-export const unregisterEmailCallback = emailCallbacks.unregister;
-export const clearEmailCallbacks = emailCallbacks.clear;
+export function registerEmailReadCallback(callback, options = {}) {
+  const adaptedCallback = (data) => {
+    const eventData = {
+      entityId: data.entityId,
+      timestamp: data.timestamp,
+      source: data.source || 'emailStorage',
+      data: data.data || data
+    };
+    return callback(EMAIL_EVENTS.READ, eventData);
+  };
+  return domainEvents.on(EMAIL_EVENTS.READ, adaptedCallback, options);
+}
+
+export function registerEmailActionExecutedCallback(callback, options = {}) {
+  const adaptedCallback = (data) => {
+    const eventData = {
+      entityId: data.entityId,
+      timestamp: data.timestamp,
+      source: data.source || 'emailActions',
+      data: data.data || data
+    };
+    return callback(EMAIL_EVENTS.ACTION_EXECUTED, eventData);
+  };
+  return domainEvents.on(EMAIL_EVENTS.ACTION_EXECUTED, adaptedCallback, options);
+}
+
+export function registerInboxChangedCallback(callback, options = {}) {
+  const adaptedCallback = (data) => {
+    const eventData = {
+      entityId: data.entityId || 'inbox',
+      timestamp: data.timestamp,
+      source: data.source || 'emailStorage',
+      data: data.data || data
+    };
+    return callback(EMAIL_EVENTS.INBOX_CHANGED, eventData);
+  };
+  return domainEvents.on(EMAIL_EVENTS.INBOX_CHANGED, adaptedCallback, options);
+}
+
+export function registerEmailValidationFailedCallback(callback, options = {}) {
+  const adaptedCallback = (data) => {
+    const eventData = {
+      entityId: data.entityId,
+      timestamp: data.timestamp,
+      source: data.source || 'emailStorage',
+      data: data.data || data
+    };
+    return callback(EMAIL_EVENTS.VALIDATION_FAILED, eventData);
+  };
+  return domainEvents.on(EMAIL_EVENTS.VALIDATION_FAILED, adaptedCallback, options);
+}
+
+export function unregisterEmailCallback(registrationId) {
+  return domainEvents.off(registrationId);
+}
+
+export function clearEmailCallbacks(entityId) {
+  return domainEvents.cleanup(entityId);
+}
 
 export function triggerEmailReceived(emailId, data = {}) {
-  return emailCallbacks.triggerRECEIVED(emailId, data);
+  // Handle both old and new calling conventions
+  let actualEmailId, actualData;
+  
+  if (typeof emailId === 'object' && emailId !== null && !data.id) {
+    // Old convention: triggerEmailReceived(emailData)
+    actualData = emailId;
+    actualEmailId = emailId.id || null;
+  } else {
+    // New convention: triggerEmailReceived(emailId, data)
+    actualEmailId = emailId;
+    actualData = data;
+  }
+  
+  console.debug('[EMAIL_CALLBACK] Triggering email-received', { emailId: actualEmailId });
+  return domainEvents.emit(EMAIL_EVENTS.RECEIVED, {
+    entityId: actualEmailId,
+    timestamp: Date.now(),
+    source: 'emailStorage',
+    data: actualData
+  });
 }
 
 export function triggerEmailRead(emailId, data = {}) {
-  return emailCallbacks.triggerREAD(emailId, data);
+  console.debug('[EMAIL_CALLBACK] Triggering email-read', { emailId });
+  return domainEvents.emit(EMAIL_EVENTS.READ, {
+    entityId: emailId,
+    timestamp: Date.now(),
+    source: 'emailStorage',
+    data: { emailId, ...data }
+  });
 }
 
 export function triggerEmailActionExecuted(emailId, data = {}) {
-  return emailCallbacks.triggerACTION_EXECUTED(emailId, data);
+  console.debug('[EMAIL_CALLBACK] Triggering email-action-executed', { emailId });
+  return domainEvents.emit(EMAIL_EVENTS.ACTION_EXECUTED, {
+    entityId: emailId,
+    timestamp: Date.now(),
+    source: 'emailActions',
+    data: { ...data }
+  });
 }
 
-export function triggerInboxChanged(data = {}) {
-  return emailCallbacks.triggerINBOX_CHANGED(null, data);
+export function triggerInboxChanged(changeType, fileName) {
+  console.debug('[EMAIL_CALLBACK] Triggering inbox-changed');
+  return domainEvents.emit(EMAIL_EVENTS.INBOX_CHANGED, {
+    entityId: 'inbox',
+    timestamp: Date.now(),
+    source: 'emailStorage',
+    data: { changeType, fileName }
+  });
 }
 
-export function triggerEmailValidationFailed(data = {}) {
-  return emailCallbacks.triggerVALIDATION_FAILED(null, data);
+export function triggerEmailValidationFailed(filePath, validationData) {
+  console.debug('[EMAIL_CALLBACK] Triggering email-validation-failed');
+  return domainEvents.emit(EMAIL_EVENTS.VALIDATION_FAILED, {
+    entityId: filePath,
+    timestamp: Date.now(),
+    source: 'emailStorage',
+    data: { filePath, ...validationData }
+  });
 }
