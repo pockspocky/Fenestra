@@ -18,7 +18,13 @@
     "start": "electron .",
     "dev": "electron .",
     "test": "node test-config.js && node test-path-utils.js && node test-path-security-validator.js && node test-windows-filesystem.js && node test-game-state-manager.js && node test-error-handling.js && node test-ipc-handlers-structure.js && node test-main-integration.js",
-    "test:pixelized-menu": "node test-pixelized-start-menu-functional.js"
+    "test:pixelized-menu": "node test-pixelized-start-menu-functional.js",
+    "language-scan": "node src/tools/language-standardizer/cli.js scan",
+    "language-verify": "node src/tools/language-standardizer/cli.js verify",
+    "test-organize:analyze": "node src/tools/test-organizer/cli.js analyze",
+    "test-organize:consolidate": "node src/tools/test-organizer/cli.js consolidate",
+    "test-organize:migrate": "node src/tools/test-organizer/cli.js migrate",
+    "test-organize:verify": "node src/tools/test-organizer/cli.js verify"
   },
   "devDependencies": {
     "electron": "^30.0.0",
@@ -32,6 +38,8 @@
     "url": "https://github.com/fenestra-team/fenestra.git"
   },
   "dependencies": {
-    "chokidar": "^4.0.3"
+    "chokidar": "^4.0.3",
+    "commander": "^12.0.0",
+    "glob": "^10.3.10"
   }
 }
