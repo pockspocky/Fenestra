@@ -135,3 +135,5 @@ test-*.js
 
 *.hook
 node_modules/
+.DS_Store
+FENESTRA_CRITICAL_ISSUES_TODO.md
