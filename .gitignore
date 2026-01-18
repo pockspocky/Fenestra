@@ -137,3 +137,29 @@ test-*.js
 node_modules/
 .DS_Store
 FENESTRA_CRITICAL_ISSUES_TODO.md
+
+# Migration and refactoring artifacts
+.migration-backup/
+*-backup/
+migration-log.json
+migration-result.json
+import-update-log.json
+
+# Reports and summaries
+*-report.md
+*-report.csv
+*-report.json
+*-summary.md
+consolidation-plan.json
+directory-structure-design.json
+test-catalog*.json
+verify-*.js
+
+# Test output
+test-output/
+
+# Fix and implementation documentation (temporary)
+DOOR_STATE_RESTORATION_FIX.md
+STORAGE_DIRECTORY_FIX_SUMMARY.md
+docs/FINAL_SECURITY_VALIDATION_SUMMARY.md
+docs/SECURITY_IMPLEMENTATION_SUMMARY.md
