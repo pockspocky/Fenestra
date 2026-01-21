@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron';
+import sizeOf from 'image-size';
 import {
   createWindow,
   setBounds,
@@ -53,6 +54,7 @@ import { wrapIpcHandler } from '../core/callbacks/ipcCallbacks.js';
 import { IPCSecurityManager } from '../security/ipcSecurityManager.js';
 import { memoryManager } from '../utils/memoryManager.js';
 import { securityAuditSystem } from '../security/auditSystem.js';
+import { resolveAssetPath } from '../utils/assetPathResolver.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import '../../logger.js'; // 导入日志系统
@@ -829,6 +831,35 @@ export function initializeIpcHandlers() {
 }
 
 /**
+ * Get image dimensions from file path
+ * @param {string} imagePath - Path to the image file
+ * @returns {Object|null} Object with width and height, or null if unable to read
+ */
+function getImageDimensions(imagePath) {
+  try {
+    // Resolve the path relative to the app
+    const resolvedPath = resolveAssetPath(imagePath);
+    
+    // Check if file exists
+    if (!fs.existsSync(resolvedPath)) {
+      console.warn(`[IMAGE] File not found: ${resolvedPath}`);
+      return null;
+    }
+    
+    // Read file into buffer
+    const buffer = fs.readFileSync(resolvedPath);
+    
+    // Get image dimensions from buffer
+    const dimensions = sizeOf(buffer);
+    console.log(`[IMAGE] Dimensions for ${imagePath}: ${dimensions.width}x${dimensions.height}`);
+    return { width: dimensions.width, height: dimensions.height };
+  } catch (error) {
+    console.error(`[IMAGE] Failed to get dimensions for ${resolvedPath}:`, error);
+    return null;
+  }
+}
+
+/**
  * 执行终端命令
  * @param {string} command - 命令名
  * @param {Array} args - 参数数组
@@ -1007,8 +1038,13 @@ function executeTerminalCommand(command, args) {
       const fitMode = args[2] || 'fill';
 
       try {
-        createPicture(pictureId, imagePath, fitMode);
-        return { success: true, message: `图片窗口 ${pictureId} 已创建` };
+        // Get image dimensions
+        const dimensions = getImageDimensions(imagePath);
+        const width = dimensions ? dimensions.width : 400;
+        const height = dimensions ? dimensions.height : 300;
+        
+        createPicture(pictureId, imagePath, fitMode, null, width, height);
+        return { success: true, message: `图片窗口 ${pictureId} 已创建 (${width}x${height})` };
       } catch (error) {
         return { success: false, message: `创建失败: ${error.message}` };
       }
@@ -1050,11 +1086,25 @@ function executeTerminalCommand(command, args) {
       const blurred = args[4] !== 'false'; // 默认为true
 
       try {
+        // Get image dimensions if content type is image
+        let width = 800;
+        let height = 600;
+        
+        if (contentType === 'image' && contentPath) {
+          const dimensions = getImageDimensions(contentPath);
+          if (dimensions) {
+            width = dimensions.width;
+            height = dimensions.height;
+          }
+        }
+        
         const result = createContentWindow(id, {
           contentType,
           contentPath,
           blurAmount,
-          blurred
+          blurred,
+          width,
+          height
         });
         return result;
       } catch (error) {
