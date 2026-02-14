@@ -21,6 +21,32 @@ import { securityAuditSystem, SECURITY_EVENT_TYPES, SEVERITY_LEVELS } from '../s
 // Platform detection
 const isWindows = process.platform === 'win32';
 
+/**
+ * Blocked directories - directories that are protected from terminal access
+ * These directories contain sensitive system files, source code, or configuration
+ * that should not be accessible through terminal commands for security reasons.
+ * 
+ * Directories can be programmatically unlocked using the unlockDirectory() method
+ * to allow temporary access when needed (e.g., for game mechanics like door/key systems).
+ * 
+ * @constant {Array<string>}
+ */
+const BLOCKED_DIRECTORIES = [
+  'node_modules',
+  '.git',
+  '.kiro/hooks',
+  'src',
+  'renderer',
+  'test',
+  'tests',
+  '__tests__',
+  '.vscode',
+  '.idea',
+  'dist',
+  'build',
+  'out'
+];
+
 // Security configuration constants
 const SECURITY_CONFIG = {
   MAX_PATH_LENGTH: 4096,
@@ -89,6 +115,18 @@ const SECURITY_POLICIES = {
 /**
  * Enhanced Path Security Validator Class
  * Provides comprehensive path validation with configurable security policies
+ * 
+ * @property {string} gameDataRoot - Root directory for game data
+ * @property {Object} securityPolicies - Security policies per operation type
+ * @property {boolean} auditEnabled - Whether security auditing is enabled
+ * @property {Map} cache - Validation result cache
+ * @property {number} cacheMaxSize - Maximum cache size
+ * @property {number} cacheTimeout - Cache timeout in milliseconds
+ * @property {Set<string>} unlockedDirectories - Set of directories that have been unlocked for access
+ *                                                despite being in the blocked list. Directories can be
+ *                                                unlocked programmatically using unlockDirectory() and
+ *                                                locked again using lockDirectory(). This enables dynamic
+ *                                                access control for game mechanics like door/key systems.
  */
 export class EnhancedPathSecurityValidator {
   constructor(options = {}) {
@@ -98,6 +136,7 @@ export class EnhancedPathSecurityValidator {
     this.cache = new Map();
     this.cacheMaxSize = options.cacheMaxSize || 1000;
     this.cacheTimeout = options.cacheTimeout || 300000; // 5 minutes
+    this.unlockedDirectories = new Set();
     
     console.debug('[PATH_SECURITY] Enhanced validator initialized', {
       gameDataRoot: this.gameDataRoot,
@@ -112,17 +151,18 @@ export class EnhancedPathSecurityValidator {
    * @param {string} baseDir - Base directory for relative paths
    * @param {string} allowedScope - Allowed scope directory
    * @param {string} operation - Operation type (READ, WRITE, EXECUTE, LIST)
+   * @param {boolean} useBlocklist - If true, uses blocklist validation; if false, uses allowlist validation
    * @returns {Object} Comprehensive validation result
    */
-  validatePath(inputPath, baseDir = null, allowedScope = null, operation = 'READ') {
+  validatePath(inputPath, baseDir = null, allowedScope = null, operation = 'READ', useBlocklist = true) {
     const startTime = Date.now();
     
     try {
       // Check cache first
-      const cacheKey = `${inputPath}|${baseDir}|${allowedScope}|${operation}`;
+      const cacheKey = `${inputPath}|${baseDir}|${allowedScope}|${operation}|${useBlocklist}`;
       const cached = this.getCachedResult(cacheKey);
       if (cached) {
-        console.debug('[PATH_SECURITY] Cache hit for path validation', { inputPath, operation });
+        console.debug('[PATH_SECURITY] Cache hit for path validation', { inputPath, operation, useBlocklist });
         return cached;
       }
 
@@ -130,7 +170,8 @@ export class EnhancedPathSecurityValidator {
         inputPath,
         baseDir,
         allowedScope,
-        operation
+        operation,
+        useBlocklist
       });
 
       // Layer 1: Basic input validation
@@ -163,7 +204,7 @@ export class EnhancedPathSecurityValidator {
       const canonicalPath = this.canonicalizePath(normalizedPath, baseDir);
 
       // Layer 6: Scope validation
-      const scopeValidation = this.validateScope(canonicalPath, allowedScope || this.gameDataRoot);
+      const scopeValidation = this.validateScope(canonicalPath, allowedScope || this.gameDataRoot, useBlocklist);
       if (!scopeValidation.isValid) {
         this.logSecurityViolation('SCOPE_VIOLATION', inputPath, scopeValidation.details);
         return this.createValidationResult(false, scopeValidation.error, scopeValidation.details);
@@ -187,6 +228,7 @@ export class EnhancedPathSecurityValidator {
         normalizedPath,
         canonicalPath,
         operation,
+        useBlocklist,
         validationTime: Date.now() - startTime
       });
 
@@ -197,6 +239,7 @@ export class EnhancedPathSecurityValidator {
         this.logSecurityEvent('PATH_ACCESS_GRANTED', inputPath, {
           canonicalPath,
           operation,
+          useBlocklist,
           validationTime: result.details.validationTime
         });
       }
@@ -205,6 +248,7 @@ export class EnhancedPathSecurityValidator {
         inputPath,
         canonicalPath,
         operation,
+        useBlocklist,
         validationTime: result.details.validationTime
       });
 
@@ -217,6 +261,7 @@ export class EnhancedPathSecurityValidator {
           originalError: error.message,
           inputPath,
           operation,
+          useBlocklist,
           validationTime: Date.now() - startTime
         }
       );
@@ -701,35 +746,660 @@ export class EnhancedPathSecurityValidator {
     return { isValid: true };
   }
 
-  validateScope(canonicalPath, allowedScope) {
-    try {
-      const isWithin = isPathWithinScope(canonicalPath, allowedScope);
-      
-      if (!isWithin) {
+  /**
+     * Validates if a path is within allowed scope using blocklist or allowlist approach
+     * 
+     * This method supports two validation modes:
+     * 1. Blocklist mode (useBlocklist=true): Allows access to any path except those containing
+     *    blocked directory components. More flexible for file operations.
+     * 2. Allowlist mode (useBlocklist=false): Only allows access within the allowedScope directory.
+     *    More restrictive, used for directory navigation commands.
+     * 
+     * Validation flow:
+     * 1. If allowlist mode: Check if path is within allowed scope
+     * 2. If blocklist mode: Check if path contains any blocked directory components
+     * 3. Check if blocked directory has been explicitly unlocked
+     * 4. Return validation result with specific error messages
+     * 
+     * @param {string} canonicalPath - The canonical (absolute, normalized) path to validate
+     * @param {string} allowedScope - Allowed scope directory (used in allowlist mode)
+     * @param {boolean} useBlocklist - If true, uses blocklist validation; if false, uses allowlist validation
+     * @returns {Object} Validation result object
+     * @returns {boolean} returns.isValid - True if path is valid and accessible
+     * @returns {string} [returns.error] - Error message if validation failed
+     * @returns {Object} [returns.details] - Additional details about the validation
+     * 
+     * @example
+     * // Blocklist mode: Path not blocked
+     * validateScope('/game/data/content/image.png', '/game/data', true)
+     * // Returns: { isValid: true }
+     * 
+     * @example
+     * // Blocklist mode: Path contains blocked directory
+     * validateScope('/game/data/node_modules/package.json', '/game/data', true)
+     * // Returns: { isValid: false, error: '...', details: {...} }
+     * 
+     * @example
+     * // Allowlist mode: Path within scope
+     * validateScope('/game/data/saves/game1.json', '/game/data', false)
+     * // Returns: { isValid: true }
+     * 
+     * @example
+     * // Allowlist mode: Path outside scope
+     * validateScope('/home/user/image.png', '/game/data', false)
+     * // Returns: { isValid: false, error: '...', details: {...} }
+     */
+    validateScope(canonicalPath, allowedScope, useBlocklist = true) {
+      try {
+        // Allowlist mode: Only allow paths within the allowed scope
+        if (!useBlocklist) {
+          const isWithin = isPathWithinScope(canonicalPath, allowedScope);
+
+          if (!isWithin) {
+            return {
+              isValid: false,
+              error: 'Path outside allowed scope',
+              details: {
+                canonicalPath,
+                allowedScope,
+                mode: 'allowlist',
+                severity: ERROR_SEVERITY.HIGH
+              }
+            };
+          }
+
+          // In allowlist mode, if within scope, it's valid
+          return { isValid: true };
+        }
+
+        // Blocklist mode: Check if path contains any blocked directory components
+        const blockCheck = this.isBlockedDirectory(canonicalPath);
+
+        if (blockCheck.isBlocked) {
+          // Check if this blocked directory has been explicitly unlocked
+          const isUnlocked = this.isDirectoryUnlocked(canonicalPath);
+
+          if (!isUnlocked) {
+            // Path is blocked and not unlocked - deny access
+            return {
+              isValid: false,
+              error: `Access denied: Path contains blocked directory '${blockCheck.blockedDirectory}'. This directory is protected for security reasons.`,
+              details: {
+                canonicalPath,
+                blockedDirectory: blockCheck.blockedDirectory,
+                reason: 'blocked_directory',
+                mode: 'blocklist',
+                severity: ERROR_SEVERITY.HIGH
+              }
+            };
+          }
+
+          // Path is blocked but has been unlocked - allow access
+          console.debug('[PATH_SECURITY] Allowing access to unlocked blocked directory', {
+            canonicalPath,
+            blockedDirectory: blockCheck.blockedDirectory
+          });
+        }
+
+        // Path is valid - either not blocked or explicitly unlocked
+        return { isValid: true };
+
+      } catch (error) {
         return {
           isValid: false,
-          error: 'Path outside allowed scope',
+          error: 'Scope validation failed',
           details: {
             canonicalPath,
             allowedScope,
-            severity: ERROR_SEVERITY.HIGH
+            useBlocklist,
+            error: error.message,
+            severity: ERROR_SEVERITY.MEDIUM
           }
         };
       }
+    }
+  /**
+   * Checks if a path contains any blocked directory components
+   *
+   * This method validates whether a given path contains any directory components
+   * that are in the BLOCKED_DIRECTORIES list. It performs case-insensitive matching
+   * for Windows compatibility and checks each path component individually.
+   *
+   * @param {string} pathToCheck - The path to check for blocked directories
+   * @returns {Object} Result object with isBlocked flag and details
+   * @returns {boolean} returns.isBlocked - True if path contains a blocked directory
+   * @returns {string|null} returns.blockedDirectory - The blocked directory that was matched, or null
+   * @returns {string|null} returns.error - Error message if path is blocked, or null
+   *
+   * @example
+   * // Returns { isBlocked: true, blockedDirectory: 'node_modules', error: '...' }
+   * validator.isBlockedDirectory('/path/to/node_modules/package')
+   *
+   * @example
+   * // Returns { isBlocked: false, blockedDirectory: null, error: null }
+   * validator.isBlockedDirectory('/path/to/user/content')
+   */
+  /**
+     * Checks if a path contains any blocked directory components
+     * 
+     * This method validates whether a given path contains any directory components
+     * that are in the BLOCKED_DIRECTORIES list. It performs case-insensitive matching
+     * for Windows compatibility and checks each path component individually.
+     * It also handles path patterns like '.kiro/hooks' by checking for consecutive
+     * component matches.
+     * 
+     * @param {string} pathToCheck - The path to check for blocked directories
+     * @returns {Object} Result object with isBlocked flag and details
+     * @returns {boolean} returns.isBlocked - True if path contains a blocked directory
+     * @returns {string|null} returns.blockedDirectory - The blocked directory that was matched, or null
+     * @returns {string|null} returns.error - Error message if path is blocked, or null
+     * 
+     * @example
+     * // Returns { isBlocked: true, blockedDirectory: 'node_modules', error: '...' }
+     * validator.isBlockedDirectory('/path/to/node_modules/package')
+     * 
+     * @example
+     * // Returns { isBlocked: false, blockedDirectory: null, error: null }
+     * validator.isBlockedDirectory('/path/to/user/content')
+     */
+    isBlockedDirectory(pathToCheck) {
+      if (!pathToCheck || typeof pathToCheck !== 'string') {
+        return {
+          isBlocked: false,
+          blockedDirectory: null,
+          error: null
+        };
+      }
 
-      return { isValid: true };
-    } catch (error) {
-      return {
-        isValid: false,
-        error: 'Scope validation failed',
-        details: {
-          canonicalPath,
-          allowedScope,
-          error: error.message,
-          severity: ERROR_SEVERITY.MEDIUM
+      // Normalize the path for consistent comparison
+      const normalizedPath = this.normalizePath(pathToCheck);
+
+      // Split path into components
+      const pathComponents = normalizedPath.split(path.sep).filter(c => c);
+
+      // Check each blocked directory pattern
+      for (const blockedDir of BLOCKED_DIRECTORIES) {
+        // Check if blocked directory contains path separator (pattern like '.kiro/hooks')
+        if (blockedDir.includes('/') || blockedDir.includes('\\')) {
+          // Normalize the blocked directory pattern
+          const blockedPattern = blockedDir.replace(/[\/\\]+/g, path.sep);
+          const blockedComponents = blockedPattern.split(path.sep).filter(c => c);
+
+          // Check if the path contains this sequence of components
+          for (let i = 0; i <= pathComponents.length - blockedComponents.length; i++) {
+            let matches = true;
+            for (let j = 0; j < blockedComponents.length; j++) {
+              const pathComp = pathComponents[i + j].toLowerCase();
+              const blockedComp = blockedComponents[j].toLowerCase();
+              if (pathComp !== blockedComp) {
+                matches = false;
+                break;
+              }
+            }
+
+            if (matches) {
+              return {
+                isBlocked: true,
+                blockedDirectory: blockedDir,
+                error: `Access denied: Path contains blocked directory '${blockedDir}'. This directory is protected for security reasons.`
+              };
+            }
+          }
+        } else {
+          // Single component check
+          for (const component of pathComponents) {
+            // Case-insensitive comparison for Windows compatibility
+            const componentLower = component.toLowerCase();
+            const blockedDirLower = blockedDir.toLowerCase();
+
+            if (componentLower === blockedDirLower) {
+              return {
+                isBlocked: true,
+                blockedDirectory: blockedDir,
+                error: `Access denied: Path contains blocked directory '${blockedDir}'. This directory is protected for security reasons.`
+              };
+            }
+          }
         }
+      }
+
+      // No blocked directories found
+      return {
+        isBlocked: false,
+        blockedDirectory: null,
+        error: null
       };
     }
+
+    /**
+     * Returns a list of all currently unlocked directories.
+     *
+     * This method provides visibility into which directories have been explicitly
+     * unlocked using the unlockDirectory() method. This is useful for debugging,
+     * game state management, and displaying unlock status to users.
+     *
+     * The returned array contains normalized absolute paths of all unlocked directories.
+     * The array is a copy of the internal Set, so modifying it will not affect the
+     * validator's state.
+     *
+     * @returns {Array<string>} Array of unlocked directory paths (normalized absolute paths)
+     *
+     * @example
+     * // Get list of unlocked directories
+     * validator.unlockDirectory('./doors/secret-room');
+     * validator.unlockDirectory('./doors/treasure-vault');
+     * const unlocked = validator.listUnlockedDirectories();
+     * console.log(unlocked);
+     * // [
+     * //   '/absolute/path/to/doors/secret-room',
+     * //   '/absolute/path/to/doors/treasure-vault'
+     * // ]
+     *
+     * @example
+     * // Check if any directories are unlocked
+     * const unlocked = validator.listUnlockedDirectories();
+     * if (unlocked.length > 0) {
+     *   console.log(`${unlocked.length} directories are currently unlocked`);
+     * }
+     */
+    listUnlockedDirectories() {
+      // Return array copy of unlockedDirectories Set
+      return Array.from(this.unlockedDirectories);
+    }
+
+    /**
+     * Clears all unlocked directories, restoring default blocklist behavior for all paths.
+     *
+     * This method removes all directories from the unlockedDirectories set, effectively
+     * locking all previously unlocked directories at once. This is useful for game reset
+     * scenarios, level transitions, or when you need to restore the default security state.
+     *
+     * The method returns the count of directories that were cleared, which can be useful
+     * for logging or confirming the operation's effect.
+     *
+     * @returns {number} The number of directories that were cleared (unlocked before clearing)
+     *
+     * @example
+     * // Clear all unlocked directories
+     * validator.unlockDirectory('./doors/secret-room');
+     * validator.unlockDirectory('./doors/treasure-vault');
+     * const count = validator.clearUnlockedDirectories();
+     * console.log(`Cleared ${count} unlocked directories`);
+     * // Output: "Cleared 2 unlocked directories"
+     *
+     * @example
+     * // Reset security state on game restart
+     * function resetGameState() {
+     *   const clearedCount = validator.clearUnlockedDirectories();
+     *   console.log(`Game reset: ${clearedCount} directories locked`);
+     * }
+     *
+     * @example
+     * // Clear when no directories are unlocked
+     * const count = validator.clearUnlockedDirectories();
+     * console.log(count); // 0
+     */
+    clearUnlockedDirectories() {
+      // Get count before clearing
+      const count = this.unlockedDirectories.size;
+
+      // Clear the Set
+      this.unlockedDirectories.clear();
+
+      console.debug('[PATH_SECURITY] Cleared all unlocked directories', {
+        clearedCount: count
+      });
+
+      // Return count of cleared directories
+      return count;
+    }
+
+
+    /**
+     * Checks if a directory has been explicitly unlocked for access
+     *
+     * This method checks if a given directory path or any of its parent directories
+     * have been explicitly unlocked using the unlockDirectory() method. Unlocked
+     * directories bypass the blocklist restrictions while still maintaining all
+     * other security checks (path traversal, encoding, etc.).
+     *
+     * The method walks up the directory tree checking each parent directory to see
+     * if it has been unlocked. This allows unlocking a parent directory to grant
+     * access to all its subdirectories.
+     *
+     * @param {string} directoryPath - The directory path to check for unlock status
+     * @returns {boolean} True if the directory or any parent is unlocked, false otherwise
+     *
+     * @example
+     * // Check if a specific directory is unlocked
+     * validator.unlockDirectory('/game/data/src');
+     * validator.isDirectoryUnlocked('/game/data/src/config.js'); // Returns: true
+     *
+     * @example
+     * // Parent directory unlock grants access to children
+     * validator.unlockDirectory('/game/data/src');
+     * validator.isDirectoryUnlocked('/game/data/src/utils/helper.js'); // Returns: true
+     *
+     * @example
+     * // Directory not unlocked
+     * validator.isDirectoryUnlocked('/game/data/node_modules/package.json'); // Returns: false
+     */
+    isDirectoryUnlocked(directoryPath) {
+      if (!directoryPath || typeof directoryPath !== 'string') {
+        return false;
+      }
+
+      try {
+        // Normalize the path for consistent comparison
+        const normalizedPath = path.resolve(directoryPath);
+
+        // Check if the exact path is unlocked
+        if (this.unlockedDirectories.has(normalizedPath)) {
+          return true;
+        }
+
+        // Walk up the directory tree to check if any parent is unlocked
+        let currentPath = normalizedPath;
+        const root = path.parse(currentPath).root;
+
+        while (currentPath !== root) {
+          if (this.unlockedDirectories.has(currentPath)) {
+            return true;
+          }
+
+          const parentPath = path.dirname(currentPath);
+          if (parentPath === currentPath) {
+            // Reached the root
+            break;
+          }
+          currentPath = parentPath;
+        }
+
+        // No unlocked directory found in the path hierarchy
+        return false;
+
+      } catch (error) {
+        console.error('[PATH_SECURITY] Error checking directory unlock status', {
+          directoryPath,
+          error: error.message
+        });
+        return false;
+      }
+    }
+
+  /**
+   * Unlocks a directory to allow access despite being in the blocked list.
+   * 
+   * This method allows programmatic unlocking of directories that would normally
+   * be blocked by the security validator. This is useful for game mechanics like
+   * door/key systems where access to certain directories should be granted
+   * dynamically based on game state.
+   * 
+   * The unlocked directory and all its subdirectories will be accessible until
+   * explicitly locked again using lockDirectory(). However, all other security
+   * checks (path traversal, encoding validation, etc.) remain active.
+   * 
+   * @param {string} directoryPath - The directory path to unlock
+   * @returns {Object} Result object with success status and details
+   * @returns {boolean} result.success - Whether the unlock operation succeeded
+   * @returns {string} result.unlockedPath - The normalized path that was unlocked
+   * @returns {string} [result.error] - Error message if the operation failed
+   * 
+   * @example
+   * // Unlock a specific directory
+   * const result = validator.unlockDirectory('./doors/secret-room');
+   * if (result.success) {
+   *   console.log(`Unlocked: ${result.unlockedPath}`);
+   * }
+   * 
+   * @example
+   * // Attempting to unlock system root (will fail)
+   * const result = validator.unlockDirectory('/');
+   * console.log(result.error); // "Cannot unlock system root directory"
+   */
+  unlockDirectory(directoryPath) {
+    // Validate input
+    if (!directoryPath || typeof directoryPath !== 'string') {
+      return {
+        success: false,
+        error: 'Invalid directory path: Path must be a non-empty string'
+      };
+    }
+
+    try {
+      // Normalize and resolve the directory path
+      const normalizedPath = path.resolve(directoryPath);
+
+      // Validate path is not system root
+      const parsedPath = path.parse(normalizedPath);
+      const isSystemRoot = normalizedPath === parsedPath.root;
+      
+      if (isSystemRoot) {
+        return {
+          success: false,
+          error: `Cannot unlock system root directory: ${normalizedPath}`
+        };
+      }
+
+      // Check for dangerous locations (parent of current working directory, etc.)
+      const cwd = process.cwd();
+      const cwdParent = path.dirname(cwd);
+      
+      // Prevent unlocking parent directories of the application
+      if (normalizedPath === cwdParent || normalizedPath === path.dirname(cwdParent)) {
+        return {
+          success: false,
+          error: `Cannot unlock dangerous location: ${normalizedPath}`
+        };
+      }
+
+      // Add normalized path to unlockedDirectories Set
+      this.unlockedDirectories.add(normalizedPath);
+
+      console.debug('[PATH_SECURITY] Directory unlocked', {
+        path: normalizedPath,
+        totalUnlocked: this.unlockedDirectories.size
+      });
+
+      // Return success result object with unlocked path
+      return {
+        success: true,
+        unlockedPath: normalizedPath,
+        message: `Directory unlocked successfully: ${normalizedPath}`
+      };
+
+    } catch (error) {
+      // Handle errors gracefully with descriptive error messages
+      console.error('[PATH_SECURITY] Error unlocking directory', {
+        directoryPath,
+        error: error.message
+      });
+
+      return {
+        success: false,
+        error: `Failed to unlock directory: ${error.message}`
+      };
+    }
+  }
+
+  /**
+   * Locks a previously unlocked directory, removing it from the unlocked directories set.
+   * 
+   * This method removes a directory from the unlockedDirectories set, restoring the
+   * default blocklist behavior for that directory. After locking, the directory will
+   * be subject to normal blocklist validation again.
+   * 
+   * If the directory was not previously unlocked, the method returns a warning (not an error)
+   * to indicate that the operation had no effect but is not considered a failure.
+   * 
+   * @param {string} directoryPath - The path to the directory to lock. Can be absolute or relative.
+   *                                  The path will be normalized and resolved to an absolute path.
+   * 
+   * @returns {Object} Result object with the following properties:
+   *   - success {boolean} - Always true (even if directory wasn't unlocked)
+   *   - lockedPath {string} - The normalized absolute path that was locked
+   *   - message {string} - Success or warning message
+   *   - wasUnlocked {boolean} - Whether the directory was actually unlocked before locking
+   * 
+   * @example
+   * // Lock a previously unlocked directory
+   * validator.unlockDirectory('./doors/secret-room');
+   * const result = validator.lockDirectory('./doors/secret-room');
+   * console.log(result);
+   * // {
+   * //   success: true,
+   * //   lockedPath: '/absolute/path/to/doors/secret-room',
+   * //   message: 'Directory locked successfully: /absolute/path/to/doors/secret-room',
+   * //   wasUnlocked: true
+   * // }
+   * 
+   * @example
+   * // Lock a directory that wasn't unlocked (returns warning)
+   * const result = validator.lockDirectory('./some/directory');
+   * console.log(result);
+   * // {
+   * //   success: true,
+   * //   lockedPath: '/absolute/path/to/some/directory',
+   * //   message: 'Warning: Directory was not unlocked: /absolute/path/to/some/directory',
+   * //   wasUnlocked: false
+   * // }
+   * 
+   * @example
+   * // Lock with relative path (will be normalized)
+   * const result = validator.lockDirectory('../parent/directory');
+   * console.log(result.lockedPath); // Absolute normalized path
+   */
+  lockDirectory(directoryPath) {
+    // Validate input
+    if (!directoryPath || typeof directoryPath !== 'string') {
+      return {
+        success: false,
+        error: 'Invalid directory path: Path must be a non-empty string'
+      };
+    }
+
+    try {
+      // Normalize and resolve the directory path using path.resolve()
+      const normalizedPath = path.resolve(directoryPath);
+
+      // Check if directory was actually unlocked
+      const wasUnlocked = this.unlockedDirectories.has(normalizedPath);
+
+      // Remove path from unlockedDirectories Set using Set.delete()
+      this.unlockedDirectories.delete(normalizedPath);
+
+      console.debug('[PATH_SECURITY] Directory lock attempt', {
+        path: normalizedPath,
+        wasUnlocked,
+        totalUnlocked: this.unlockedDirectories.size
+      });
+
+      // Return success result object
+      // Handle case where directory wasn't unlocked (return warning, not error)
+      return {
+        success: true,
+        lockedPath: normalizedPath,
+        message: wasUnlocked 
+          ? `Directory locked successfully: ${normalizedPath}`
+          : `Warning: Directory was not unlocked: ${normalizedPath}`,
+        wasUnlocked
+      };
+
+    } catch (error) {
+      // Handle errors gracefully with descriptive error messages
+      console.error('[PATH_SECURITY] Error locking directory', {
+        directoryPath,
+        error: error.message
+      });
+
+      return {
+        success: false,
+        error: `Failed to lock directory: ${error.message}`
+      };
+    }
+  }
+
+  /**
+   * Returns a list of all currently unlocked directories.
+   * 
+   * This method provides visibility into which directories have been explicitly
+   * unlocked using the unlockDirectory() method. This is useful for debugging,
+   * game state management, and displaying unlock status to users.
+   * 
+   * The returned array contains normalized absolute paths of all unlocked directories.
+   * The array is a copy of the internal Set, so modifying it will not affect the
+   * validator's state.
+   * 
+   * @returns {Array<string>} Array of unlocked directory paths (normalized absolute paths)
+   * 
+   * @example
+   * // Get list of unlocked directories
+   * validator.unlockDirectory('./doors/secret-room');
+   * validator.unlockDirectory('./doors/treasure-vault');
+   * const unlocked = validator.listUnlockedDirectories();
+   * console.log(unlocked);
+   * // [
+   * //   '/absolute/path/to/doors/secret-room',
+   * //   '/absolute/path/to/doors/treasure-vault'
+   * // ]
+   * 
+   * @example
+   * // Check if any directories are unlocked
+   * const unlocked = validator.listUnlockedDirectories();
+   * if (unlocked.length > 0) {
+   *   console.log(`${unlocked.length} directories are currently unlocked`);
+   * }
+   */
+  listUnlockedDirectories() {
+    // Return array copy of unlockedDirectories Set
+    return Array.from(this.unlockedDirectories);
+  }
+
+  /**
+   * Clears all unlocked directories, restoring default blocklist behavior for all paths.
+   * 
+   * This method removes all directories from the unlockedDirectories set, effectively
+   * locking all previously unlocked directories at once. This is useful for game reset
+   * scenarios, level transitions, or when you need to restore the default security state.
+   * 
+   * The method returns the count of directories that were cleared, which can be useful
+   * for logging or confirming the operation's effect.
+   * 
+   * @returns {number} The number of directories that were cleared (unlocked before clearing)
+   * 
+   * @example
+   * // Clear all unlocked directories
+   * validator.unlockDirectory('./doors/secret-room');
+   * validator.unlockDirectory('./doors/treasure-vault');
+   * const count = validator.clearUnlockedDirectories();
+   * console.log(`Cleared ${count} unlocked directories`);
+   * // Output: "Cleared 2 unlocked directories"
+   * 
+   * @example
+   * // Reset security state on game restart
+   * function resetGameState() {
+   *   const clearedCount = validator.clearUnlockedDirectories();
+   *   console.log(`Game reset: ${clearedCount} directories locked`);
+   * }
+   * 
+   * @example
+   * // Clear when no directories are unlocked
+   * const count = validator.clearUnlockedDirectories();
+   * console.log(count); // 0
+   */
+  clearUnlockedDirectories() {
+    // Get count before clearing
+    const count = this.unlockedDirectories.size;
+
+    // Clear the Set
+    this.unlockedDirectories.clear();
+
+    console.debug('[PATH_SECURITY] Cleared all unlocked directories', {
+      clearedCount: count
+    });
+
+    // Return count of cleared directories
+    return count;
   }
 
   createValidationResult(isValid, error = null, details = {}) {
@@ -861,14 +1531,82 @@ export class EnhancedPathSecurityValidator {
 const defaultValidator = new EnhancedPathSecurityValidator();
 
 /**
+ * Singleton instance of EnhancedPathSecurityValidator for shared use across the application.
+ * 
+ * This singleton provides a centralized validator instance that maintains state across
+ * validation calls, including:
+ * - Unlocked directories (for game mechanics like door/key systems)
+ * - Validation result cache for performance
+ * - Consistent security policies
+ * 
+ * Usage Pattern:
+ * 
+ * 1. For simple validation (stateless):
+ *    Use the validateAndResolvePath() function which creates its own validator instance.
+ *    This is suitable for one-off validations that don't need to maintain state.
+ * 
+ * 2. For stateful validation (recommended for game mechanics):
+ *    Import and use the pathValidator singleton directly.
+ *    This is required when you need to:
+ *    - Unlock/lock directories dynamically
+ *    - Share unlocked directory state across different parts of the application
+ *    - Benefit from validation result caching
+ * 
+ * When to use the singleton:
+ * - Door/key game mechanics that unlock directories
+ * - Game state management that needs to persist unlocked directories
+ * - Any scenario where directory access permissions change at runtime
+ * - When you need to query the current unlock state
+ * 
+ * When NOT to use the singleton:
+ * - Simple one-off path validations
+ * - When you need isolated validation state
+ * - When you need different security policies per validation
+ * 
+ * @example
+ * // Using the singleton for game mechanics
+ * import { pathValidator } from './pathSecurityValidator.js';
+ * 
+ * // When player uses a key to unlock a door
+ * const result = pathValidator.unlockDirectory('./doors/secret-room');
+ * if (result.success) {
+ *   console.log('Door unlocked!');
+ * }
+ * 
+ * // Later, when accessing files in that directory
+ * const validation = pathValidator.validatePath(
+ *   './doors/secret-room/treasure.txt',
+ *   process.cwd(),
+ *   gameDataRoot,
+ *   'READ',
+ *   true // use blocklist mode
+ * );
+ * 
+ * // Check unlock status
+ * if (pathValidator.isDirectoryUnlocked('./doors/secret-room')) {
+ *   console.log('Secret room is accessible');
+ * }
+ * 
+ * // List all unlocked directories
+ * const unlocked = pathValidator.listUnlockedDirectories();
+ * console.log('Unlocked areas:', unlocked);
+ * 
+ * @type {EnhancedPathSecurityValidator}
+ */
+export const pathValidator = defaultValidator;
+
+/**
  * Validates and resolves a path within the game scope
  * @param {string} inputPath - The input path to validate and resolve
- * @paring directory
+ * @param {string} currentDir - The current working directory
  * @param {string} gameDataRoot - The root directory for game data (defaults to project root)
+ * @param {boolean} useBlocklist - If true, uses blocklist validation (allows access except to blocked directories).
+ *                                  If false, uses allowlist validation (only allows access within gameDataRoot scope).
+ *                                  Defaults to true for file operations, should be false for directory navigation.
  * @returns {Object} Validation result with resolved path
  */
-export function validateAndResolvePath(inputPath, currentDir, gameDataRoot = null) {
-  console.debug(`[PATH_SECURITY] Validating path: "${inputPath}", currentDir: "${currentDir}"`);
+export function validateAndResolvePath(inputPath, currentDir, gameDataRoot = null, useBlocklist = true) {
+  console.debug(`[PATH_SECURITY] Validating path: "${inputPath}", currentDir: "${currentDir}", useBlocklist: ${useBlocklist}`);
 
   try {
     // Set default game data root to configured directory if not provided
@@ -876,7 +1614,7 @@ export function validateAndResolvePath(inputPath, currentDir, gameDataRoot = nul
     
     // Use enhanced validator
     const validator = new EnhancedPathSecurityValidator({ gameDataRoot: actualGameDataRoot });
-    const result = validator.validatePath(inputPath, currentDir, actualGameDataRoot, 'READ');
+    const result = validator.validatePath(inputPath, currentDir, actualGameDataRoot, 'READ', useBlocklist);
     
     if (result.isValid) {
       return {
@@ -904,6 +1642,7 @@ export function validateAndResolvePath(inputPath, currentDir, gameDataRoot = nul
         inputPath, 
         currentDir, 
         gameDataRoot,
+        useBlocklist,
         originalError: {
           name: error.name,
           message: error.message,

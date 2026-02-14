@@ -1,6 +1,12 @@
 import { ipcMain } from 'electron';
 import sizeOf from 'image-size';
 import {
+  getConfig,
+  getGameDataDirectory,
+  setGameDataDirectory,
+  resetConfigToDefaults
+} from '../core/config.js';
+import {
   createWindow,
   setBounds,
   getBounds,
@@ -29,7 +35,10 @@ import {
   deleteStoredWindow,
   validateWindowData
 } from '../storage/windowStorage.js';
-import { validateAndResolvePath, getDefaultGameDataDirectory, isWithinGameScope } from '../security/pathSecurityValidator.js';
+import { validateAndResolvePath, getDefaultGameDataDirectory, isWithinGameScope, pathValidator } from '../security/pathSecurityValidator.js';
+// Note: This file uses validateAndResolvePath() for stateless path validation.
+// For stateful operations (unlocking directories for game mechanics), import and use
+// the pathValidator singleton directly. See pathSecurityValidator.js documentation.
 import { 
   navigateToDirectory, 
   getDirectoryContents, 
@@ -55,9 +64,10 @@ import { IPCSecurityManager } from '../security/ipcSecurityManager.js';
 import { memoryManager } from '../utils/memoryManager.js';
 import { securityAuditSystem } from '../security/auditSystem.js';
 import { resolveAssetPath } from '../utils/assetPathResolver.js';
+import { parseArguments, commandSchemas } from '../utils/argumentParser.js';
 import fs from 'node:fs';
 import path from 'node:path';
-import '../../logger.js'; // 导入日志系统
+import '../../logger.js'; // Import logging system
 
 // Initialize IPC Security Manager
 const ipcSecurityManager = new IPCSecurityManager({
@@ -142,10 +152,10 @@ function secureIpcHandler(channel, handler) {
 }
 
 /**
- * 初始化 IPC 处理程序
+ * Initialize IPC handlers
  */
 export function initializeIpcHandlers() {
-  console.debug('[IPC] 设置IPC处理程序...');
+  console.debug('[IPC] Setting up IPC handlers...');
 
   // Register memory cleanup handler for IPC system
   memoryManager.registerCleanupHandler('ipcHandlers', () => {
@@ -154,110 +164,110 @@ export function initializeIpcHandlers() {
   });
 
   ipcMain.handle('game/window/create', secureIpcHandler('game/window/create', wrapIpcHandler('game/window/create', (_e, payload) => {
-    console.debug('[IPC] 收到创建窗口请求:', payload);
+    console.debug('[IPC] Received create window request:', payload);
     const { id, bounds = {}, title } = payload ?? {};
 
     if (!id) {
-      console.warn('[IPC] 错误: 缺少窗口ID');
+      console.warn('[IPC] Error: Missing window ID');
       return { error: 'id required' };
     }
 
-    console.debug(`[IPC] 开始创建窗口, ID: ${id}`);
+    console.debug(`[IPC] Starting window creation, ID: ${id}`);
     const win = createWindow(id, { ...bounds, title });
     const response = { ok: true, id, webContentsId: win.webContents.id };
 
-    console.debug('[IPC] 窗口创建响应:', response);
+    console.debug('[IPC] Window creation response:', response);
     return response;
   })));
 
   ipcMain.handle('game/window/set-bounds', secureIpcHandler('game/window/set-bounds', wrapIpcHandler('game/window/set-bounds', (_e, { id, bounds }) => {
-    console.debug(`[IPC] 收到设置边界请求, ID: ${id}, 边界:`, bounds);
+    console.debug(`[IPC] Received set bounds request, ID: ${id}, bounds:`, bounds);
 
     if (!id || !bounds) {
-      console.warn('[IPC] 错误: 缺少ID或边界参数');
+      console.warn('[IPC] Error: Missing ID or bounds parameter');
       return { error: 'id & bounds required' };
     }
 
     setBounds(id, bounds);
     const response = { ok: true };
 
-    console.debug('[IPC] 设置边界响应:', response);
+    console.debug('[IPC] Set bounds response:', response);
     return response;
   })));
 
   ipcMain.handle('game/window/get-bounds', secureIpcHandler('game/window/get-bounds', wrapIpcHandler('game/window/get-bounds', (_e, { id }) => {
-    console.debug(`[IPC] 收到获取边界请求, ID: ${id}`);
+    console.debug(`[IPC] Received get bounds request, ID: ${id}`);
 
     const b = getBounds(id);
     const response = b ? { ok: true, bounds: b } : { error: 'not found' };
 
-    console.debug('[IPC] 获取边界响应:', response);
+    console.debug('[IPC] Get bounds response:', response);
     return response;
   })));
 
-  // 终端命令处理程序
+  // Terminal command handler
   ipcMain.handle('terminal/execute-command', secureIpcHandler('terminal/execute-command', wrapIpcHandler('terminal/execute-command', (_e, { command, args }) => {
-    console.debug(`[IPC] 收到终端命令: ${command}, 参数:`, args);
+    console.debug(`[IPC] Executing command: ${command}, args:`, args);
 
     try {
       return executeTerminalCommand(command, args);
     } catch (error) {
-      console.error('[IPC] 终端命令执行错误:', error);
+      console.error('[IPC] Terminal command execution error:', error);
       return { success: false, message: error.message };
     }
   })));
 
-  // 图片加载处理程序
+  // Picture loading handler
   ipcMain.handle('picture/load', secureIpcHandler('picture/load', wrapIpcHandler('picture/load', (_e, imagePath) => {
-    console.debug(`[IPC] 收到图片加载请求: ${imagePath}`);
+    console.debug(`[IPC] Image loading request: ${imagePath}`);
 
     try {
       return loadPictureFile(imagePath);
     } catch (error) {
-      console.error('[IPC] 图片加载错误:', error);
+      console.error('[IPC] Image loading error:', error);
       return { success: false, error: error.message };
     }
   })));
 
-  // 镜头系统处理程序
+  // Lens system handler
   ipcMain.handle('lens/get-position', secureIpcHandler('lens/get-position', wrapIpcHandler('lens/get-position', (_e, lensId) => {
-    console.debug(`[IPC] 获取镜头位置: ${lensId}`);
+    console.debug(`[IPC] Get lens position: ${lensId}`);
     const lensInfo = getLensSystem(lensId);
     if (lensInfo && lensInfo.lensBounds) {
       return { success: true, bounds: lensInfo.lensBounds };
     }
-    return { success: false, error: '镜头不存在或缺少位置信息' };
+    return { success: false, error: 'Lens does not exist or missing position information' };
   })));
 
   ipcMain.handle('window/get-info', secureIpcHandler('window/get-info', wrapIpcHandler('window/get-info', (_e, windowId) => {
-    console.debug(`[IPC] 获取窗口信息: ${windowId}`);
+    console.debug(`[IPC] Get window info: ${windowId}`);
     const info = getWindowInfo(windowId);
     if (info) {
       return { success: true, bounds: { x: info.x, y: info.y, width: info.width, height: info.height } };
     }
-    return { success: false, error: '窗口不存在' };
+    return { success: false, error: 'Window does not exist' };
   })));
 
   // Window storage validation handler
   ipcMain.handle('storage/validate-fenestra-file', secureIpcHandler('storage/validate-fenestra-file', (_e, filePath) => {
-    console.debug(`[IPC] 验证.fenestra文件: ${filePath}`);
+    console.debug(`[IPC] Validating .fenestra file: ${filePath}`);
 
     try {
       return validateFenestraFile(filePath);
     } catch (error) {
-      console.error('[IPC] .fenestra文件验证错误:', error);
+      console.error('[IPC] .fenestra file validation error:', error);
       return { success: false, message: error.message };
     }
   }));
 
   // File system auto-completion handlers
   ipcMain.handle('terminal/get-file-completions', secureIpcHandler('terminal/get-file-completions', async (_e, { partialPath, currentDir }) => {
-    console.debug(`[IPC] 获取文件补全: ${partialPath}, 当前目录: ${currentDir}`);
+    console.debug(`[IPC] Get file completions: ${partialPath}, current directory: ${currentDir}`);
 
     try {
       return await getFileCompletions(partialPath, currentDir);
     } catch (error) {
-      console.error('[IPC] 文件补全错误:', error);
+      console.error('[IPC] File completion error:', error);
       
       // Create standardized error response
       return createErrorResponse(
@@ -269,12 +279,12 @@ export function initializeIpcHandlers() {
   }));
 
   ipcMain.handle('terminal/get-current-directory', secureIpcHandler('terminal/get-current-directory', async (_e) => {
-    console.debug('[IPC] 获取当前工作目录');
+    console.debug('[IPC] Get current working directory');
 
     try {
       return await getCurrentDirectory();
     } catch (error) {
-      console.error('[IPC] 获取当前目录错误:', error);
+      console.error('[IPC] Get current directory error:', error);
       
       return createErrorResponse(
         ERROR_CODES.INTERNAL_ERROR,
@@ -286,12 +296,12 @@ export function initializeIpcHandlers() {
 
   // Directory navigation handlers
   ipcMain.handle('terminal/change-directory', secureIpcHandler('terminal/change-directory', async (_e, { targetPath, currentDir }) => {
-    console.debug(`[IPC] 更改目录: ${targetPath}, 当前目录: ${currentDir}`);
+    console.debug(`[IPC] Change directory: ${targetPath}, current directory: ${currentDir}`);
 
     try {
       return await changeDirectory(targetPath, currentDir);
     } catch (error) {
-      console.error('[IPC] 更改目录错误:', error);
+      console.error('[IPC] Change directory error:', error);
       
       return createErrorResponse(
         ERROR_CODES.INTERNAL_ERROR,
@@ -302,12 +312,12 @@ export function initializeIpcHandlers() {
   }));
 
   ipcMain.handle('terminal/list-directory', secureIpcHandler('terminal/list-directory', async (_e, { dirPath, showHidden }) => {
-    console.debug(`[IPC] 列出目录内容: ${dirPath}, 显示隐藏文件: ${showHidden}`);
+    console.debug(`[IPC] List directory contents: ${dirPath}, show hidden: ${showHidden}`);
 
     try {
       return await listDirectoryContents(dirPath, showHidden);
     } catch (error) {
-      console.error('[IPC] 列出目录内容错误:', error);
+      console.error('[IPC] List directory contents error:', error);
       
       return createErrorResponse(
         ERROR_CODES.INTERNAL_ERROR,
@@ -318,12 +328,12 @@ export function initializeIpcHandlers() {
   }));
 
   ipcMain.handle('terminal/get-working-directory', secureIpcHandler('terminal/get-working-directory', async (_e) => {
-    console.debug('[IPC] 获取当前工作目录');
+    console.debug('[IPC] Get current working directory');
 
     try {
       return await getWorkingDirectory();
     } catch (error) {
-      console.error('[IPC] 获取工作目录错误:', error);
+      console.error('[IPC] Get working directory error:', error);
       
       return createErrorResponse(
         ERROR_CODES.INTERNAL_ERROR,
@@ -335,13 +345,13 @@ export function initializeIpcHandlers() {
 
   // Configuration management handlers
   ipcMain.handle('config/get-game-data-directory', secureIpcHandler('config/get-game-data-directory', async (_e) => {
-    console.debug('[IPC] 获取游戏数据目录配置');
+    console.debug('[IPC] Get game data directory configuration');
     
     try {
       const { getGameDataDirectory } = await import('../core/config.js');
       const gameDataDir = getGameDataDirectory();
       
-      console.debug(`[IPC] 游戏数据目录: ${gameDataDir}`);
+      console.debug(`[IPC] Game data directory: ${gameDataDir}`);
       
       return {
         success: true,
@@ -349,7 +359,7 @@ export function initializeIpcHandlers() {
       };
       
     } catch (error) {
-      console.error('[IPC] 获取游戏数据目录失败:', error);
+      console.error('[IPC] Failed to get game data directory:', error);
       return {
         success: false,
         error: error.message
@@ -358,22 +368,22 @@ export function initializeIpcHandlers() {
   }));
 
   ipcMain.handle('config/set-game-data-directory', secureIpcHandler('config/set-game-data-directory', async (_e, { path: newPath }) => {
-    console.debug(`[IPC] 设置游戏数据目录: ${newPath}`);
+    console.debug(`[IPC] Set game data directory: ${newPath}`);
     
     try {
       const { setGameDataDirectory } = await import('../core/config.js');
       const result = setGameDataDirectory(newPath);
       
       if (result.success) {
-        console.log(`[IPC] 游戏数据目录已更新: ${result.path}`);
+        console.log(`[IPC] Game data directory updated: ${result.path}`);
       } else {
-        console.warn(`[IPC] 游戏数据目录设置失败: ${result.error}`);
+        console.warn(`[IPC] Failed to set game data directory: ${result.error}`);
       }
       
       return result;
       
     } catch (error) {
-      console.error('[IPC] 设置游戏数据目录失败:', error);
+      console.error('[IPC] Failed to set game data directory:', error);
       return {
         success: false,
         error: error.message
@@ -382,13 +392,13 @@ export function initializeIpcHandlers() {
   }));
 
   ipcMain.handle('config/get-config', secureIpcHandler('config/get-config', async (_e) => {
-    console.debug('[IPC] 获取完整配置');
+    console.debug('[IPC] Get full configuration');
     
     try {
       const { getConfig } = await import('../core/config.js');
       const config = getConfig();
       
-      console.debug('[IPC] 配置获取成功');
+      console.debug('[IPC] Configuration retrieved successfully');
       
       return {
         success: true,
@@ -396,7 +406,7 @@ export function initializeIpcHandlers() {
       };
       
     } catch (error) {
-      console.error('[IPC] 获取配置失败:', error);
+      console.error('[IPC] Failed to get configuration:', error);
       return {
         success: false,
         error: error.message
@@ -405,22 +415,22 @@ export function initializeIpcHandlers() {
   }));
 
   ipcMain.handle('config/reset-to-defaults', secureIpcHandler('config/reset-to-defaults', async (_e) => {
-    console.debug('[IPC] 重置配置为默认值');
+    console.debug('[IPC] Reset configuration to defaults');
     
     try {
       const { resetConfigToDefaults } = await import('../core/config.js');
       const result = resetConfigToDefaults();
       
       if (result.success) {
-        console.log('[IPC] 配置已重置为默认值');
+        console.log('[IPC] Configuration reset to defaults');
       } else {
-        console.warn(`[IPC] 配置重置失败: ${result.error}`);
+        console.warn(`[IPC] Failed to reset configuration: ${result.error}`);
       }
       
       return result;
       
     } catch (error) {
-      console.error('[IPC] 重置配置失败:', error);
+      console.error('[IPC] Failed to reset configuration:', error);
       return {
         success: false,
         error: error.message
@@ -430,13 +440,13 @@ export function initializeIpcHandlers() {
 
   // Email system handlers
   ipcMain.handle('email/get-list', secureIpcHandler('email/get-list', async (_e, { limit, offset }) => {
-    console.debug(`[IPC] 获取邮件列表: limit=${limit}, offset=${offset}`);
+    console.debug(`[IPC] Get email list: limit=${limit}, offset=${offset}`);
     
     try {
       const { getEmails, getInboxPath } = await import('../storage/emailStorage.js');
       const emails = await getEmails(limit, offset);
       
-      console.debug(`[IPC] 返回 ${emails.length} 封邮件`);
+      console.debug(`[IPC] Returning ${emails.length} emails`);
       
       return {
         success: true,
@@ -445,7 +455,7 @@ export function initializeIpcHandlers() {
       };
       
     } catch (error) {
-      console.error('[IPC] 获取邮件列表失败:', error);
+      console.error('[IPC] Failed to get email list:', error);
       
       // Import getInboxPath to provide context in error
       let inboxPath = null;
@@ -467,14 +477,14 @@ export function initializeIpcHandlers() {
   }));
 
   ipcMain.handle('email/get-by-id', secureIpcHandler('email/get-by-id', async (_e, { emailId }) => {
-    console.debug(`[IPC] 获取邮件: ${emailId}`);
+    console.debug(`[IPC] Get email: ${emailId}`);
     
     try {
       const { getEmailById } = await import('../storage/emailStorage.js');
       const email = await getEmailById(emailId);
       
       if (!email) {
-        console.warn(`[IPC] 邮件未找到: ${emailId}`);
+        console.warn(`[IPC] Email not found: ${emailId}`);
         return {
           success: false,
           error: 'Email not found',
@@ -482,7 +492,7 @@ export function initializeIpcHandlers() {
         };
       }
       
-      console.debug(`[IPC] 邮件获取成功: ${emailId}`);
+      console.debug(`[IPC] Email retrieved successfully: ${emailId}`);
       
       return {
         success: true,
@@ -490,7 +500,7 @@ export function initializeIpcHandlers() {
       };
       
     } catch (error) {
-      console.error(`[IPC] 获取邮件失败: ${emailId}`, error);
+      console.error(`[IPC] Failed to get email: ${emailId}`, error);
       return {
         success: false,
         error: error.message,
@@ -500,22 +510,22 @@ export function initializeIpcHandlers() {
   }));
 
   ipcMain.handle('email/mark-read', secureIpcHandler('email/mark-read', async (_e, { emailId }) => {
-    console.debug(`[IPC] 标记邮件为已读: ${emailId}`);
+    console.debug(`[IPC] Mark email as read: ${emailId}`);
     
     try {
       const { markEmailAsRead } = await import('../storage/emailStorage.js');
       const result = await markEmailAsRead(emailId);
       
       if (result.success) {
-        console.log(`[IPC] 邮件已标记为已读: ${emailId}`);
+        console.log(`[IPC] Email marked as read: ${emailId}`);
       } else {
-        console.warn(`[IPC] 标记邮件为已读失败: ${result.error}`);
+        console.warn(`[IPC] Failed to mark email as read: ${result.error}`);
       }
       
       return result;
       
     } catch (error) {
-      console.error(`[IPC] 标记邮件为已读失败: ${emailId}`, error);
+      console.error(`[IPC] Failed to mark email as read: ${emailId}`, error);
       return {
         success: false,
         error: error.message
@@ -524,14 +534,14 @@ export function initializeIpcHandlers() {
   }));
 
   ipcMain.handle('email/get-inbox-path', secureIpcHandler('email/get-inbox-path', async (_e) => {
-    console.debug('[IPC] 获取收件箱路径');
+    console.debug('[IPC] Get inbox path');
     
     try {
       const { getInboxPath } = await import('../storage/emailStorage.js');
       const inboxPath = getInboxPath();
       
       if (!inboxPath) {
-        console.warn('[IPC] 邮件系统未初始化');
+        console.warn('[IPC] Email system not initialized');
         return {
           success: false,
           error: 'Email system not initialized',
@@ -539,7 +549,7 @@ export function initializeIpcHandlers() {
         };
       }
       
-      console.debug(`[IPC] 收件箱路径: ${inboxPath}`);
+      console.debug(`[IPC] Inbox path: ${inboxPath}`);
       
       return {
         success: true,
@@ -547,7 +557,7 @@ export function initializeIpcHandlers() {
       };
       
     } catch (error) {
-      console.error('[IPC] 获取收件箱路径失败:', error);
+      console.error('[IPC] Failed to get inbox path:', error);
       return {
         success: false,
         error: error.message,
@@ -557,7 +567,7 @@ export function initializeIpcHandlers() {
   }));
 
   ipcMain.handle('email/execute-action', secureIpcHandler('email/execute-action', async (_e, { emailId, actionIndex }) => {
-    console.debug(`[IPC] 执行邮件操作: emailId=${emailId}, actionIndex=${actionIndex}`);
+    console.debug(`[IPC] Execute email action: emailId=${emailId}, actionIndex=${actionIndex}`);
     
     try {
       const { getEmailById } = await import('../storage/emailStorage.js');
@@ -567,7 +577,7 @@ export function initializeIpcHandlers() {
       const email = await getEmailById(emailId);
       
       if (!email) {
-        console.warn(`[IPC] 邮件未找到: ${emailId}`);
+        console.warn(`[IPC] Email not found: ${emailId}`);
         return {
           success: false,
           error: 'Email not found'
@@ -576,7 +586,7 @@ export function initializeIpcHandlers() {
       
       // Check if email has actions
       if (!email.actions || !Array.isArray(email.actions)) {
-        console.warn(`[IPC] 邮件没有操作: ${emailId}`);
+        console.warn(`[IPC] Email has no actions: ${emailId}`);
         return {
           success: false,
           error: 'Email has no actions'
@@ -585,7 +595,7 @@ export function initializeIpcHandlers() {
       
       // Check if action index is valid
       if (actionIndex < 0 || actionIndex >= email.actions.length) {
-        console.warn(`[IPC] 无效的操作索引: ${actionIndex} (总数: ${email.actions.length})`);
+        console.warn(`[IPC] Invalid action index: ${actionIndex} (total: ${email.actions.length})`);
         return {
           success: false,
           error: 'Invalid action index'
@@ -595,21 +605,21 @@ export function initializeIpcHandlers() {
       // Get the action
       const action = email.actions[actionIndex];
       
-      console.log(`[IPC] 执行操作: ${action.type} - ${action.label}`);
+      console.log(`[IPC] Executing action: ${action.type} - ${action.label}`);
       
       // Execute the action
       const result = await executeEmailAction(action);
       
       if (result.success) {
-        console.log(`[IPC] 操作执行成功: ${action.label}`);
+        console.log(`[IPC] Action executed successfully: ${action.label}`);
       } else {
-        console.warn(`[IPC] 操作执行失败: ${result.error}`);
+        console.warn(`[IPC] Action execution failed: ${result.error}`);
       }
       
       return result;
       
     } catch (error) {
-      console.error(`[IPC] 执行邮件操作失败: ${emailId}`, error);
+      console.error(`[IPC] Failed to execute email action: ${emailId}`, error);
       return {
         success: false,
         error: error.message
@@ -619,22 +629,22 @@ export function initializeIpcHandlers() {
 
   // Start menu handlers
   ipcMain.handle('start-menu/new-game', secureIpcHandler('start-menu/new-game', async (_e) => {
-    console.debug('[IPC] 收到新游戏请求');
+    console.debug('[IPC] Received new game request');
     
     try {
       const { handleNewGame } = await import('./startMenuManager.js');
       const result = await handleNewGame();
       
       if (result.success) {
-        console.log('[IPC] 新游戏启动成功');
+        console.log('[IPC] New game started successfully');
       } else {
-        console.warn('[IPC] 新游戏启动失败:', result.message);
+        console.warn('[IPC] Failed to start new game:', result.message);
       }
       
       return result;
       
     } catch (error) {
-      console.error('[IPC] 新游戏启动失败:', error);
+      console.error('[IPC] Failed to start new game:', error);
       return {
         success: false,
         error: error.message
@@ -643,22 +653,22 @@ export function initializeIpcHandlers() {
   }));
 
   ipcMain.handle('start-menu/continue-game', secureIpcHandler('start-menu/continue-game', async (_e) => {
-    console.debug('[IPC] 收到继续游戏请求');
+    console.debug('[IPC] Received continue game request');
     
     try {
       const { handleContinueGame } = await import('./startMenuManager.js');
       const result = await handleContinueGame();
       
       if (result.success) {
-        console.log('[IPC] 游戏继续成功');
+        console.log('[IPC] Game continued successfully');
       } else {
-        console.warn('[IPC] 游戏继续失败:', result.message);
+        console.warn('[IPC] Failed to continue game:', result.message);
       }
       
       return result;
       
     } catch (error) {
-      console.error('[IPC] 游戏继续失败:', error);
+      console.error('[IPC] Failed to continue game:', error);
       return {
         success: false,
         error: error.message
@@ -667,13 +677,13 @@ export function initializeIpcHandlers() {
   }));
 
   ipcMain.handle('start-menu/check-save-exists', secureIpcHandler('start-menu/check-save-exists', async (_e) => {
-    console.debug('[IPC] 检查存档是否存在');
+    console.debug('[IPC] Check if save exists');
     
     try {
       const { hasSavedState } = await import('../systems/gameStateManager.js');
       const exists = hasSavedState();
       
-      console.debug(`[IPC] 存档存在: ${exists}`);
+      console.debug(`[IPC] Save exists: ${exists}`);
       
       return {
         success: true,
@@ -681,7 +691,7 @@ export function initializeIpcHandlers() {
       };
       
     } catch (error) {
-      console.error('[IPC] 检查存档失败:', error);
+      console.error('[IPC] Failed to check save:', error);
       return {
         success: false,
         error: error.message,
@@ -691,16 +701,16 @@ export function initializeIpcHandlers() {
   }));
 
   ipcMain.handle('start-menu/get-save-metadata', secureIpcHandler('start-menu/get-save-metadata', async (_e) => {
-    console.debug('[IPC] 获取存档元数据');
+    console.debug('[IPC] Get save metadata');
     
     try {
       const { getSaveMetadata } = await import('../systems/gameStateManager.js');
       const metadata = getSaveMetadata();
       
       if (metadata) {
-        console.debug('[IPC] 存档元数据获取成功');
+        console.debug('[IPC] Save metadata retrieved successfully');
       } else {
-        console.debug('[IPC] 没有找到存档');
+        console.debug('[IPC] No save found');
       }
       
       return {
@@ -709,7 +719,7 @@ export function initializeIpcHandlers() {
       };
       
     } catch (error) {
-      console.error('[IPC] 获取存档元数据失败:', error);
+      console.error('[IPC] Failed to get save metadata:', error);
       return {
         success: false,
         error: error.message,
@@ -720,7 +730,7 @@ export function initializeIpcHandlers() {
 
   // Door state management handlers
   ipcMain.handle('door/get-state', secureIpcHandler('door/get-state', async (_e, doorId) => {
-    console.debug(`[IPC] 获取门状态: ${doorId}`);
+    console.debug(`[IPC] Get door state: ${doorId}`);
     
     try {
       const { getDoorState, getDoorStateValue, isDoorLocked } = await import('../systems/doorKeySystem.js');
@@ -744,7 +754,7 @@ export function initializeIpcHandlers() {
       };
       
     } catch (error) {
-      console.error(`[IPC] 获取门状态失败: ${doorId}`, error);
+      console.error(`[IPC] Failed to get door state: ${doorId}`, error);
       return {
         success: false,
         error: error.message
@@ -753,7 +763,7 @@ export function initializeIpcHandlers() {
   }));
 
   ipcMain.handle('door/set-state', secureIpcHandler('door/set-state', async (_e, { doorId, state }) => {
-    console.debug(`[IPC] 设置门状态: ${doorId} -> ${state}`);
+    console.debug(`[IPC] Set door state: ${doorId} -> ${state}`);
     
     try {
       const { setDoorState } = await import('../systems/doorKeySystem.js');
@@ -761,15 +771,15 @@ export function initializeIpcHandlers() {
       const result = setDoorState(doorId, state);
       
       if (result.success) {
-        console.log(`[IPC] 门状态已更新: ${doorId} -> ${state}`);
+        console.log(`[IPC] Door state updated: ${doorId} -> ${state}`);
       } else {
-        console.warn(`[IPC] 设置门状态失败: ${result.error}`);
+        console.warn(`[IPC] Failed to set door state: ${result.error}`);
       }
       
       return result;
       
     } catch (error) {
-      console.error(`[IPC] 设置门状态失败: ${doorId}`, error);
+      console.error(`[IPC] Failed to set door state: ${doorId}`, error);
       return {
         success: false,
         error: error.message
@@ -778,7 +788,7 @@ export function initializeIpcHandlers() {
   }));
 
   ipcMain.handle('door/toggle-state', secureIpcHandler('door/toggle-state', async (_e, doorId) => {
-    console.debug(`[IPC] 切换门状态: ${doorId}`);
+    console.debug(`[IPC] Toggle door state: ${doorId}`);
     
     try {
       const { toggleDoorState } = await import('../systems/doorKeySystem.js');
@@ -786,15 +796,15 @@ export function initializeIpcHandlers() {
       const result = toggleDoorState(doorId);
       
       if (result.success) {
-        console.log(`[IPC] 门状态已切换: ${doorId} -> ${result.newState}`);
+        console.log(`[IPC] Door state toggled: ${doorId} -> ${result.newState}`);
       } else {
-        console.warn(`[IPC] 切换门状态失败: ${result.error}`);
+        console.warn(`[IPC] Failed to toggle door state: ${result.error}`);
       }
       
       return result;
       
     } catch (error) {
-      console.error(`[IPC] 切换门状态失败: ${doorId}`, error);
+      console.error(`[IPC] Failed to toggle door state: ${doorId}`, error);
       return {
         success: false,
         error: error.message
@@ -803,7 +813,7 @@ export function initializeIpcHandlers() {
   }));
 
   ipcMain.handle('door/set-locked', secureIpcHandler('door/set-locked', async (_e, { doorId, isLocked }) => {
-    console.debug(`[IPC] 设置门锁定状态: ${doorId} -> ${isLocked}`);
+    console.debug(`[IPC] Set door locked state: ${doorId} -> ${isLocked}`);
     
     try {
       const { setDoorLocked } = await import('../systems/doorKeySystem.js');
@@ -811,15 +821,15 @@ export function initializeIpcHandlers() {
       const result = setDoorLocked(doorId, isLocked);
       
       if (result.success) {
-        console.log(`[IPC] 门锁定状态已更新: ${doorId} -> ${isLocked}`);
+        console.log(`[IPC] Door locked state updated: ${doorId} -> ${isLocked}`);
       } else {
-        console.warn(`[IPC] 设置门锁定状态失败: ${result.error}`);
+        console.warn(`[IPC] Failed to set door locked state: ${result.error}`);
       }
       
       return result;
       
     } catch (error) {
-      console.error(`[IPC] 设置门锁定状态失败: ${doorId}`, error);
+      console.error(`[IPC] Failed to set door locked state: ${doorId}`, error);
       return {
         success: false,
         error: error.message
@@ -827,7 +837,7 @@ export function initializeIpcHandlers() {
     }
   }));
 
-  console.debug('[IPC] 所有IPC处理程序已设置完成');
+  console.debug('[IPC] All IPC handlers set up complete');
 }
 
 /**
@@ -860,231 +870,898 @@ function getImageDimensions(imagePath) {
 }
 
 /**
- * 执行终端命令
- * @param {string} command - 命令名
- * @param {Array} args - 参数数组
- * @returns {Object} 执行结果
+ * Execute terminal command
+ * @param {string} command - Command name
+ * @param {Array} args - Arguments array
+ * @returns {Object} Execution result
  */
-function executeTerminalCommand(command, args) {
-  console.debug(`[TERMINAL] 执行命令: ${command}, 参数:`, args);
+async function executeTerminalCommand(command, args) {
+  console.debug(`[TERMINAL] Executing command: ${command}, args:`, args);
 
   switch (command) {
     case 'list':
     case 'ls': {
+      // Parse arguments using schema - this enables future switch support
+      // Note: Frontend already handles help switches and sends only positionals
+      // But we prepare the handler for future backend switch processing
+      
+      // For now, args should be empty (no positional arguments expected)
+      // Future switches like -a/--all or -v/--verbose would be handled here
+      
       const windows = getWindowsInfo();
-      const message = windows.map(w => `${w.id}: ${w.title}`).join('\n');
+      
+      // Standardize output formatting
+      if (windows.length === 0) {
+        return {
+          success: true,
+          message: 'No windows are currently open',
+        };
+      }
+      
+      // Basic format: ID: Title
+      // Future enhancement: could support verbose mode with more details
+      const message = windows.map(w => `${w.id}: ${w.title || '(Untitled)'}`).join('\n');
+      
       return {
         success: true,
-        message: message || '没有打开的窗口',
+        message: message,
+        data: {
+          count: windows.length,
+          windows: windows.map(w => ({
+            id: w.id,
+            title: w.title || '(Untitled)',
+            // Future: could include more details for verbose mode
+            // visible: w.visible,
+            // type: w.type,
+            // bounds: w.bounds
+          }))
+        }
       };
     }
 
     case 'getwindows': {
-      const windows = getWindowsInfo();
-      return {
-        success: true,
-        message: `找到 ${windows.length} 个窗口`,
-        data: null
-      };
+      // Parse arguments using schema
+      const parsed = parseArguments(args, commandSchemas['getwindows']);
+      
+      // Handle parsing errors
+      if (!parsed.success) {
+        return { success: false, message: parsed.error.message };
+      }
+      
+      // Handle help switch
+      if (parsed.switches.help || parsed.switches.h) {
+        return { success: true, showHelp: true, command: 'getwindows' };
+      }
+      
+      // Extract filtering switches
+      const showVerbose = parsed.switches.verbose || parsed.switches.v;
+      const showAll = parsed.switches.all || parsed.switches.a;
+      
+      // Execute command logic with potential filtering
+      try {
+        let windows = getWindowsInfo();
+        
+        // Apply filtering based on switches
+        if (!showAll) {
+          // Filter out hidden windows if --all is not specified
+          windows = windows.filter(window => {
+            // Assume windows have a visible property or similar
+            // For now, we'll show all windows since the filtering logic
+            // would need to be implemented in the windowManager
+            return true;
+          });
+        }
+        
+        // Format output based on verbose flag
+        let message;
+        if (showVerbose) {
+          // Detailed information for each window
+          if (windows.length === 0) {
+            message = 'No windows found';
+          } else {
+            message = windows.map(w => {
+              const details = [
+                `ID: ${w.id}`,
+                `Title: ${w.title || '(Untitled)'}`,
+                `Type: ${w.type || 'unknown'}`,
+                `Size: ${w.width || 'unknown'}x${w.height || 'unknown'}`,
+                `Position: (${w.x || 'unknown'}, ${w.y || 'unknown'})`
+              ];
+              return details.join(', ');
+            }).join('\n');
+          }
+        } else {
+          // Standard format
+          if (windows.length === 0) {
+            message = 'No windows found';
+          } else {
+            message = `Found ${windows.length} windows`;
+          }
+        }
+        
+        return {
+          success: true,
+          message: message,
+          data: {
+            count: windows.length,
+            windows: windows,
+            verbose: showVerbose,
+            showAll: showAll
+          }
+        };
+      } catch (error) {
+        return { success: false, message: `Failed to get windows: ${error.message}` };
+      }
     }
 
     case 'info': {
+      // Arguments are already parsed by frontend using parseArguments()
+      // Frontend sends only positionals, help switches are handled there
       if (args.length === 0) {
-        return { success: false, message: '用法: info [窗口ID]' };
+        return { success: false, message: 'Usage: info [windowID]' };
       }
 
       const windowId = args[0];
       const info = getWindowInfo(windowId);
 
       if (!info) {
-        return { success: false, message: `窗口 ${windowId} 不存在` };
+        return { success: false, message: `Window ${windowId} not found` };
       }
 
       return {
         success: true,
-        message: `窗口 ${windowId} 的信息:`,
+        message: `Window ${windowId} information:`,
         data: info
       };
     }
 
     case 'get-title': {
-      if (args.length < 1) {
-        return { success: false, message: '用法: get-title [窗口ID]' };
+      // Arguments are already parsed by frontend using parseArguments()
+      // Frontend sends only positionals, help switches are handled there
+      if (args.length === 0) {
+        return { success: false, message: 'Usage: get-title [windowID]' };
       }
 
       const windowId = args[0];
-      const title = getWindowTitle(windowId);
 
-      if (title === null) {
-        return { success: false, message: `窗口 ${windowId} 不存在` };
+      // Validate windowID parameter (beyond schema validation)
+      if (!windowId || typeof windowId !== 'string' || windowId.trim() === '') {
+        return { success: false, message: 'Window ID must be a non-empty string' };
       }
 
-      return {
-        success: true,
-        message: `窗口 ${windowId} 的标题: ${title}`,
-        data: { title }
-      };
+      // Execute command logic
+      try {
+        const title = getWindowTitle(windowId);
+
+        if (title === null) {
+          return { success: false, message: `Window '${windowId}' not found. Use 'list' to see available windows.` };
+        }
+
+        return {
+          success: true,
+          message: `Window '${windowId}' title: ${title}`,
+          data: { title }
+        };
+      } catch (error) {
+        return { success: false, message: `Failed to get title: ${error.message}` };
+      }
     }
 
     case 'set-title': {
+      // Arguments are already parsed by frontend using parseArguments()
+      // Frontend sends only positionals, help switches are handled there
       if (args.length < 2) {
-        return { success: false, message: '用法: set-title [窗口ID] "标题"' };
+        return { success: false, message: 'Usage: set-title [windowID] [title...]' };
       }
 
       const windowId = args[0];
+      // Handle multi-word titles by joining all remaining arguments
       const title = args.slice(1).join(' ');
 
-      return updateWindowProperty(windowId, 'title', title);
+      // Validate windowID parameter (beyond schema validation)
+      if (!windowId || typeof windowId !== 'string' || windowId.trim() === '') {
+        return { success: false, message: 'Window ID must be a non-empty string' };
+      }
+
+      // Validate title content and length
+      if (!title || title.trim() === '') {
+        return { success: false, message: 'Title cannot be empty' };
+      }
+
+      // Check title length (reasonable limit)
+      if (title.length > 200) {
+        return { success: false, message: 'Title too long (maximum 200 characters)' };
+      }
+
+      // Execute command logic
+      try {
+        const result = updateWindowProperty(windowId, 'title', title);
+        return result;
+      } catch (error) {
+        return { success: false, message: `Failed to set title: ${error.message}` };
+      }
     }
 
     case 'set-size': {
-      if (args.length < 3) {
-        return { success: false, message: '用法: set-size [窗口ID] [宽度] [高度]' };
+      // Parse arguments using schema
+      const parsed = parseArguments(args, commandSchemas['set-size']);
+      
+      // Handle parsing errors
+      if (!parsed.success) {
+        return { success: false, message: parsed.error.message };
       }
-
-      const windowId = args[0];
-      const width = parseInt(args[1]);
-      const height = parseInt(args[2]);
-
-      if (isNaN(width) || isNaN(height)) {
-        return { success: false, message: '宽度和高度必须是数字' };
+      
+      // Handle help switch
+      if (parsed.switches.help || parsed.switches.h) {
+        return { success: true, showHelp: true, command: 'set-size' };
       }
-
-      return updateWindowProperty(windowId, 'size', [width, height]);
+      
+      // Extract positional arguments
+      const [windowId, widthStr, heightStr] = parsed.positionals;
+      
+      // Validate windowID parameter (beyond schema validation)
+      if (!windowId || typeof windowId !== 'string' || windowId.trim() === '') {
+        return { success: false, message: 'Window ID must be a non-empty string' };
+      }
+      
+      // Validate and parse width and height
+      const width = parseInt(widthStr);
+      const height = parseInt(heightStr);
+      
+      if (isNaN(width) || width <= 0) {
+        return { 
+          success: false, 
+          message: `Invalid width: '${widthStr}'. Must be a positive number.` 
+        };
+      }
+      
+      if (isNaN(height) || height <= 0) {
+        return { 
+          success: false, 
+          message: `Invalid height: '${heightStr}'. Must be a positive number.` 
+        };
+      }
+      
+      // Execute command logic
+      try {
+        const result = updateWindowProperty(windowId, 'size', [width, height]);
+        return result;
+      } catch (error) {
+        return { success: false, message: `Failed to set window size: ${error.message}` };
+      }
     }
 
     case 'set-position': {
-      if (args.length < 3) {
-        return { success: false, message: '用法: set-position [窗口ID] [x] [y]' };
+      // Parse arguments using schema
+      const parsed = parseArguments(args, commandSchemas['set-position']);
+      
+      // Handle parsing errors
+      if (!parsed.success) {
+        return { success: false, message: parsed.error.message };
       }
-
-      const windowId = args[0];
-      const x = parseInt(args[1]);
-      const y = parseInt(args[2]);
-
-      if (isNaN(x) || isNaN(y)) {
-        return { success: false, message: 'x 和 y 必须是数字' };
+      
+      // Handle help switch
+      if (parsed.switches.help || parsed.switches.h) {
+        return { success: true, showHelp: true, command: 'set-position' };
       }
-
-      return updateWindowProperty(windowId, 'position', [x, y]);
+      
+      // Extract positional arguments
+      const [windowId, xStr, yStr] = parsed.positionals;
+      
+      // Validate windowID parameter (beyond schema validation)
+      if (!windowId || typeof windowId !== 'string' || windowId.trim() === '') {
+        return { success: false, message: 'Window ID must be a non-empty string' };
+      }
+      
+      // Validate and parse x and y coordinates
+      const x = parseInt(xStr);
+      const y = parseInt(yStr);
+      
+      if (isNaN(x)) {
+        return { 
+          success: false, 
+          message: `Invalid x coordinate: '${xStr}'. Must be a number.` 
+        };
+      }
+      
+      if (isNaN(y)) {
+        return { 
+          success: false, 
+          message: `Invalid y coordinate: '${yStr}'. Must be a number.` 
+        };
+      }
+      
+      // Execute command logic
+      try {
+        const result = updateWindowProperty(windowId, 'position', [x, y]);
+        return result;
+      } catch (error) {
+        return { success: false, message: `Failed to set window position: ${error.message}` };
+      }
     }
 
     case 'set-resizable': {
+      // Arguments are already parsed by frontend using parseArguments()
+      // Frontend sends only positionals, help switches are handled there
       if (args.length < 2) {
-        return { success: false, message: '用法: set-resizable [窗口ID] [true/false]' };
+        return { success: false, message: 'Usage: set-resizable [windowID] [true/false/1/0]' };
       }
 
+      // Extract positional arguments
       const windowId = args[0];
-      const resizable = args[1].toLowerCase();
+      const resizableValue = args[1];
 
-      if (resizable !== 'true' && resizable !== 'false') {
-        return { success: false, message: 'resizable 必须是 true 或 false' };
+      // Validate windowID parameter (beyond schema validation)
+      if (!windowId || typeof windowId !== 'string' || windowId.trim() === '') {
+        return { success: false, message: 'Window ID must be a non-empty string' };
       }
 
-      return updateWindowProperty(windowId, 'resizable', resizable === 'true');
+      // Validate resizable parameter (true/false/1/0)
+      const normalizedValue = resizableValue.toLowerCase();
+      let resizable;
+      
+      if (normalizedValue === 'true' || normalizedValue === '1') {
+        resizable = true;
+      } else if (normalizedValue === 'false' || normalizedValue === '0') {
+        resizable = false;
+      } else {
+        return { 
+          success: false, 
+          message: `Invalid resizable value: '${resizableValue}'. Must be true, false, 1, or 0.` 
+        };
+      }
+
+      // Execute command logic
+      try {
+        const result = updateWindowProperty(windowId, 'resizable', resizable);
+        return result;
+      } catch (error) {
+        return { success: false, message: `Failed to set resizable property: ${error.message}` };
+      }
     }
 
     case 'set-visibility': {
+      // Arguments are already parsed by frontend using parseArguments()
+      // Frontend sends only positionals, help switches are handled there
       if (args.length < 2) {
-        return { success: false, message: '用法: set-visibility [窗口ID] [true/false]' };
+        return { success: false, message: 'Usage: set-visibility [windowID] [visible]' };
       }
 
       const windowId = args[0];
-      const visibility = args[1].toLowerCase();
+      const visibilityParam = args[1];
 
-      if (visibility !== 'true' && visibility !== 'false') {
-        return { success: false, message: 'visibility 必须是 true 或 false' };
+      // Validate windowID parameter (beyond schema validation)
+      if (!windowId || typeof windowId !== 'string' || windowId.trim() === '') {
+        return { success: false, message: 'Window ID must be a non-empty string' };
       }
 
-      return updateWindowProperty(windowId, 'visibility', visibility === 'true');
+      // Validate visibility parameter values
+      const visibility = visibilityParam.toLowerCase();
+      if (visibility !== 'true' && visibility !== 'false') {
+        return { success: false, message: 'Visibility parameter must be "true" or "false"' };
+      }
+
+      // Execute command logic
+      try {
+        const result = updateWindowProperty(windowId, 'visibility', visibility === 'true');
+        return result;
+      } catch (error) {
+        return { success: false, message: `Failed to set visibility: ${error.message}` };
+      }
     }
 
     case 'show': {
-      if (args.length < 1) {
-        return { success: false, message: '用法: show [窗口ID]' };
+      // Arguments are already parsed by frontend using parseArguments()
+      // Frontend sends only positionals, help switches are handled there
+      if (args.length === 0) {
+        return { success: false, message: 'Usage: show [windowID]' };
       }
 
       const windowId = args[0];
-      return updateWindowProperty(windowId, 'visibility', true);
+      
+      // Validate windowID parameter (beyond schema validation)
+      if (!windowId || typeof windowId !== 'string' || windowId.trim() === '') {
+        return { success: false, message: 'Window ID must be a non-empty string' };
+      }
+      
+      // Execute command logic
+      try {
+        const result = updateWindowProperty(windowId, 'visibility', true);
+        return result;
+      } catch (error) {
+        return { success: false, message: `Failed to show window: ${error.message}` };
+      }
     }
 
     case 'hide': {
-      if (args.length < 1) {
-        return { success: false, message: '用法: hide [窗口ID]' };
+      // Arguments are already parsed by frontend using parseArguments()
+      // Frontend sends only positionals, help switches are handled there
+      
+      // Validate required arguments
+      if (args.length === 0) {
+        return { 
+          success: false, 
+          message: 'Usage: hide [windowID]\nUse "hide --help" for more information.' 
+        };
       }
 
+      // Extract positional arguments
       const windowId = args[0];
-      return updateWindowProperty(windowId, 'visibility', false);
+      
+      // Validate windowID parameter (beyond schema validation)
+      if (!windowId || typeof windowId !== 'string' || windowId.trim() === '') {
+        return { 
+          success: false, 
+          message: 'Window ID must be a non-empty string.\nUse "list" to see available window IDs.' 
+        };
+      }
+      
+      // Execute command logic
+      try {
+        const result = updateWindowProperty(windowId, 'visibility', false);
+        
+        // Enhance success message
+        if (result.success) {
+          return {
+            success: true,
+            message: `Window '${windowId}' has been hidden successfully.`
+          };
+        }
+        
+        return result;
+      } catch (error) {
+        return { 
+          success: false, 
+          message: `Failed to hide window '${windowId}': ${error.message}` 
+        };
+      }
     }
 
     case 'reload-html': {
-      if (args.length < 2) {
-        return { success: false, message: '用法: reload-html [窗口ID] [htmlPath]' };
+      // Parse arguments using schema
+      const parsed = parseArguments(args, commandSchemas['reload-html']);
+      
+      // Handle parsing errors
+      if (!parsed.success) {
+        return { success: false, message: parsed.error.message };
       }
-
-      const windowId = args[0];
-      const htmlPath = args.slice(1).join(' ');
-
-      return reloadWindowHtml(windowId, htmlPath);
+      
+      // Handle help switch
+      if (parsed.switches.help || parsed.switches.h) {
+        // Return help content or trigger help display
+        return { success: true, showHelp: true, command: 'reload-html' };
+      }
+      
+      // Extract positional arguments
+      const [windowId, htmlPath] = parsed.positionals;
+      
+      // Validate windowID parameter (beyond schema validation)
+      if (!windowId || typeof windowId !== 'string' || windowId.trim() === '') {
+        return { success: false, message: 'Window ID must be a non-empty string' };
+      }
+      
+      // Validate HTML file path and accessibility
+      if (!htmlPath || typeof htmlPath !== 'string' || htmlPath.trim() === '') {
+        return { success: false, message: 'HTML path must be a non-empty string' };
+      }
+      
+      // Validate file extension
+      if (!htmlPath.toLowerCase().endsWith('.html') && !htmlPath.toLowerCase().endsWith('.htm')) {
+        return { success: false, message: 'File must have .html or .htm extension' };
+      }
+      
+      // Use blocklist validation for file operations - allows access to any directory
+      // except specifically blocked ones (node_modules, .git, src, etc.)
+      // This enables loading HTML files from user directories anywhere on the system
+      try {
+        const validationResult = validateAndResolvePath(htmlPath, process.cwd(), null, true);
+        if (!validationResult.isValid) {
+          return { success: false, message: `Invalid HTML path: ${validationResult.error}` };
+        }
+        
+        const fullPath = validationResult.resolvedPath;
+        
+        // Check if file exists
+        if (!fs.existsSync(fullPath)) {
+          return { 
+            success: false, 
+            message: `HTML file not found: ${htmlPath}. Check the file path and ensure it exists.` 
+          };
+        }
+        
+        // Check if it's actually a file (not a directory)
+        const stats = fs.statSync(fullPath);
+        if (!stats.isFile()) {
+          return { 
+            success: false, 
+            message: `Path is not a file: ${htmlPath}` 
+          };
+        }
+        
+        // Check if file is readable
+        try {
+          fs.accessSync(fullPath, fs.constants.R_OK);
+        } catch (accessError) {
+          return { 
+            success: false, 
+            message: `HTML file is not readable: ${htmlPath}. Check file permissions.` 
+          };
+        }
+        
+      } catch (error) {
+        return { 
+          success: false, 
+          message: `Failed to validate HTML file: ${error.message}` 
+        };
+      }
+      
+      // Execute command logic with graceful error handling
+      try {
+        const result = reloadWindowHtml(windowId, htmlPath);
+        
+        // Handle file loading errors gracefully
+        if (!result.success) {
+          // Provide more helpful error messages
+          if (result.message && result.message.includes('does not exist')) {
+            return { 
+              success: false, 
+              message: `Window '${windowId}' not found. Use 'list' to see available windows.` 
+            };
+          } else if (result.message && result.message.includes('loading failed')) {
+            return { 
+              success: false, 
+              message: `Failed to load HTML file '${htmlPath}'. Check if the file is valid HTML and accessible.` 
+            };
+          } else {
+            return { 
+              success: false, 
+              message: result.message || `Failed to reload HTML in window '${windowId}'` 
+            };
+          }
+        }
+        
+        return {
+          success: true,
+          message: `Successfully reloaded HTML content in window '${windowId}' from '${htmlPath}'`
+        };
+        
+      } catch (error) {
+        return { 
+          success: false, 
+          message: `Failed to reload HTML: ${error.message}` 
+        };
+      }
     }
 
     case 'create-picture': {
-      if (args.length < 2) {
-        return { success: false, message: '用法: create-picture [窗口ID] [图片路径] [缩放模式(可选)]' };
+      // Parse arguments using schema
+      const parsed = parseArguments(args, commandSchemas['create-picture']);
+      
+      // Handle parsing errors
+      if (!parsed.success) {
+        return { success: false, message: parsed.error.message };
       }
-
-      const pictureId = args[0];
-      const imagePath = args[1];
-      const fitMode = args[2] || 'fill';
-
+      
+      // Handle help switch
+      if (parsed.switches.help || parsed.switches.h) {
+        // Return help content or trigger help display
+        return { success: true, showHelp: true, command: 'create-picture' };
+      }
+      
+      // Extract positional arguments
+      const [pictureId, imagePath, fitMode] = parsed.positionals;
+      
+      // Extract opacity switch with default value
+      const opacity = parsed.switches.opacity !== undefined ? parseFloat(parsed.switches.opacity) : 1.0;
+      
+      // Validate opacity range
+      if (isNaN(opacity) || opacity < 0.0 || opacity > 1.0) {
+        return { 
+          success: false, 
+          message: 'Opacity must be a number between 0.0 and 1.0' 
+        };
+      }
+      
+      // Validate business logic (beyond schema validation)
+      if (!pictureId || typeof pictureId !== 'string' || pictureId.trim() === '') {
+        return { success: false, message: 'Window ID must be a non-empty string' };
+      }
+      
+      // Validate file path
+      if (!imagePath || typeof imagePath !== 'string' || imagePath.trim() === '') {
+        return { success: false, message: 'Image path must be a non-empty string' };
+      }
+      
+      // Validate fitMode values if provided
+      const validFitModes = ['fill', 'contain', 'cover', 'scale-down', 'none'];
+      const actualFitMode = fitMode || 'fill'; // Default to 'fill' if not provided
+      
+      if (fitMode && !validFitModes.includes(fitMode)) {
+        return { 
+          success: false, 
+          message: `Invalid fit mode '${fitMode}'. Valid modes: ${validFitModes.join(', ')}` 
+        };
+      }
+      
+      // Execute command logic
       try {
+        // Validate and resolve the image path
+        const resolvedPath = resolveAssetPath(imagePath);
+        
+        // Check if file exists
+        if (!fs.existsSync(resolvedPath)) {
+          return { 
+            success: false, 
+            message: `Image file not found: ${imagePath}. Please check the file path and try again.` 
+          };
+        }
+        
         // Get image dimensions
         const dimensions = getImageDimensions(imagePath);
         const width = dimensions ? dimensions.width : 400;
         const height = dimensions ? dimensions.height : 300;
         
-        createPicture(pictureId, imagePath, fitMode, null, width, height);
-        return { success: true, message: `图片窗口 ${pictureId} 已创建 (${width}x${height})` };
+        createPicture(pictureId, imagePath, actualFitMode, null, width, height);
+        
+        // Apply opacity after window creation
+        const window = BrowserWindow.fromId(pictureId) || BrowserWindow.getAllWindows().find(w => w.getTitle() === pictureId);
+        if (window && opacity !== 1.0) {
+          window.setOpacity(opacity);
+        }
+        
+        return { 
+          success: true, 
+          message: `Picture window '${pictureId}' created successfully (${width}x${height}) with fit mode '${actualFitMode}' and opacity ${opacity}` 
+        };
       } catch (error) {
-        return { success: false, message: `创建失败: ${error.message}` };
+        return { success: false, message: `Failed to create picture window: ${error.message}` };
       }
     }
 
     case 'set-picture': {
-      if (args.length < 2) {
-        return { success: false, message: '用法: set-picture [窗口ID] [图片路径] [缩放模式(可选)]' };
+      // Parse arguments using schema
+      const parsed = parseArguments(args, commandSchemas['set-picture']);
+      
+      // Handle parsing errors
+      if (!parsed.success) {
+        return { success: false, message: parsed.error.message };
       }
-
-      const windowId = args[0];
-      const imagePath = args[1];
-      const fitMode = args[2] || null;
-
-      return setPicture(windowId, imagePath, fitMode);
+      
+      // Handle help switch
+      if (parsed.switches.help || parsed.switches.h) {
+        // Return help content or trigger help display
+        return { success: true, showHelp: true, command: 'set-picture' };
+      }
+      
+      // Extract positional arguments
+      const [windowId, imagePath, fitMode] = parsed.positionals;
+      
+      // Validate business logic (beyond schema validation)
+      if (!windowId || typeof windowId !== 'string' || windowId.trim() === '') {
+        return { success: false, message: 'Window ID must be a non-empty string' };
+      }
+      
+      if (!imagePath || typeof imagePath !== 'string' || imagePath.trim() === '') {
+        return { success: false, message: 'Image path must be a non-empty string' };
+      }
+      
+      // Validate image file path and format
+      try {
+        // Use blocklist validation for file operations - allows access to any directory
+        // except specifically blocked ones (node_modules, .git, src, etc.)
+        // This enables setting pictures from user image files anywhere on the system
+        const validationResult = validateAndResolvePath(imagePath, process.cwd(), null, true);
+        if (!validationResult.isValid) {
+          return { success: false, message: `Invalid image path: ${validationResult.error}` };
+        }
+        
+        // Resolve the image path
+        const resolvedPath = resolveAssetPath(imagePath);
+        
+        // Check if file exists
+        let fullPath;
+        if (path.isAbsolute(resolvedPath)) {
+          fullPath = resolvedPath;
+        } else {
+          fullPath = path.join(process.cwd(), resolvedPath);
+        }
+        
+        if (!fs.existsSync(fullPath)) {
+          return { success: false, message: `Image file not found: ${imagePath}` };
+        }
+        
+        // Check if it's a file
+        const stats = fs.statSync(fullPath);
+        if (!stats.isFile()) {
+          return { success: false, message: `Path is not a file: ${imagePath}` };
+        }
+        
+        // Validate image format
+        const ext = path.extname(fullPath).toLowerCase();
+        const supportedFormats = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp'];
+        
+        if (!supportedFormats.includes(ext)) {
+          return { 
+            success: false, 
+            message: `Unsupported image format: ${ext}. Supported formats: ${supportedFormats.join(', ')}` 
+          };
+        }
+        
+        // Validate fitMode if provided
+        if (fitMode) {
+          const validFitModes = ['fill', 'contain', 'cover', 'scale-down', 'none'];
+          if (!validFitModes.includes(fitMode)) {
+            return { 
+              success: false, 
+              message: `Invalid fit mode: ${fitMode}. Valid modes: ${validFitModes.join(', ')}` 
+            };
+          }
+        }
+        
+        // Execute command logic
+        const result = setPicture(windowId, resolvedPath, fitMode);
+        return result;
+        
+      } catch (error) {
+        return { success: false, message: `Failed to validate image: ${error.message}` };
+      }
     }
 
     case 'set-fit-mode': {
-      if (args.length < 2) {
-        return { success: false, message: '用法: set-fit-mode [窗口ID] [缩放模式]' };
+      // Parse arguments using schema
+      const parsed = parseArguments(args, commandSchemas['set-fit-mode']);
+      
+      // Handle parsing errors
+      if (!parsed.success) {
+        return { success: false, message: parsed.error.message };
       }
-
-      const windowId = args[0];
-      const fitMode = args[1];
-
-      return setFitMode(windowId, fitMode);
+      
+      // Handle help switch
+      if (parsed.switches.help || parsed.switches.h) {
+        // Return help content or trigger help display
+        return { success: true, showHelp: true, command: 'set-fit-mode' };
+      }
+      
+      // Extract positional arguments
+      const [windowId, fitMode] = parsed.positionals;
+      
+      // Validate business logic (beyond schema validation)
+      if (!windowId || typeof windowId !== 'string' || windowId.trim() === '') {
+        return { success: false, message: 'Window ID must be a non-empty string' };
+      }
+      
+      // Validate fitMode values (contain, cover, fill, etc.)
+      const validFitModes = ['fill', 'contain', 'cover', 'scale-down', 'none'];
+      if (!fitMode || !validFitModes.includes(fitMode)) {
+        return { 
+          success: false, 
+          message: `Invalid fit mode: '${fitMode}'. Valid modes are: ${validFitModes.join(', ')}` 
+        };
+      }
+      
+      // Execute command logic
+      try {
+        const result = setFitMode(windowId, fitMode);
+        return result;
+      } catch (error) {
+        return { success: false, message: `Failed to set fit mode: ${error.message}` };
+      }
     }
 
-    // 镜头系统命令
+    // Lens system commands
     case 'create-content': {
-      if (args.length < 2) {
-        return { success: false, message: '用法: create-content [ID] [类型:text/image] [路径] [模糊度:0-50] [是否模糊:true/false]' };
+      // Parse arguments using schema
+      const parsed = parseArguments(args, commandSchemas['create-content']);
+      
+      // Handle parsing errors
+      if (!parsed.success) {
+        return { success: false, message: parsed.error.message };
       }
-
-      const id = args[0];
-      const contentType = args[1];
-      const contentPath = args[2] || '';
-      const blurAmount = args[3] ? parseFloat(args[3]) : 10;
-      const blurred = args[4] !== 'false'; // 默认为true
-
+      
+      // Handle help switch
+      if (parsed.switches.help || parsed.switches.h) {
+        // Return help content or trigger help display
+        return { success: true, showHelp: true, command: 'create-content' };
+      }
+      
+      // Extract switch values with defaults (subtasks 8.5, 8.6)
+      const opacity = parsed.switches.opacity !== undefined ? parseFloat(parsed.switches.opacity) : 1.0;
+      const transparent = parsed.switches.transparent !== undefined ? parsed.switches.transparent : false;
+      
+      // Validate opacity is between 0.0 and 1.0 (subtask 8.7)
+      if (isNaN(opacity) || opacity < 0.0 || opacity > 1.0) {
+        return {
+          success: false,
+          message: 'Opacity must be a number between 0.0 and 1.0'
+        };
+      }
+      
+      // Extract positional arguments
+      const [windowID, type, path, blurAmount, shouldBlur] = parsed.positionals;
+      
+      // Validate business logic (beyond schema validation)
+      
+      // Validate windowID
+      if (!windowID || typeof windowID !== 'string' || windowID.trim() === '') {
+        return { success: false, message: 'Window ID must be a non-empty string' };
+      }
+      
+      // Validate and normalize content type
+      const validTypes = ['text', 'image'];
+      const contentType = type ? type.toLowerCase() : 'text';
+      if (!validTypes.includes(contentType)) {
+        return { 
+          success: false, 
+          message: `Invalid content type '${type}'. Valid types: ${validTypes.join(', ')}` 
+        };
+      }
+      
+      // Validate file path for image type
+      let contentPath = path || '';
+      if (contentType === 'image') {
+        if (!contentPath || contentPath.trim() === '') {
+          return { success: false, message: 'Image path is required when type is "image"' };
+        }
+        
+        // Validate path security and existence
+        try {
+          // Use blocklist validation for file operations - allows access to any directory
+          // except specifically blocked ones (node_modules, .git, src, etc.)
+          // This enables content creation from user files anywhere on the system
+          const validationResult = validateAndResolvePath(contentPath, process.cwd(), null, true);
+          if (!validationResult.isValid) {
+            return { success: false, message: `Invalid image path: ${validationResult.error}` };
+          }
+          contentPath = validationResult.resolvedPath;
+          
+          // Check if file exists
+          if (!fs.existsSync(contentPath)) {
+            return { success: false, message: `Image file not found: ${contentPath}` };
+          }
+          
+          // Validate file is an image by checking extension
+          const ext = path.extname(contentPath).toLowerCase();
+          const validImageExts = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
+          if (!validImageExts.includes(ext)) {
+            return { 
+              success: false, 
+              message: `Invalid image format. Supported formats: ${validImageExts.join(', ')}` 
+            };
+          }
+        } catch (error) {
+          return { success: false, message: `Path validation failed: ${error.message}` };
+        }
+      }
+      
+      // Validate blur amount
+      let parsedBlurAmount = 10; // default
+      if (blurAmount !== undefined) {
+        parsedBlurAmount = parseFloat(blurAmount);
+        if (isNaN(parsedBlurAmount) || parsedBlurAmount < 0 || parsedBlurAmount > 50) {
+          return { 
+            success: false, 
+            message: 'Blur amount must be a number between 0 and 50' 
+          };
+        }
+      }
+      
+      // Validate shouldBlur parameter
+      let parsedShouldBlur = true; // default
+      if (shouldBlur !== undefined) {
+        const lowerShouldBlur = shouldBlur.toLowerCase();
+        if (lowerShouldBlur === 'true' || lowerShouldBlur === '1' || lowerShouldBlur === 'yes') {
+          parsedShouldBlur = true;
+        } else if (lowerShouldBlur === 'false' || lowerShouldBlur === '0' || lowerShouldBlur === 'no') {
+          parsedShouldBlur = false;
+        } else {
+          return { 
+            success: false, 
+            message: 'shouldBlur must be true/false, yes/no, or 1/0' 
+          };
+        }
+      }
+      
+      // Execute command logic
       try {
         // Get image dimensions if content type is image
         let width = 800;
@@ -1098,149 +1775,438 @@ function executeTerminalCommand(command, args) {
           }
         }
         
-        const result = createContentWindow(id, {
+        const result = createContentWindow(windowID, {
           contentType,
           contentPath,
-          blurAmount,
-          blurred,
+          blurAmount: parsedBlurAmount,
+          blurred: parsedShouldBlur,
           width,
           height
         });
+        
+        // Apply opacity after window creation (subtasks 8.8, 8.9, 8.10)
+        if (result.success) {
+          // Handle transparent flag by setting opacity to 0.0 if true (overrides -o value)
+          const finalOpacity = transparent ? 0.0 : opacity;
+          
+          // Apply opacity using setWindowOpacity
+          const opacityResult = setWindowOpacity(windowID, finalOpacity);
+          if (!opacityResult.success) {
+            console.warn(`[WINDOW] Failed to set opacity for window ${windowID}: ${opacityResult.message}`);
+          }
+        }
+        
         return result;
       } catch (error) {
-        return { success: false, message: `创建失败: ${error.message}` };
+        return { success: false, message: `Failed to create content window: ${error.message}` };
       }
     }
 
     case 'create-lens': {
-      if (args.length < 2) {
-        return { success: false, message: '用法: create-lens [镜头ID] [目标窗口ID] [宽度] [高度]' };
+      // Parse arguments using schema
+      const parsed = parseArguments(args, commandSchemas['create-lens']);
+      
+      // Handle parsing errors
+      if (!parsed.success) {
+        return { success: false, message: parsed.error.message };
+      }
+      
+      // Handle help switch
+      if (parsed.switches.help || parsed.switches.h) {
+        return { success: true, showHelp: true, command: 'create-lens' };
+      }
+      
+      // Extract positional arguments
+      const [lensId, targetWindowId, widthStr, heightStr] = parsed.positionals;
+      
+      // Extract opacity value from switches with default 1.0
+      const opacityStr = parsed.switches.opacity || parsed.switches.o;
+      const opacity = opacityStr ? parseFloat(opacityStr) : 1.0;
+      
+      // Validate opacity is between 0.0 and 1.0
+      if (isNaN(opacity) || opacity < 0.0 || opacity > 1.0) {
+        return { 
+          success: false, 
+          message: `Invalid opacity value: '${opacityStr}'. Must be a number between 0.0 and 1.0.` 
+        };
+      }
+      
+      // Validate business logic (beyond schema validation)
+      if (!lensId || typeof lensId !== 'string' || lensId.trim() === '') {
+        return { success: false, message: 'Lens ID must be a non-empty string' };
+      }
+      
+      if (!targetWindowId || typeof targetWindowId !== 'string' || targetWindowId.trim() === '') {
+        return { success: false, message: 'Target window ID must be a non-empty string' };
+      }
+      
+      // Parse optional width and height with defaults
+      const width = widthStr ? parseInt(widthStr) : 300;
+      const height = heightStr ? parseInt(heightStr) : 200;
+      
+      // Validate width and height if provided
+      if (widthStr && (isNaN(width) || width <= 0)) {
+        return { success: false, message: `Invalid width: '${widthStr}'. Must be a positive number.` };
+      }
+      
+      if (heightStr && (isNaN(height) || height <= 0)) {
+        return { success: false, message: `Invalid height: '${heightStr}'. Must be a positive number.` };
       }
 
-      const lensId = args[0];
-      const targetWindowId = args[1];
-      const width = args[2] ? parseInt(args[2]) : 300;
-      const height = args[3] ? parseInt(args[3]) : 200;
-
+      // Execute command logic
       try {
-        // 获取目标窗口信息以确定内容类型和路径
+        // Get target window information to determine content type and path
         const targetInfo = getWindowInfo(targetWindowId);
         if (!targetInfo) {
-          return { success: false, message: `目标窗口 ${targetWindowId} 不存在` };
+          return { success: false, message: `Target window '${targetWindowId}' not found. Use 'list' to see available windows.` };
         }
 
         const result = createLensWindow(lensId, targetWindowId, {
           width,
           height,
-          contentType: 'text', // 默认文字类型，后续可扩展
+          contentType: 'text', // Default text type, can be extended later
           contentPath: ''
         });
+        
+        // Apply opacity after lens creation if successful
+        if (result.success && opacity !== 1.0) {
+          const opacityResult = setWindowOpacity(lensId, opacity);
+          if (!opacityResult.success) {
+            console.warn(`Lens created but failed to set opacity: ${opacityResult.message}`);
+          }
+        }
+        
         return result;
       } catch (error) {
-        return { success: false, message: `创建失败: ${error.message}` };
+        return { success: false, message: `Failed to create lens: ${error.message}` };
       }
     }
 
     case 'set-opacity': {
+      // Arguments are already parsed by frontend using parseArguments()
+      // Frontend sends only positionals, help switches are handled there
       if (args.length < 2) {
-        return { success: false, message: '用法: set-opacity [窗口ID] [0-1]' };
+        return { success: false, message: 'Usage: set-opacity [windowID] [opacity]' };
       }
 
+      // Extract positional arguments
       const windowId = args[0];
-      const opacity = parseFloat(args[1]);
+      const opacityValue = args[1];
 
-      return setWindowOpacity(windowId, opacity);
+      // Validate windowID parameter (beyond schema validation)
+      if (!windowId || typeof windowId !== 'string' || windowId.trim() === '') {
+        return { success: false, message: 'Window ID must be a non-empty string' };
+      }
+
+      // Validate opacity range (0.0-1.0)
+      const opacity = parseFloat(opacityValue);
+      
+      // Check if parsing was successful
+      if (isNaN(opacity)) {
+        return { 
+          success: false, 
+          message: `Invalid opacity value: '${opacityValue}'. Must be a number between 0.0 and 1.0.` 
+        };
+      }
+
+      // Validate opacity range (0.0-1.0)
+      if (opacity < 0.0 || opacity > 1.0) {
+        return { 
+          success: false, 
+          message: `Opacity value out of range: ${opacity}. Must be between 0.0 (transparent) and 1.0 (opaque).` 
+        };
+      }
+
+      // Execute command logic
+      try {
+        const result = setWindowOpacity(windowId, opacity);
+        return result;
+      } catch (error) {
+        return { success: false, message: `Failed to set opacity: ${error.message}` };
+      }
     }
 
     case 'set-always-on-top': {
+      // Arguments are already parsed by frontend using parseArguments()
+      // Frontend sends only positionals, help switches are handled there
       if (args.length < 2) {
-        return { success: false, message: '用法: set-always-on-top [窗口ID] [true/false] [level(可选)]' };
+        return { success: false, message: 'Usage: set-always-on-top [windowID] [alwaysOnTop] [level]' };
       }
 
+      // Extract positional arguments
       const windowId = args[0];
-      const flag = args[1] === 'true';
+      const alwaysOnTopValue = args[1];
       const level = args[2] || 'normal';
 
-      return setWindowAlwaysOnTop(windowId, flag, level);
+      // Validate windowID parameter (beyond schema validation)
+      if (!windowId || typeof windowId !== 'string' || windowId.trim() === '') {
+        return { success: false, message: 'Window ID must be a non-empty string' };
+      }
+
+      // Validate boolean parameter
+      let flag;
+      const lowerValue = alwaysOnTopValue.toLowerCase();
+      
+      if (lowerValue === 'true' || lowerValue === '1') {
+        flag = true;
+      } else if (lowerValue === 'false' || lowerValue === '0') {
+        flag = false;
+      } else {
+        return { 
+          success: false, 
+          message: `Invalid alwaysOnTop value: '${alwaysOnTopValue}'. Must be 'true', 'false', '1', or '0'.` 
+        };
+      }
+
+      // Validate level parameter if provided
+      const validLevels = ['normal', 'floating', 'torn-off-menu', 'modal-panel', 'main-menu', 'status', 'pop-up-menu', 'screen-saver'];
+      if (level && !validLevels.includes(level)) {
+        return { 
+          success: false, 
+          message: `Invalid level: '${level}'. Valid levels: ${validLevels.join(', ')}.` 
+        };
+      }
+
+      // Execute command logic
+      try {
+        const result = setWindowAlwaysOnTop(windowId, flag, level);
+        return result;
+      } catch (error) {
+        return { success: false, message: `Failed to set always-on-top: ${error.message}` };
+      }
     }
 
     case 'update-blur': {
-      if (args.length < 2) {
-        return { success: false, message: '用法: update-blur [窗口ID] [0-50]' };
+      // Parse arguments using schema
+      const parsed = parseArguments(args, commandSchemas['update-blur']);
+      
+      // Handle parsing errors
+      if (!parsed.success) {
+        return { success: false, message: parsed.error.message };
       }
-
-      const windowId = args[0];
-      const blurAmount = parseFloat(args[1]);
-
-      return updateContentBlur(windowId, blurAmount);
+      
+      // Handle help switch
+      if (parsed.switches.help || parsed.switches.h) {
+        return { success: true, showHelp: true, command: 'update-blur' };
+      }
+      
+      // Extract positional arguments
+      const [windowId, blurAmountStr] = parsed.positionals;
+      
+      // Validate windowID parameter (beyond schema validation)
+      if (!windowId || typeof windowId !== 'string' || windowId.trim() === '') {
+        return { success: false, message: 'Window ID must be a non-empty string' };
+      }
+      
+      // Validate and parse blur amount with numeric parameter validation
+      const blurAmount = parseFloat(blurAmountStr);
+      
+      // Check if parsing was successful
+      if (isNaN(blurAmount)) {
+        return { 
+          success: false, 
+          message: `Invalid blur amount: '${blurAmountStr}'. Must be a number between 0 and 50.` 
+        };
+      }
+      
+      // Validate blur amount range (0-50)
+      if (blurAmount < 0 || blurAmount > 50) {
+        return { 
+          success: false, 
+          message: `Blur amount out of range: ${blurAmount}. Must be between 0 (no blur) and 50 (maximum blur).` 
+        };
+      }
+      
+      // Execute command logic
+      try {
+        const result = updateContentBlur(windowId, blurAmount);
+        return result;
+      } catch (error) {
+        return { success: false, message: `Failed to update blur: ${error.message}` };
+      }
     }
 
     case 'destroy-lens': {
-      if (args.length < 1) {
-        return { success: false, message: '用法: destroy-lens [镜头ID]' };
+      // Parse arguments using schema
+      const parsed = parseArguments(args, commandSchemas['destroy-lens']);
+      
+      // Handle parsing errors
+      if (!parsed.success) {
+        return { success: false, message: parsed.error.message };
+      }
+      
+      // Handle help switch
+      if (parsed.switches.help || parsed.switches.h) {
+        return { success: true, showHelp: true, command: 'destroy-lens' };
+      }
+      
+      // Extract positional arguments
+      const [lensId] = parsed.positionals;
+      
+      // Validate business logic (beyond schema validation)
+      if (!lensId || typeof lensId !== 'string' || lensId.trim() === '') {
+        return { success: false, message: 'Lens ID must be a non-empty string' };
       }
 
-      const lensId = args[0];
-      return destroyLensSystem(lensId);
+      // Execute command logic
+      try {
+        const result = destroyLensSystem(lensId);
+        return result;
+      } catch (error) {
+        return { success: false, message: `Failed to destroy lens: ${error.message}` };
+      }
     }
 
     case 'list-lens':
     case 'lens-list': {
-      const lensSystems = getLensSystems();
-
-      if (lensSystems.length === 0) {
-        return { success: true, message: '当前没有镜头窗口' };
+      // Parse arguments using schema
+      const parsed = parseArguments(args, commandSchemas['list-lens']);
+      
+      // Handle parsing errors
+      if (!parsed.success) {
+        return { success: false, message: parsed.error.message };
       }
+      
+      // Handle help switch
+      if (parsed.switches.help || parsed.switches.h) {
+        return { success: true, showHelp: true, command: 'list-lens' };
+      }
+      
+      // Execute command logic
+      try {
+        const lensSystems = getLensSystems();
 
-      const message = lensSystems.map(lens =>
-        `${lens.lensId} -> ${lens.targetWindowId} (追踪: ${lens.isTracking})`
-      ).join('\n');
+        if (lensSystems.length === 0) {
+          return { 
+            success: true, 
+            message: 'No lens windows are currently active',
+            data: { count: 0, lenses: [] }
+          };
+        }
 
-      return {
-        success: true,
-        message: `找到 ${lensSystems.length} 个镜头系统:\n${message}`,
-        data: lensSystems
-      };
+        const message = lensSystems.map(lens =>
+          `${lens.lensId} -> ${lens.targetWindowId} (tracking: ${lens.isTracking})`
+        ).join('\n');
+
+        return {
+          success: true,
+          message: `Found ${lensSystems.length} lens system${lensSystems.length === 1 ? '' : 's'}:\n${message}`,
+          data: { count: lensSystems.length, lenses: lensSystems }
+        };
+      } catch (error) {
+        return { success: false, message: `Failed to list lens systems: ${error.message}` };
+      }
     }
 
     case 'lens-info': {
-      if (args.length < 1) {
-        return { success: false, message: '用法: lens-info [镜头ID]' };
+      // Parse arguments using schema
+      const parsed = parseArguments(args, commandSchemas['lens-info']);
+      
+      // Handle parsing errors
+      if (!parsed.success) {
+        return { success: false, message: parsed.error.message };
+      }
+      
+      // Handle help switch
+      if (parsed.switches.help || parsed.switches.h) {
+        return { success: true, showHelp: true, command: 'lens-info' };
+      }
+      
+      // Extract positional arguments
+      const [lensId] = parsed.positionals;
+      
+      // Validate business logic (beyond schema validation)
+      if (!lensId || typeof lensId !== 'string' || lensId.trim() === '') {
+        return { success: false, message: 'Lens ID must be a non-empty string' };
       }
 
-      const lensId = args[0];
-      const lensInfo = getLensSystem(lensId);
+      // Execute command logic
+      try {
+        const lensInfo = getLensSystem(lensId);
 
-      if (!lensInfo) {
-        return { success: false, message: `镜头 ${lensId} 不存在` };
+        if (!lensInfo) {
+          return { success: false, message: `Lens '${lensId}' not found. Use 'list-lens' to see available lens systems.` };
+        }
+
+        return {
+          success: true,
+          message: `Lens '${lensId}' information:`,
+          data: lensInfo
+        };
+      } catch (error) {
+        return { success: false, message: `Failed to get lens info: ${error.message}` };
       }
-
-      return {
-        success: true,
-        message: `镜头 ${lensId} 的信息:`,
-        data: lensInfo
-      };
     }
 
     // Window storage commands
     case 'save-window': {
-      if (args.length < 1) {
-        return { success: false, message: '用法: save-window [窗口ID] [文件名(可选)]' };
+      // Parse arguments using schema
+      const parsed = parseArguments(args, commandSchemas['save-window']);
+      
+      // Handle parsing errors
+      if (!parsed.success) {
+        return { success: false, message: parsed.error.message };
       }
-
-      const windowId = args[0];
-      const customFilename = args[1] || null;
-
-      return saveWindowToFile(windowId, customFilename);
+      
+      // Handle help switch
+      if (parsed.switches.help || parsed.switches.h) {
+        // Return help content or trigger help display
+        return { success: true, showHelp: true, command: 'save-window' };
+      }
+      
+      // Extract positional arguments
+      const [windowId, customFilename] = parsed.positionals;
+      
+      // Validate business logic (beyond schema validation)
+      if (!windowId || typeof windowId !== 'string' || windowId.trim() === '') {
+        return { success: false, message: 'Window ID must be a non-empty string' };
+      }
+      
+      // Execute command logic
+      try {
+        const result = saveWindowToFile(windowId, customFilename || null);
+        return result;
+      } catch (error) {
+        return { success: false, message: `Failed to save window: ${error.message}` };
+      }
     }
 
     case 'restore-window': {
-      if (args.length < 1) {
-        return { success: false, message: '用法: restore-window [文件路径]' };
+      // Parse arguments using schema
+      const parsed = parseArguments(args, commandSchemas['restore-window']);
+      
+      // Handle parsing errors
+      if (!parsed.success) {
+        return { success: false, message: parsed.error.message };
       }
-
-      const filePath = args.slice(0).join(' '); // Join all args to handle paths with spaces
-
+      
+      // Handle help switch
+      if (parsed.switches.help || parsed.switches.h) {
+        // Return help content or trigger help display
+        return { success: true, showHelp: true, command: 'restore-window' };
+      }
+      
+      // Extract positional arguments - join all for file path with spaces
+      const filePath = parsed.positionals.join(' ');
+      
+      // Validate business logic (beyond schema validation)
+      if (!filePath || filePath.trim() === '') {
+        return { success: false, message: 'File path cannot be empty' };
+      }
+      
+      // Use blocklist validation for file operations - allows access to any directory
+      // except specifically blocked ones (node_modules, .git, src, etc.)
+      // This enables restoring windows from .fenestra files anywhere on the system
+      try {
+        const validationResult = validateAndResolvePath(filePath, process.cwd(), null, true);
+        if (!validationResult.isValid) {
+          return { success: false, message: `Invalid file path: ${validationResult.error}` };
+        }
+      } catch (error) {
+        return { success: false, message: `Path validation failed: ${error.message}` };
+      }
+      
+      // Execute command logic
       try {
         // Load window data from file
         const loadResult = loadWindowFromFile(filePath);
@@ -1261,15 +2227,15 @@ function executeTerminalCommand(command, args) {
             let successMessage = restoreResult.message;
             
             if (deleteResult.success) {
-              successMessage += `\n.fenestra文件已自动删除: ${filename}`;
-              console.log(`[TERMINAL] .fenestra文件已在窗口恢复后删除: ${filename}`);
+              successMessage += `\n.fenestra file automatically deleted: ${filename}`;
+              console.log(`[TERMINAL] .fenestra file deleted after window restoration: ${filename}`);
             } else {
-              successMessage += `\n警告: 无法删除.fenestra文件: ${deleteResult.message}`;
-              console.warn(`[TERMINAL] 无法删除.fenestra文件: ${deleteResult.message}`);
+              successMessage += `\nWarning: Unable to delete .fenestra file: ${deleteResult.message}`;
+              console.warn(`[TERMINAL] Unable to delete .fenestra file: ${deleteResult.message}`);
             }
 
             if (restoreResult.warnings && restoreResult.warnings.length > 0) {
-              successMessage += `\n警告: ${restoreResult.warnings.join(', ')}`;
+              successMessage += `\nWarning: ${restoreResult.warnings.join(', ')}`;
             }
 
             return {
@@ -1278,10 +2244,10 @@ function executeTerminalCommand(command, args) {
               windowId: restoreResult.windowId
             };
           } catch (deleteError) {
-            console.error(`[TERMINAL] 删除.fenestra文件时发生错误:`, deleteError);
+            console.error(`[TERMINAL] Error occurred while deleting .fenestra file:`, deleteError);
             return {
               success: true,
-              message: `${restoreResult.message}\n警告: 删除.fenestra文件失败: ${deleteError.message}`,
+              message: `${restoreResult.message}\nWarning: Failed to delete .fenestra file: ${deleteError.message}`,
               windowId: restoreResult.windowId
             };
           }
@@ -1290,202 +2256,332 @@ function executeTerminalCommand(command, args) {
         return restoreResult;
 
       } catch (error) {
-        return { success: false, message: `恢复失败: ${error.message}` };
+        return { success: false, message: `Restore failed: ${error.message}` };
       }
     }
 
     case 'list-saved': {
-      const listResult = listStoredWindows();
-
-      if (!listResult.success) {
-        return listResult;
+      // Parse arguments using schema
+      const parsed = parseArguments(args, commandSchemas['list-saved']);
+      
+      // Handle parsing errors
+      if (!parsed.success) {
+        return { success: false, message: parsed.error.message };
       }
-
-      if (listResult.files.length === 0) {
-        return { success: true, message: '没有找到已保存的窗口文件' };
+      
+      // Handle help switch
+      if (parsed.switches.help || parsed.switches.h) {
+        // Return help content or trigger help display
+        return { success: true, showHelp: true, command: 'list-saved' };
       }
+      
+      // Execute command logic
+      try {
+        const listResult = listStoredWindows();
 
-      const fileList = listResult.files.map(file => {
-        const date = file.modified.toLocaleDateString();
-        const time = file.modified.toLocaleTimeString();
-        const sizeKB = Math.round(file.size / 1024 * 100) / 100;
-        return `${file.filename} (${sizeKB}KB, ${date})`;
-        // return `${file.filename} (${sizeKB}KB, ${date} ${time})`;
-      }).join('\n');
+        if (!listResult.success) {
+          return listResult;
+        }
 
-      return {
-        success: true,
-        message: `找到 ${listResult.files.length} 个已保存的窗口:\n${fileList}`
-      };
+        if (listResult.files.length === 0) {
+          return { success: true, message: 'No saved window files found' };
+        }
+
+        const fileList = listResult.files.map(file => {
+          const date = file.modified.toLocaleDateString();
+          const time = file.modified.toLocaleTimeString();
+          const sizeKB = Math.round(file.size / 1024 * 100) / 100;
+          return `${file.filename} (${sizeKB}KB, ${date})`;
+          // return `${file.filename} (${sizeKB}KB, ${date} ${time})`;
+        }).join('\n');
+
+        return {
+          success: true,
+          message: `Found ${listResult.files.length} saved windows:\n${fileList}`
+        };
+      } catch (error) {
+        return { success: false, message: `Failed to list saved windows: ${error.message}` };
+      }
     }
 
     case 'delete-saved': {
-      if (args.length < 1) {
-        return { success: false, message: '用法: delete-saved [文件名]' };
+      // Parse arguments using schema
+      const parsed = parseArguments(args, commandSchemas['delete-saved']);
+      
+      // Handle parsing errors
+      if (!parsed.success) {
+        return { success: false, message: parsed.error.message };
       }
-
-      const filename = args[0];
-      return deleteStoredWindow(filename);
+      
+      // Handle help switch
+      if (parsed.switches.help || parsed.switches.h) {
+        // Return help content or trigger help display
+        return { success: true, showHelp: true, command: 'delete-saved' };
+      }
+      
+      // Extract positional arguments
+      const [filename] = parsed.positionals;
+      
+      // Validate business logic (beyond schema validation)
+      if (!filename || typeof filename !== 'string' || filename.trim() === '') {
+        return { success: false, message: 'Filename must be a non-empty string' };
+      }
+      
+      // Check for confirmation switch
+      const skipConfirmation = parsed.switches.confirm || parsed.switches.c;
+      
+      // Execute command logic
+      try {
+        // If confirmation is skipped, proceed directly
+        if (skipConfirmation) {
+          const result = deleteStoredWindow(filename);
+          return result;
+        }
+        
+        // For now, we'll proceed without interactive confirmation
+        // In a future enhancement, this could trigger a confirmation dialog
+        // For the terminal interface, we assume the user wants to proceed
+        const result = deleteStoredWindow(filename);
+        
+        // Add a note about the confirmation switch for future use
+        if (result.success) {
+          result.message += '\nTip: Use --confirm or -c to skip confirmation in the future';
+        }
+        
+        return result;
+      } catch (error) {
+        return { success: false, message: `Failed to delete saved window: ${error.message}` };
+      }
     }
 
     // Directory navigation commands
     case 'cd': {
-      const targetPath = args.length > 0 ? args.join(' ') : '';
+      // Parse arguments using schema
+      const parsed = parseArguments(args, commandSchemas['cd']);
       
+      // Handle parsing errors
+      if (!parsed.success) {
+        return { success: false, message: parsed.error.message };
+      }
+      
+      // Handle help switch
+      if (parsed.switches.help || parsed.switches.h) {
+        return { success: true, showHelp: true, command: 'cd' };
+      }
+      
+      // Extract target path from positional arguments
+      const targetPath = parsed.positionals.length > 0 ? parsed.positionals.join(' ') : '';
+      
+      // Path validation (beyond schema validation)
+      if (targetPath && !validatePathCharacters(targetPath)) {
+        return {
+          success: false,
+          message: 'Invalid characters in path. Use only alphanumeric characters, spaces, hyphens, underscores, dots, and forward/back slashes.'
+        };
+      }
+      
+      // Execute command logic
       try {
         const result = changeDirectory(targetPath);
         return result;
       } catch (error) {
         return {
           success: false,
-          message: `目录切换失败: ${error.message}`
+          message: `Directory change failed: ${error.message}`
         };
       }
     }
 
     case 'pwd': {
+      // Parse arguments using schema
+      const parsed = parseArguments(args, commandSchemas['pwd']);
+      
+      // Handle parsing errors
+      if (!parsed.success) {
+        return { success: false, message: parsed.error.message };
+      }
+      
+      // Handle help switch
+      if (parsed.switches.help || parsed.switches.h) {
+        return { success: true, showHelp: true, command: 'pwd' };
+      }
+      
+      // Execute command logic
       try {
-        const result = getWorkingDirectory();
+        const result = await getWorkingDirectory();
         return result;
       } catch (error) {
         return {
           success: false,
-          message: `获取当前目录失败: ${error.message}`
+          message: `Failed to get current directory: ${error.message}`
         };
       }
     }
 
     case 'dir': {
-      const showHidden = args.includes('-a') || args.includes('--all');
-      const targetPath = args.filter(arg => !arg.startsWith('-')).join(' ') || '';
+      // Parse arguments using schema
+      const parsed = parseArguments(args, commandSchemas['dir']);
       
+      // Handle parsing errors
+      if (!parsed.success) {
+        return { success: false, message: parsed.error.message };
+      }
+      
+      // Handle help switch
+      if (parsed.switches.help || parsed.switches.h) {
+        return { success: true, showHelp: true, command: 'dir' };
+      }
+      
+      // Extract switches and positional arguments
+      const showHidden = parsed.switches.all || parsed.switches.a;
+      const targetPath = parsed.positionals.length > 0 ? parsed.positionals.join(' ') : '';
+      
+      // Execute command logic
       try {
         const result = listDirectoryContents(targetPath, showHidden);
         return result;
       } catch (error) {
         return {
           success: false,
-          message: `列出目录内容失败: ${error.message}`
+          message: `Failed to list directory contents: ${error.message}`
         };
       }
     }
 
     case 'config': {
-      if (args.length === 0) {
+      // Parse arguments using schema
+      const parsed = parseArguments(args, commandSchemas['config']);
+      
+      // Handle parsing errors
+      if (!parsed.success) {
+        return { success: false, message: parsed.error.message };
+      }
+      
+      // Handle help switch
+      if (parsed.switches.help || parsed.switches.h) {
+        return { success: true, showHelp: true, command: 'config' };
+      }
+      
+      // Extract positional arguments
+      const [subCommand, configKey, ...configValueParts] = parsed.positionals;
+      
+      if (!subCommand) {
         return { 
           success: false, 
-          message: '用法: config [get|set|reset] [参数...]\n' +
-                   '  config get - 显示当前配置\n' +
-                   '  config get game-data-dir - 显示游戏数据目录\n' +
-                   '  config set game-data-dir [路径] - 设置游戏数据目录\n' +
-                   '  config reset - 重置配置为默认值'
+          message: 'Usage: config [get|set|reset] [parameters...]\n' +
+                   '  config get - Show current configuration\n' +
+                   '  config get game-data-dir - Show game data directory\n' +
+                   '  config set game-data-dir [path] - Set game data directory\n' +
+                   '  config reset - Reset configuration to defaults\n' +
+                   '  config --help - Show detailed help'
         };
       }
 
-      const subCommand = args[0];
-
       switch (subCommand) {
         case 'get': {
-          if (args.length === 1) {
+          if (!configKey) {
             // Show full configuration
             try {
-              const { getConfig } = require('../core/config.js');
               const config = getConfig();
               const configStr = JSON.stringify(config, null, 2);
               return {
                 success: true,
-                message: `当前配置:\n${configStr}`
+                message: `Current configuration:\n${configStr}`
               };
             } catch (error) {
               return {
                 success: false,
-                message: `获取配置失败: ${error.message}`
+                message: `Failed to get configuration: ${error.message}`
               };
             }
-          } else if (args[1] === 'game-data-dir') {
+          } else if (configKey === 'game-data-dir') {
             // Show game data directory
             try {
-              const { getGameDataDirectory } = require('../core/config.js');
               const gameDataDir = getGameDataDirectory();
               return {
                 success: true,
-                message: `游戏数据目录: ${gameDataDir}`
+                message: `Game data directory: ${gameDataDir}`
               };
             } catch (error) {
               return {
                 success: false,
-                message: `获取游戏数据目录失败: ${error.message}`
+                message: `Failed to get game data directory: ${error.message}`
               };
             }
           } else {
             return {
               success: false,
-              message: `未知配置项: ${args[1]}\n可用配置项: game-data-dir`
+              message: `Unknown configuration key: ${configKey}\nAvailable keys: game-data-dir`
             };
           }
         }
 
         case 'set': {
-          if (args.length < 3) {
+          if (!configKey || configValueParts.length === 0) {
             return {
               success: false,
-              message: '用法: config set [配置项] [值]\n可用配置项: game-data-dir'
+              message: 'Usage: config set [key] [value]\nAvailable keys: game-data-dir'
             };
           }
 
-          const configKey = args[1];
-          const configValue = args.slice(2).join(' ');
+          const configValue = configValueParts.join(' ');
 
           if (configKey === 'game-data-dir') {
+            // Validate path before setting
+            if (!configValue.trim()) {
+              return {
+                success: false,
+                message: 'Game data directory path cannot be empty'
+              };
+            }
+            
             try {
-              const { setGameDataDirectory } = require('../core/config.js');
               const result = setGameDataDirectory(configValue);
               
               if (result.success) {
                 return {
                   success: true,
-                  message: `游戏数据目录已设置为: ${result.path}`
+                  message: `Game data directory set to: ${result.path}`
                 };
               } else {
                 return {
                   success: false,
-                  message: `设置游戏数据目录失败: ${result.error}`
+                  message: `Failed to set game data directory: ${result.error}`
                 };
               }
             } catch (error) {
               return {
                 success: false,
-                message: `设置游戏数据目录失败: ${error.message}`
+                message: `Failed to set game data directory: ${error.message}`
               };
             }
           } else {
             return {
               success: false,
-              message: `未知配置项: ${configKey}\n可用配置项: game-data-dir`
+              message: `Unknown configuration key: ${configKey}\nAvailable keys: game-data-dir`
             };
           }
         }
 
         case 'reset': {
           try {
-            const { resetConfigToDefaults } = require('../core/config.js');
             const result = resetConfigToDefaults();
             
             if (result.success) {
               return {
                 success: true,
-                message: '配置已重置为默认值'
+                message: 'Configuration reset to defaults'
               };
             } else {
               return {
                 success: false,
-                message: `重置配置失败: ${result.error}`
+                message: `Failed to reset configuration: ${result.error}`
               };
             }
           } catch (error) {
             return {
               success: false,
-              message: `重置配置失败: ${error.message}`
+              message: `Failed to reset configuration: ${error.message}`
             };
           }
         }
@@ -1493,79 +2589,103 @@ function executeTerminalCommand(command, args) {
         default: {
           return {
             success: false,
-            message: `未知子命令: ${subCommand}\n可用子命令: get, set, reset`
+            message: `Unknown subcommand: ${subCommand}\nAvailable subcommands: get, set, reset`
           };
         }
       }
     }
 
+    case 'clear': {
+      // Parse arguments using schema
+      const parsed = parseArguments(args, commandSchemas['clear']);
+      
+      // Handle parsing errors
+      if (!parsed.success) {
+        return { success: false, message: parsed.error.message };
+      }
+      
+      // Handle help switch
+      if (parsed.switches.help || parsed.switches.h) {
+        return { success: true, showHelp: true, command: 'clear' };
+      }
+      
+      // Execute command logic (minimal implementation)
+      // The clear command is primarily handled by the frontend
+      // This backend handler mainly provides help support and validation
+      return {
+        success: true,
+        message: 'Terminal cleared',
+        action: 'clear' // Signal to frontend to clear the display
+      };
+    }
+
     default:
       return {
         success: false,
-        message: `未知命令: ${command}\n输入 'help' 查看可用命令`
+        message: `Unknown command: ${command}\nType 'help' to see available commands`
       };
   }
 }
 
 /**
- * 加载图片文件并验证
- * @param {string} imagePath - 图片路径
- * @returns {Object} 加载结果
+ * Load and validate image file
+ * @param {string} imagePath - Image path
+ * @returns {Object} Load result
  */
 function loadPictureFile(imagePath) {
-  console.debug(`[PICTURE] 验证图片文件: ${imagePath}`);
+  console.debug(`[PICTURE] Validating image file: ${imagePath}`);
 
   try {
-    // 解析路径
+    // Parse path
     let fullPath;
     if (path.isAbsolute(imagePath)) {
       fullPath = imagePath;
     } else {
-      // 相对路径，相对于项目根目录
+      // Relative path, relative to project root
       fullPath = path.join(process.cwd(), imagePath);
     }
 
-    console.debug(`[PICTURE] 完整路径: ${fullPath}`);
+    console.debug(`[PICTURE] Full path: ${fullPath}`);
 
-    // 检查文件是否存在
+    // Check if file exists
     if (!fs.existsSync(fullPath)) {
-      console.warn(`[PICTURE] 文件不存在: ${fullPath}`);
+      console.warn(`[PICTURE] File does not exist: ${fullPath}`);
       return {
         success: false,
-        error: `文件不存在: ${imagePath}`
+        error: `File does not exist: ${imagePath}`
       };
     }
 
-    // 检查是否是文件
+    // Check if it's a file
     const stats = fs.statSync(fullPath);
     if (!stats.isFile()) {
-      console.warn(`[PICTURE] 路径不是文件: ${fullPath}`);
+      console.warn(`[PICTURE] Path is not a file: ${fullPath}`);
       return {
         success: false,
-        error: `路径不是文件: ${imagePath}`
+        error: `Path is not a file: ${imagePath}`
       };
     }
 
-    // 检查文件扩展名
+    // Check file extension
     const ext = path.extname(fullPath).toLowerCase();
     const supportedFormats = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp'];
 
     if (!supportedFormats.includes(ext)) {
-      console.warn(`[PICTURE] 不支持的图片格式: ${ext}`);
+      console.warn(`[PICTURE] Unsupported image format: ${ext}`);
       return {
         success: false,
-        error: `不支持的图片格式: ${ext}。支持的格式: ${supportedFormats.join(', ')}`
+        error: `Unsupported image format: ${ext}. Supported formats: ${supportedFormats.join(', ')}`
       };
     }
 
-    // 读取文件并转换为 base64
+    // Read file and convert to base64
     try {
       const fileData = fs.readFileSync(fullPath);
       const base64Data = fileData.toString('base64');
       const mimeType = getMimeType(ext);
       const dataUrl = `data:${mimeType};base64,${base64Data}`;
 
-      console.log(`[PICTURE] 图片加载成功, 大小: ${stats.size} bytes`);
+      console.log(`[PICTURE] Image loaded successfully, size: ${stats.size} bytes`);
 
       return {
         success: true,
@@ -1575,26 +2695,26 @@ function loadPictureFile(imagePath) {
         format: ext
       };
     } catch (readError) {
-      console.error(`[PICTURE] 读取文件失败:`, readError);
+      console.error(`[PICTURE] Failed to read file:`, readError);
       return {
         success: false,
-        error: `无法读取文件: ${readError.message}`
+        error: `Unable to read file: ${readError.message}`
       };
     }
 
   } catch (error) {
-    console.error(`[PICTURE] 验证图片失败:`, error);
+    console.error(`[PICTURE] Image validation failed:`, error);
     return {
       success: false,
-      error: `验证失败: ${error.message}`
+      error: `Validation failed: ${error.message}`
     };
   }
 }
 
 /**
- * 根据文件扩展名获取 MIME 类型
- * @param {string} ext - 文件扩展名
- * @returns {string} MIME 类型
+ * Get MIME type based on file extension
+ * @param {string} ext - File extension
+ * @returns {string} MIME type
  */
 function getMimeType(ext) {
   const mimeTypes = {
@@ -1611,22 +2731,22 @@ function getMimeType(ext) {
 }
 
 /**
- * 验证 .fenestra 文件
- * @param {string} filePath - 文件路径
- * @returns {Object} 验证结果
+ * Validate .fenestra file
+ * @param {string} filePath - File path
+ * @returns {Object} Validation result
  */
 function validateFenestraFile(filePath) {
-  console.debug(`[STORAGE] 验证.fenestra文件: ${filePath}`);
+  console.debug(`[STORAGE] Validating .fenestra file: ${filePath}`);
 
   try {
     // Check if file exists
     if (!fs.existsSync(filePath)) {
-      return { success: false, message: '文件不存在' };
+      return { success: false, message: 'File does not exist' };
     }
 
     // Check file extension
     if (!filePath.toLowerCase().endsWith('.fenestra')) {
-      return { success: false, message: '文件扩展名必须是.fenestra' };
+      return { success: false, message: 'File extension must be .fenestra' };
     }
 
     // Read and parse JSON
@@ -1636,41 +2756,41 @@ function validateFenestraFile(filePath) {
     try {
       windowData = JSON.parse(fileContent);
     } catch (parseError) {
-      return { success: false, message: '文件格式无效，不是有效的JSON' };
+      return { success: false, message: 'Invalid file format, not valid JSON' };
     }
 
     // Validate window data structure
     const validationResult = validateWindowData(windowData);
 
     if (!validationResult.isValid) {
-      return { success: false, message: `文件内容无效: ${validationResult.message}` };
+      return { success: false, message: `Invalid file content: ${validationResult.message}` };
     }
 
-    console.log(`[STORAGE] .fenestra文件验证成功: ${filePath}`);
+    console.log(`[STORAGE] .fenestra file validation successful: ${filePath}`);
     return {
       success: true,
-      message: '文件验证成功',
+      message: 'File validation successful',
       data: windowData
     };
 
   } catch (error) {
-    console.error(`[STORAGE] 验证.fenestra文件失败:`, error);
+    console.error(`[STORAGE] .fenestra file validation failed:`, error);
     return {
       success: false,
-      message: `验证失败: ${error.message}`
+      message: `Validation failed: ${error.message}`
     };
   }
 }
 
 /**
- * 获取文件补全建议
- * @param {string} partialPath - 部分路径
- * @param {string} currentDir - 当前工作目录
- * @returns {Object} 补全结果
+ * Get file completion suggestions
+ * @param {string} partialPath - Partial path
+ * @param {string} currentDir - Current working directory
+ * @returns {Object} Completion result
  */
 async function getFileCompletions(partialPath, currentDir) {
   return withErrorHandling(async () => {
-    console.debug(`[FILE_COMPLETION] 处理补全请求: "${partialPath}", 当前目录: "${currentDir}"`);
+    console.debug(`[FILE_COMPLETION] Processing completion request: "${partialPath}", current directory: "${currentDir}"`);
 
     // SPECIAL CASES
     const caseMap = new Map();
@@ -1697,7 +2817,8 @@ async function getFileCompletions(partialPath, currentDir) {
     let workingDir = currentDir || gameDataRoot;
     
     // Validate the working directory is within game scope
-    const workingDirValidation = validateAndResolvePath(workingDir, gameDataRoot, gameDataRoot);
+    // Use allowlist mode (useBlocklist=false) for directory navigation to enforce game scope
+    const workingDirValidation = validateAndResolvePath(workingDir, gameDataRoot, gameDataRoot, false);
     if (!workingDirValidation.isValid) {
       console.warn(`[FILE_COMPLETION] Invalid working directory: ${workingDirValidation.error}`);
       
@@ -1737,7 +2858,7 @@ async function getFileCompletions(partialPath, currentDir) {
       );
     }
 
-    console.debug(`[FILE_COMPLETION] 搜索目录: "${searchDir}", 文件模式: "${filePattern}"`);
+    console.debug(`[FILE_COMPLETION] Search directory: "${searchDir}", file pattern: "${filePattern}"`);
 
     // Get directory contents with door-key system integration
     return await getDirectoryContentsForCompletion(searchDir, filePattern, gameDataRoot);
@@ -1776,7 +2897,8 @@ function parseCompletionPath(partialPath, workingDir, gameDataRoot) {
       const basename = path.basename(normalizedPath);
 
       // Validate the directory is within game scope
-      const dirValidation = validateAndResolvePath(dirname, workingDir, gameDataRoot);
+      // Use allowlist mode (useBlocklist=false) for directory navigation to enforce game scope
+      const dirValidation = validateAndResolvePath(dirname, workingDir, gameDataRoot, false);
       if (!dirValidation.isValid) {
         const error = new FileCompletionError(
           `Absolute path outside scope: ${dirValidation.error}`,
@@ -1804,7 +2926,8 @@ function parseCompletionPath(partialPath, workingDir, gameDataRoot) {
         searchDir = workingDir;
       } else {
         // Validate the relative directory is within game scope
-        const dirValidation = validateAndResolvePath(dirname, workingDir, gameDataRoot);
+        // Use allowlist mode (useBlocklist=false) for directory navigation to enforce game scope
+        const dirValidation = validateAndResolvePath(dirname, workingDir, gameDataRoot, false);
         if (!dirValidation.isValid) {
           const error = new FileCompletionError(
             `Relative path outside scope: ${dirValidation.error}`,
@@ -2169,12 +3292,12 @@ function hasSpecialCharacters(filename) {
 
 
 /**
- * 检查文件名是否需要引号包围
- * @param {string} filename - 文件名
- * @returns {boolean} 是否需要引号
+ * Check if filename needs quoting
+ * @param {string} filename - Filename
+ * @returns {boolean} Whether quoting is needed
  */
 function needsQuoting(filename) {
-  // 检查是否包含空格、特殊字符或需要转义的字符
+  // Check if contains spaces, special characters, or characters that need escaping
   // Enhanced pattern to handle more shell metacharacters and edge cases
   // Includes: spaces, quotes, backslashes, wildcards, brackets, braces, parentheses,
   // pipes, redirections, semicolons, ampersands, tildes, backticks, dollar signs, hash
@@ -2184,33 +3307,33 @@ function needsQuoting(filename) {
 
 
 /**
- * 获取当前工作目录
- * @returns {Object} 当前目录信息
+ * Get current working directory
+ * @returns {Object} Current directory information
  */
 function getCurrentDirectory() {
   return withErrorHandling(async () => {
-    console.debug('[CURRENT_DIR] 获取当前工作目录');
+    console.debug('[CURRENT_DIR] Get current working directory');
 
     const currentDir = process.cwd();
-    console.debug(`[CURRENT_DIR] 当前工作目录: ${currentDir}`);
+    console.debug(`[CURRENT_DIR] Current working directory: ${currentDir}`);
 
     return {
       success: true,
       currentDirectory: currentDir,
-      message: '获取成功'
+      message: 'Retrieved successfully'
     };
   }, 'getCurrentDirectory', {});
 }
 
 /**
- * 更改当前工作目录
- * @param {string} targetPath - 目标目录路径
- * @param {string} currentDir - 当前工作目录（可选）
- * @returns {Object} 目录更改结果
+ * Change current working directory
+ * @param {string} targetPath - Target directory path
+ * @param {string} currentDir - Current working directory (optional)
+ * @returns {Object} Directory change result
  */
 async function changeDirectory(targetPath, currentDir = null) {
   return withErrorHandling(async () => {
-    console.debug(`[CHANGE_DIR] 更改目录到: "${targetPath}"`);
+    console.debug(`[CHANGE_DIR] Change directory to: "${targetPath}"`);
 
     // Get the game data directory as the root scope
     const gameDataRoot = getDefaultGameDataDirectory();
@@ -2229,7 +3352,7 @@ async function changeDirectory(targetPath, currentDir = null) {
       }
 
       return createSuccessResponse([], '', {
-        message: `已切换到游戏数据根目录: ${navigationResult.newPath}`,
+        message: `Switched to game data root directory: ${navigationResult.newPath}`,
         newDirectory: navigationResult.newPath,
         previousDirectory: workingDir
       });
@@ -2250,7 +3373,7 @@ async function changeDirectory(targetPath, currentDir = null) {
       }
 
       return createSuccessResponse([], '', {
-        message: `已切换到上级目录: ${parentResult.parentPath}`,
+        message: `Switched to parent directory: ${parentResult.parentPath}`,
         newDirectory: parentResult.parentPath,
         previousDirectory: workingDir
       });
@@ -2269,7 +3392,7 @@ async function changeDirectory(targetPath, currentDir = null) {
       }
 
       return createSuccessResponse([], '', {
-        message: `已切换到游戏数据根目录: ${navigationResult.newPath}`,
+        message: `Switched to game data root directory: ${navigationResult.newPath}`,
         newDirectory: navigationResult.newPath,
         previousDirectory: workingDir
       });
@@ -2289,13 +3412,13 @@ async function changeDirectory(targetPath, currentDir = null) {
     // Check door-key system access
     const doorKeyAccess = checkDirectoryAccess(navigationResult.newPath);
     if (!doorKeyAccess.hasAccess) {
-      let errorMessage = '目录访问被拒绝';
+      let errorMessage = 'Directory access denied';
       
       if (doorKeyAccess.isLocked) {
         if (doorKeyAccess.requiredKey) {
-          errorMessage = `目录已锁定，需要钥匙: ${doorKeyAccess.requiredKey}`;
+          errorMessage = `Directory is locked, required key: ${doorKeyAccess.requiredKey}`;
         } else {
-          errorMessage = doorKeyAccess.lockReason || '目录已锁定';
+          errorMessage = doorKeyAccess.lockReason || 'Directory is locked';
         }
       }
       
@@ -2310,10 +3433,10 @@ async function changeDirectory(targetPath, currentDir = null) {
       );
     }
 
-    console.debug(`[CHANGE_DIR] 目录更改成功: ${navigationResult.newPath}`);
+    console.debug(`[CHANGE_DIR] Directory change successful: ${navigationResult.newPath}`);
 
     return createSuccessResponse([], '', {
-      message: `已切换到目录: ${navigationResult.newPath}`,
+      message: `Switched to directory: ${navigationResult.newPath}`,
       newDirectory: navigationResult.newPath,
       previousDirectory: workingDir
     });
@@ -2321,14 +3444,14 @@ async function changeDirectory(targetPath, currentDir = null) {
 }
 
 /**
- * 列出目录内容
- * @param {string} dirPath - 目录路径（可选，默认为当前目录）
- * @param {boolean} showHidden - 是否显示隐藏文件
- * @returns {Object} 目录内容列表结果
+ * List directory contents
+ * @param {string} dirPath - Directory path (optional, defaults to current directory)
+ * @param {boolean} showHidden - Whether to show hidden files
+ * @returns {Object} Directory contents list result
  */
 async function listDirectoryContents(dirPath = '', showHidden = false) {
   return withErrorHandling(async () => {
-    console.debug(`[LIST_DIR] 列出目录内容: "${dirPath}", 显示隐藏文件: ${showHidden}`);
+    console.debug(`[LIST_DIR] List directory contents: "${dirPath}", show hidden: ${showHidden}`);
 
     // Get the game data directory as the root scope
     const gameDataRoot = getDefaultGameDataDirectory();
@@ -2343,7 +3466,10 @@ async function listDirectoryContents(dirPath = '', showHidden = false) {
       targetDir = currentDir;
     } else {
       // Resolve the path within game scope
-      const pathValidation = validateAndResolvePath(targetDir, currentDir, gameDataRoot);
+      // Use allowlist validation (useBlocklist=false) for directory navigation commands (cd, pwd, dir)
+      // This enforces game scope restrictions - users can only navigate within the game data directory
+      // File operation commands use blocklist validation for broader access to user content
+      const pathValidation = validateAndResolvePath(targetDir, currentDir, gameDataRoot, false);
       if (!pathValidation.isValid) {
         return createErrorResponse(
           pathValidation.errorCode || ERROR_CODES.INVALID_PATH,
@@ -2357,13 +3483,13 @@ async function listDirectoryContents(dirPath = '', showHidden = false) {
     // Check door-key system access
     const doorKeyAccess = checkDirectoryAccess(targetDir);
     if (!doorKeyAccess.hasAccess) {
-      let errorMessage = '目录访问被拒绝';
+      let errorMessage = 'Directory access denied';
       
       if (doorKeyAccess.isLocked) {
         if (doorKeyAccess.requiredKey) {
-          errorMessage = `目录已锁定，需要钥匙: ${doorKeyAccess.requiredKey}`;
+          errorMessage = `Directory is locked, required key: ${doorKeyAccess.requiredKey}`;
         } else {
-          errorMessage = doorKeyAccess.lockReason || '目录已锁定';
+          errorMessage = doorKeyAccess.lockReason || 'Directory is locked';
         }
       }
       
@@ -2399,36 +3525,36 @@ async function listDirectoryContents(dirPath = '', showHidden = false) {
     const accessibleEntries = filterAccessibleDirectories(contentsResult.entries);
 
     // Format the output
-    let message = `目录内容: ${targetDir}\n`;
+    let message = `Directory contents: ${targetDir}\n`;
     
     if (accessibleEntries.length === 0) {
-      message += '(空目录)';
+      message += '(empty directory)';
     } else {
       // Group by type and format
       const directories = accessibleEntries.filter(entry => entry.type === 'directory');
       const files = accessibleEntries.filter(entry => entry.type === 'file');
       
       if (directories.length > 0) {
-        message += '\n目录:\n';
+        message += '\nDirectories:\n';
         directories.forEach(dir => {
           const displayName = dir.name.replace(/\/$/, ''); // Remove trailing slash for display
-          const lockIndicator = dir.isLocked ? ' [锁定]' : '';
+          const lockIndicator = dir.isLocked ? ' [locked]' : '';
           message += `  ${displayName}/${lockIndicator}\n`;
         });
       }
       
       if (files.length > 0) {
-        message += '\n文件:\n';
+        message += '\nFiles:\n';
         files.forEach(file => {
           const sizeInfo = file.size ? ` (${Math.round(file.size / 1024)}KB)` : '';
           message += `  ${file.name}${sizeInfo}\n`;
         });
       }
       
-      message += `\n总计: ${directories.length} 个目录, ${files.length} 个文件`;
+      message += `\nTotal: ${directories.length} directories, ${files.length} files`;
     }
 
-    console.debug(`[LIST_DIR] 找到 ${accessibleEntries.length} 个可访问条目`);
+    console.debug(`[LIST_DIR] Found ${accessibleEntries.length} accessible entries`);
 
     return createSuccessResponse(accessibleEntries, '', {
       message,
@@ -2442,12 +3568,12 @@ async function listDirectoryContents(dirPath = '', showHidden = false) {
 }
 
 /**
- * 获取当前工作目录（用于终端显示）
- * @returns {Object} 工作目录信息
+ * Get current working directory (for terminal display)
+ * @returns {Object} Working directory information
  */
 async function getWorkingDirectory() {
   return withErrorHandling(async () => {
-    console.debug('[GET_WORKING_DIR] 获取工作目录');
+    console.debug('[GET_WORKING_DIR] Get working directory');
 
     const gameDataRoot = getDefaultGameDataDirectory();
     const fenestraStoragePath = path.join(gameDataRoot, '.fenestra-storage');
@@ -2485,7 +3611,7 @@ async function getWorkingDirectory() {
     const isWithinScope = isWithinGameScope(workingDirectory, gameDataRoot);
     
     let displayPath = workingDirectory;
-    let message = `当前工作目录: ${workingDirectory}`;
+    let message = `Current working directory: ${workingDirectory}`;
     
     if (isWithinScope) {
       // Show relative path from game data root for better readability
@@ -2493,19 +3619,19 @@ async function getWorkingDirectory() {
       if (relativePath) {
         displayPath = `./${relativePath}`;
         if (shouldUseFenestraStorage) {
-          message = `当前工作目录: ${displayPath} (Fenestra存储目录)`;
+          message = `Current working directory: ${displayPath} (Fenestra storage directory)`;
         } else {
-          message = `当前工作目录: ${displayPath} (${workingDirectory})`;
+          message = `Current working directory: ${displayPath} (${workingDirectory})`;
         }
       } else {
         displayPath = './';
-        message = `当前工作目录: ${displayPath} (游戏数据根目录)`;
+        message = `Current working directory: ${displayPath} (game data root directory)`;
       }
     } else {
-      message += ' [警告: 不在游戏数据范围内]';
+      message += ' [Warning: not within game data scope]';
     }
 
-    console.debug(`[GET_WORKING_DIR] 工作目录: ${workingDirectory}`);
+    console.debug(`[GET_WORKING_DIR] Working directory: ${workingDirectory}`);
 
     return createSuccessResponse([], '', {
       message,
@@ -2519,10 +3645,10 @@ async function getWorkingDirectory() {
 }
 
 /**
- * 清理 IPC 处理程序
+ * Clean up IPC handlers
  */
 export function cleanupIpcHandlers() {
-  // 移除所有 IPC 处理程序
+  // Remove all IPC handlers
   ipcMain.removeAllListeners('game/window/create');
   ipcMain.removeAllListeners('game/window/set-bounds');
   ipcMain.removeAllListeners('game/window/get-bounds');
@@ -2550,6 +3676,6 @@ export function cleanupIpcHandlers() {
   ipcMain.removeAllListeners('start-menu/check-save-exists');
   ipcMain.removeAllListeners('start-menu/get-save-metadata');
 
-  console.debug('[IPC] IPC处理程序已清理');
+  console.debug('[IPC] IPC handlers cleaned up');
 }
 
