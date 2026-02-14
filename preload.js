@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-console.log('[PRELOAD] 预加载脚本开始执行');
-console.log('[PRELOAD] 导入Electron模块完成');
+console.log('[PRELOAD] Preload script starting execution');
+console.log('[PRELOAD] Electron modules imported successfully');
 
 const whitelist = [
   'game/window/create',

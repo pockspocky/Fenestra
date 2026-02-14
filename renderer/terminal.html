@@ -572,102 +572,95 @@
         examples: [
           'help',
           'help set-title',
-          'help create-lens'
-        ],
-        tips: [
-          'Use "help [command]" to get detailed help for a specific command',
-          'Commands also support --help and -h flags for individual help'
+          'help create-lens',
+          'help list  # Get detailed help for list command',
+          'help save-window  # Learn about window persistence',
+          'help create-picture  # Understand image window creation'
         ]
       },
       'tips': {
         description: 'Display helpful usage tips for the terminal',
         usage: 'tips',
         parameters: [],
-        examples: ['tips'],
-        tips: [
-          'Tips provide helpful shortcuts and usage patterns',
-          'Use "help [command]" for detailed command-specific information'
+        examples: [
+          'tips',
+          'tips  # Get general usage advice and shortcuts',
+          'tips  # Learn about terminal features and workflows'
         ]
       },
       'clear': {
         description: 'Clear the terminal screen',
         usage: 'clear',
         parameters: [],
-        examples: ['clear'],
-        tips: ['Clears all previous output from the terminal display']
+        examples: [
+          'clear',
+          'clear  # Clean up cluttered terminal output',
+          'clear  # Start fresh after long command sessions'
+        ]
       },
       'list': {
-        description: 'List all open windows with their IDs and titles',
-        usage: 'list',
+        description: 'Display a list of all active windows with their IDs and basic information',
         aliases: ['ls'],
-        parameters: [],
-        examples: ['list', 'ls'],
-        tips: [
-          'Shows a simple list of window ID and title pairs',
-          'Use "getWindows" for more detailed information'
+        optionalSwitches: [
+          { short: 'a', long: 'all', type: 'boolean', default: 'false', description: 'Show all windows including hidden ones' },
+          { short: 'v', long: 'verbose', type: 'boolean', default: 'false', description: 'Show detailed window information' }
+        ],
+        examples: [
+          'list',
+          'ls',
+          'list --help'
         ]
       },
       'ls': {
-        description: 'Alias for list command - list all open windows',
-        usage: 'ls',
+        description: 'Alias for list command - display a list of all active windows',
         aliases: ['list'],
-        parameters: [],
-        examples: ['ls', 'list'],
-        tips: ['This is an alias for the "list" command']
+        optionalSwitches: [
+          { short: 'a', long: 'all', type: 'boolean', default: 'false', description: 'Show all windows including hidden ones' },
+          { short: 'v', long: 'verbose', type: 'boolean', default: 'false', description: 'Show detailed window information' }
+        ],
+        examples: [
+          'ls',
+          'list',
+          'ls --help'
+        ]
       },
       'getwindows': {
         description: 'Get detailed information for all open windows',
         usage: 'getWindows',
         parameters: [],
-        examples: ['getWindows'],
-        tips: [
-          'Provides comprehensive details about all windows',
-          'Use "list" for a simpler overview'
+        optionalSwitches: [
+          { short: 'v', long: 'verbose', type: 'boolean', default: 'false', description: 'Show detailed window information' },
+          { short: 'a', long: 'all', type: 'boolean', default: 'false', description: 'Show all windows including hidden ones' }
+        ],
+        examples: [
+          'getWindows',
+          'getWindows -v  # Show detailed window information',
+          'getWindows -a  # Show all windows including hidden ones',
+          'getWindows -va  # Show all windows with detailed information'
         ]
       },
       'info': {
-        description: 'View detailed information about a specific window',
-        usage: 'info [windowID]',
-        parameters: [
-          { name: 'windowID', description: 'The ID of the window to inspect', required: true }
-        ],
+        description: 'Display detailed information about a specific window including size, position, title, and properties',
         examples: [
-          'info window1',
-          'info main-window',
-          'info picture-viewer'
-        ],
-        tips: [
-          'Shows position, size, visibility, and other window properties',
-          'Use "list" first to see available window IDs'
+          'info window-1',
+          'info --help',
+          'info my-picture-window'
         ]
       },
       'get-title': {
-        description: 'Get the current title of a window',
-        usage: 'get-title [windowID]',
-        parameters: [
-          { name: 'windowID', description: 'The ID of the target window', required: true }
-        ],
+        description: 'Retrieve the current title text of a window',
         examples: [
-          'get-title window1',
-          'get-title main-window'
-        ],
-        tips: ['Returns the current title text of the specified window']
+          'get-title window-1',
+          'get-title --help',
+          'get-title my-picture-window'
+        ]
       },
       'set-title': {
-        description: 'Set the title of a window',
-        usage: 'set-title [windowID] "title"',
-        parameters: [
-          { name: 'windowID', description: 'The ID of the target window', required: true },
-          { name: 'title', description: 'The new title text (use quotes for spaces)', required: true }
-        ],
+        description: 'Set the title text displayed in a window\'s title bar',
         examples: [
-          'set-title window1 "My Window"',
-          'set-title main-window "Updated Title"',
-          'set-title viewer "Image Viewer - Photo.jpg"'
-        ],
-        tips: [
-          'Use quotes around titles that contain spaces',
-          'Title changes are immediately visible in the window title bar'
+          'set-title window-1 "My New Title"',
+          'set-title window-1 Simple Title',
+          'set-title --help'
         ]
       },
       'set-size': {
@@ -682,10 +675,6 @@
           'set-size window1 800 600',
           'set-size viewer 1920 1080',
           'set-size lens1 300 200'
-        ],
-        tips: [
-          'Width and height must be positive integers',
-          'Very small sizes may be limited by system constraints'
         ]
       },
       'set-position': {
@@ -700,76 +689,40 @@
           'set-position window1 100 100',
           'set-position viewer 0 0',
           'set-position lens1 500 300'
-        ],
-        tips: [
-          'Coordinates are relative to the primary display',
-          'Negative values may position windows off-screen'
         ]
       },
       'set-resizable': {
-        description: 'Set whether a window can be resized by the user',
-        usage: 'set-resizable [windowID] [true/false]',
-        parameters: [
-          { name: 'windowID', description: 'The ID of the target window', required: true },
-          { name: 'resizable', description: 'true to allow resizing, false to prevent it', required: true }
-        ],
+        description: 'Control whether a window can be resized by the user',
         examples: [
           'set-resizable window1 true',
-          'set-resizable viewer false',
-          'set-resizable lens1 false'
-        ],
-        tips: [
-          'Non-resizable windows cannot be resized by dragging edges',
-          'This affects user interaction, not programmatic resizing'
+          'set-resizable window1 false',
+          'set-resizable window1 1',
+          'set-resizable window1 0',
+          'set-resizable --help'
         ]
       },
       'set-visibility': {
         description: 'Set the visibility state of a window',
-        usage: 'set-visibility [windowID] [true/false]',
-        parameters: [
-          { name: 'windowID', description: 'The ID of the target window', required: true },
-          { name: 'visible', description: 'true to show, false to hide', required: true }
-        ],
         examples: [
-          'set-visibility window1 true',
-          'set-visibility viewer false',
-          'set-visibility lens1 true'
-        ],
-        tips: [
-          'Hidden windows remain in memory but are not visible',
-          'Use "show" and "hide" commands as shortcuts'
+          'set-visibility window-1 true',
+          'set-visibility window-1 false',
+          'set-visibility --help'
         ]
       },
       'show': {
-        description: 'Show a hidden window',
-        usage: 'show [windowID]',
-        parameters: [
-          { name: 'windowID', description: 'The ID of the window to show', required: true }
-        ],
+        description: 'Make a window visible on screen',
         examples: [
-          'show window1',
-          'show viewer',
-          'show lens1'
-        ],
-        tips: [
-          'Shortcut for "set-visibility [windowID] true"',
-          'Brings the window to the foreground if it was hidden'
+          'show window-1',
+          'show --help',
+          'show my-hidden-window'
         ]
       },
       'hide': {
-        description: 'Hide a visible window',
-        usage: 'hide [windowID]',
-        parameters: [
-          { name: 'windowID', description: 'The ID of the window to hide', required: true }
-        ],
+        description: 'Hide a window from view while keeping it running',
         examples: [
-          'hide window1',
-          'hide viewer',
-          'hide lens1'
-        ],
-        tips: [
-          'Shortcut for "set-visibility [windowID] false"',
-          'Window remains in memory but becomes invisible'
+          'hide window-1',
+          'hide --help',
+          'hide temporary-window'
         ]
       },
       'reload-html': {
@@ -782,87 +735,58 @@
         examples: [
           'reload-html window1 renderer/index.html',
           'reload-html viewer renderer/pictureViewer.html',
-          'reload-html terminal renderer/terminal.html'
-        ],
-        tips: [
-          'Supports both absolute and relative file paths',
-          'Use Tab completion to navigate to HTML files',
-          'Window content will be completely replaced'
+          'reload-html terminal renderer/terminal.html',
+          'reload-html dashboard custom-dashboard.html  # Load custom interface',
+          'reload-html content-window updated-content.html  # Update window content',
+          'reload-html viewer ./templates/image-viewer.html  # Load from templates'
         ]
       },
       'create-picture': {
-        description: 'Create a new picture window to display an image',
-        usage: 'create-picture [windowID] [imagePath] [fitMode]',
-        parameters: [
-          { name: 'windowID', description: 'Unique ID for the new picture window', required: true },
-          { name: 'imagePath', description: 'Path to the image file to display', required: true },
-          { name: 'fitMode', description: 'How to scale the image: fill/contain/cover/scale-down/none', required: false }
+        description: 'Create a new window displaying an image file',
+        optionalSwitches: [
+          { short: 'o', long: 'opacity', type: 'value', default: '1.0', description: 'Set window opacity (0.0-1.0)' }
         ],
         examples: [
-          'create-picture viewer1 renderer/assets/doors/DoorClosed.png',
-          'create-picture photo doors/Squirrel.jpg contain',
-          'create-picture wallpaper /path/to/image.png cover'
-        ],
-        tips: [
-          'Default fit mode is "fill" if not specified',
-          'Supported formats: PNG, JPG, JPEG, GIF, WebP, SVG, BMP',
-          'Use Tab completion to navigate to image files'
+          'create-picture pic-1 /path/to/image.jpg',
+          'create-picture pic-1 /path/to/image.png contain',
+          'create-picture --opacity 0.8 pic-1 image.jpg',
+          'create-picture -o 0.5 pic-2 photo.png contain',
+          'create-picture --help'
         ]
       },
       'set-picture': {
         description: 'Change the image displayed in an existing picture window',
-        usage: 'set-picture [windowID] [imagePath] [fitMode]',
-        parameters: [
-          { name: 'windowID', description: 'The ID of the picture window', required: true },
-          { name: 'imagePath', description: 'Path to the new image file', required: true },
-          { name: 'fitMode', description: 'Optional: new scaling mode', required: false }
-        ],
         examples: [
-          'set-picture viewer1 doors/Squirrel.jpg',
-          'set-picture photo /new/path/image.png contain',
-          'set-picture wallpaper background.jpg cover'
-        ],
-        tips: [
-          'Window must already exist as a picture window',
-          'If fitMode is omitted, current scaling mode is preserved'
+          'set-picture window-1 /path/to/new-image.jpg',
+          'set-picture window-1 image.png contain',
+          'set-picture --help'
         ]
       },
       'set-fit-mode': {
-        description: 'Change the image scaling mode of a picture window',
-        usage: 'set-fit-mode [windowID] [fitMode]',
-        parameters: [
-          { name: 'windowID', description: 'The ID of the picture window', required: true },
-          { name: 'fitMode', description: 'Scaling mode: fill/contain/cover/scale-down/none', required: true }
-        ],
+        description: 'Change how an image is scaled within its window',
         examples: [
-          'set-fit-mode viewer1 contain',
-          'set-fit-mode photo cover',
-          'set-fit-mode wallpaper none'
-        ],
-        tips: [
-          'fill: stretch to fill window, contain: fit within window, cover: fill window cropping if needed',
-          'scale-down: like contain but never scale up, none: original size'
+          'set-fit-mode window-1 contain',
+          'set-fit-mode window-1 cover',
+          'set-fit-mode --help'
         ]
       },
       'create-content': {
         description: 'Create a content window with text or image content and optional blur effect',
-        usage: 'create-content [windowID] [type] [path] [blurAmount] [shouldBlur]',
-        parameters: [
-          { name: 'windowID', description: 'Unique ID for the new content window', required: true },
-          { name: 'type', description: 'Content type: "text" or "image"', required: true },
-          { name: 'path', description: 'Path to content file (optional for text type)', required: false },
-          { name: 'blurAmount', description: 'Blur intensity from 0-50 (default: 10)', required: false },
-          { name: 'shouldBlur', description: 'Whether to apply blur: true/false (default: true)', required: false }
+        optionalSwitches: [
+          { short: 'o', long: 'opacity', type: 'value', default: '1.0', description: 'Set window opacity (0.0-1.0)' },
+          { short: 't', long: 'transparent', type: 'boolean', default: 'false', description: 'Make window transparent' }
         ],
         examples: [
-          'create-content bg1 text',
-          'create-content bg2 image renderer/assets/doors/DoorClosed.png 20',
-          'create-content bg3 text "" 15 true'
-        ],
-        tips: [
-          'Content windows are designed to work with the lens system',
-          'Blur effect creates a background that lens windows can reveal clearly',
-          'Higher blur values create more pronounced effects'
+          'create-content bg-1 text',
+          'create-content bg-2 image /path/to/image.png 20',
+          'create-content --help',
+          'create-content presentation-bg text "Welcome to Fenestra" 15  # Text with blur',
+          'create-content workspace-bg image wallpaper.jpg 25  # Image background with blur',
+          'create-content demo-content text "Demo Text" 0  # No blur for clear text',
+          'create-content --opacity 0.5 bg-3 text "Semi-transparent"  # 50% opacity',
+          'create-content -o 0.8 bg-4 image photo.jpg  # 80% opacity',
+          'create-content --transparent bg-5 text "Invisible"  # Fully transparent',
+          'create-content -o 0.7 -t bg-6 image wallpaper.jpg  # Both switches (transparent overrides opacity)'
         ]
       },
       'create-lens': {
@@ -874,52 +798,37 @@
           { name: 'width', description: 'Lens width in pixels (default: 300)', required: false },
           { name: 'height', description: 'Lens height in pixels (default: 200)', required: false }
         ],
+        optionalSwitches: [
+          { short: 'o', long: 'opacity', type: 'value', default: '1.0', description: 'Set lens opacity (0.0-1.0)' }
+        ],
         examples: [
           'create-lens lens1 bg1',
           'create-lens magnifier bg2 400 300',
-          'create-lens viewer bg3 500 400'
-        ],
-        tips: [
-          'Maximum of 3 lens windows can exist simultaneously',
-          'Lens windows show unblurred content from the target window',
-          'Target window should be a content window with blur applied'
+          'create-lens viewer bg3 500 400',
+          'create-lens detail-view content-bg 600 400  # Large lens for detailed viewing',
+          'create-lens mini-lens blurred-text 200 150  # Small lens for quick previews',
+          'create-lens lens1 bg1 --opacity 0.8  # Create lens with 80% opacity',
+          'create-lens lens2 bg2 400 300 -o 0.5  # Semi-transparent lens'
         ]
       },
       'set-opacity': {
-        description: 'Set the opacity (transparency) of a window',
-        usage: 'set-opacity [windowID] [opacity]',
-        parameters: [
-          { name: 'windowID', description: 'The ID of the target window', required: true },
-          { name: 'opacity', description: 'Opacity value from 0 (transparent) to 1 (opaque)', required: true }
-        ],
+        description: 'Set the transparency level of a window',
         examples: [
-          'set-opacity window1 0.8',
-          'set-opacity lens1 0.5',
-          'set-opacity viewer 1.0'
-        ],
-        tips: [
-          '0.0 makes the window completely transparent',
-          '1.0 makes the window completely opaque',
-          'Values between create various transparency levels'
+          'set-opacity window-1 0.8',
+          'set-opacity window-1 1.0',
+          'set-opacity --help'
         ]
       },
       'set-always-on-top': {
         description: 'Set whether a window stays above all other windows',
-        usage: 'set-always-on-top [windowID] [true/false] [level]',
-        parameters: [
-          { name: 'windowID', description: 'The ID of the target window', required: true },
-          { name: 'alwaysOnTop', description: 'true to keep on top, false to allow normal layering', required: true },
-          { name: 'level', description: 'Optional: stacking level (normal, floating, torn-off-menu, modal-panel, main-menu, status, pop-up-menu, screen-saver)', required: false }
-        ],
         examples: [
-          'set-always-on-top lens1 true',
-          'set-always-on-top window1 false',
-          'set-always-on-top overlay true floating'
-        ],
-        tips: [
-          'Always-on-top windows remain visible above other applications',
-          'Default level is "normal" if not specified',
-          'Use carefully to avoid blocking user interaction'
+          'set-always-on-top window-1 true',
+          'set-always-on-top window-1 false',
+          'set-always-on-top window-1 true floating',
+          'set-always-on-top --help',
+          'set-always-on-top terminal-window true  # Keep terminal always visible',
+          'set-always-on-top lens1 true floating  # Lens window above other apps',
+          'set-always-on-top notification-window true modal-panel  # High priority window'
         ]
       },
       'update-blur': {
@@ -932,12 +841,10 @@
         examples: [
           'update-blur bg1 25',
           'update-blur content1 0',
-          'update-blur bg2 50'
-        ],
-        tips: [
-          'Only works on content windows created with create-content',
-          '0 removes blur completely, 50 is maximum blur',
-          'Changes affect the background that lens windows reveal'
+          'update-blur bg2 50',
+          'update-blur text-bg 15  # Light blur for readable text backgrounds',
+          'update-blur image-bg 35  # Heavy blur for artistic effect',
+          'update-blur presentation-bg 10  # Subtle blur for presentations'
         ]
       },
       'destroy-lens': {
@@ -949,12 +856,9 @@
         examples: [
           'destroy-lens lens1',
           'destroy-lens magnifier',
-          'destroy-lens viewer'
-        ],
-        tips: [
-          'Completely removes the lens window and its tracking system',
-          'Target content window remains unaffected',
-          'Frees up lens slot for creating new lens windows'
+          'destroy-lens viewer',
+          'destroy-lens temp-lens  # Clean up temporary lens windows',
+          'destroy-lens detail-view  # Remove detailed viewing lens'
         ]
       },
       'list-lens': {
@@ -962,11 +866,11 @@
         usage: 'list-lens',
         aliases: ['lens-list'],
         parameters: [],
-        examples: ['list-lens', 'lens-list'],
-        tips: [
-          'Shows lens ID, target window, and tracking status',
-          'Maximum of 3 lens systems can be active',
-          'Use "lens-info" for detailed information about a specific lens'
+        examples: [
+          'list-lens',
+          'lens-list',
+          'list-lens  # Check active lens windows before creating new ones',
+          'list-lens  # Verify lens creation was successful'
         ]
       },
       'lens-list': {
@@ -974,8 +878,7 @@
         usage: 'lens-list',
         aliases: ['list-lens'],
         parameters: [],
-        examples: ['lens-list', 'list-lens'],
-        tips: ['This is an alias for the "list-lens" command']
+        examples: ['lens-list', 'list-lens']
       },
       'lens-info': {
         description: 'View detailed information about a specific lens system',
@@ -986,11 +889,9 @@
         examples: [
           'lens-info lens1',
           'lens-info magnifier',
-          'lens-info viewer'
-        ],
-        tips: [
-          'Shows lens properties, target window, and tracking details',
-          'Use "list-lens" first to see available lens IDs'
+          'lens-info viewer',
+          'lens-info detail-view  # Check lens properties and status',
+          'lens-info temp-lens  # Verify lens configuration'
         ]
       },
       'save-window': {
@@ -1003,12 +904,10 @@
         examples: [
           'save-window window1',
           'save-window viewer my-config',
-          'save-window lens1 lens-setup'
-        ],
-        tips: [
-          'Files are saved in .fenestra-storage directory',
-          'If no filename provided, uses timestamp naming',
-          'Saves position, size, content, and other window properties'
+          'save-window lens1 lens-setup',
+          'save-window picture-viewer favorite-layout  # Save preferred image viewer setup',
+          'save-window terminal-bg workspace-config  # Save workspace background',
+          'save-window content1 presentation-setup  # Save presentation configuration'
         ]
       },
       'restore-window': {
@@ -1020,24 +919,20 @@
         examples: [
           'restore-window .fenestra-storage/window1.fenestra',
           'restore-window my-config.fenestra',
-          'restore-window "/path/to/saved/window.fenestra"'
-        ],
-        tips: [
-          'Supports both absolute and relative file paths',
-          'Use Tab completion to navigate to .fenestra files',
-          'You can also drag .fenestra files to the terminal',
-          'Recreates window with saved position, size, and content'
+          'restore-window "/path/to/saved/window.fenestra"',
+          'restore-window .fenestra-storage/favorite-layout.fenestra  # Restore saved layout',
+          'restore-window workspace-config.fenestra  # Restore workspace setup',
+          'restore-window presentation-setup.fenestra  # Restore presentation config'
         ]
       },
       'list-saved': {
         description: 'List all saved window configuration files',
         usage: 'list-saved',
         parameters: [],
-        examples: ['list-saved'],
-        tips: [
-          'Shows filename, size, and modification date',
-          'Files are stored in .fenestra-storage directory',
-          'Use "restore-window" to load any of these configurations'
+        examples: [
+          'list-saved',
+          'list-saved  # Check available saved configurations',
+          'list-saved  # See file sizes and modification dates'
         ]
       },
       'delete-saved': {
@@ -1046,16 +941,14 @@
         parameters: [
           { name: 'filename', description: 'Name of the .fenestra file to delete', required: true }
         ],
+        optionalSwitches: [
+          { short: 'c', long: 'confirm', type: 'boolean', default: 'false', description: 'Skip confirmation prompt' }
+        ],
         examples: [
           'delete-saved window1.fenestra',
-          'delete-saved my-config.fenestra',
-          'delete-saved old-setup-20241014.fenestra'
-        ],
-        tips: [
-          'Only provide the filename, not the full path',
-          'Files are deleted from .fenestra-storage directory',
-          'Use "list-saved" to see available files to delete',
-          'This action cannot be undone'
+          'delete-saved my-config.fenestra -c  # Delete without confirmation',
+          'delete-saved old-setup-20241014.fenestra --confirm',
+          'delete-saved temp-config.fenestra  # Will prompt for confirmation'
         ]
       },
       'cd': {
@@ -1069,49 +962,40 @@
           'cd .fenestra-storage',
           'cd ..',
           'cd ~/subdirectory',
-          'cd ./doors'
-        ],
-        tips: [
-          'Use "cd" without arguments to go to the game data root directory',
-          'Use "cd .." to go to the parent directory',
-          'Use "cd ~" to go to the game data root directory',
-          'All paths are restricted to the game data directory for security',
-          'Use Tab completion to navigate to directories',
-          'Locked directories require appropriate keys to access'
+          'cd ./doors',
+          'cd images  # Navigate to images directory',
+          'cd ../parent-folder  # Go up one level then into parent-folder',
+          'cd /absolute/path/within/game  # Use absolute path within game scope'
         ]
       },
       'pwd': {
         description: 'Print the current working directory path',
         usage: 'pwd',
         parameters: [],
-        examples: ['pwd'],
-        tips: [
-          'Shows the full path of the current working directory',
-          'Displays relative path from game data root when applicable',
-          'Warns if current directory is outside the game data scope'
+        examples: [
+          'pwd',
+          'pwd  # Check current location before file operations',
+          'pwd  # Verify directory change was successful'
         ]
       },
       'dir': {
         description: 'List contents of the current or specified directory',
         usage: 'dir [directory] [-a|--all]',
         parameters: [
-          { name: 'directory', description: 'Directory to list (optional, defaults to current directory)', required: false },
-          { name: '-a, --all', description: 'Show hidden files and directories', required: false }
+          { name: 'directory', description: 'Directory to list (optional, defaults to current directory)', required: false }
+        ],
+        optionalSwitches: [
+          { short: 'a', long: 'all', type: 'boolean', default: 'false', description: 'Show hidden files and directories' }
         ],
         examples: [
           'dir',
           'dir .fenestra-storage',
           'dir -a',
           'dir ./doors --all',
-          'dir .. -a'
-        ],
-        tips: [
-          'Shows directories and files separately for better readability',
-          'Directories are marked with "/" and show lock status if applicable',
-          'Files show size information when available',
-          'Use -a or --all flag to show hidden files (starting with .)',
-          'Locked directories are indicated and require keys to access',
-          'Use Tab completion to navigate to directories'
+          'dir .. -a',
+          'dir images  # List contents of images directory',
+          'dir . -a  # Show all files including hidden ones in current directory',
+          'dir /path/to/directory  # List specific directory contents'
         ]
       },
       'config': {
@@ -1126,15 +1010,600 @@
           'config get',
           'config get game-data-dir',
           'config set game-data-dir ./my-game-data',
-          'config reset'
-        ],
-        tips: [
-          'Use "config get" to see all current settings',
-          'Use "config get game-data-dir" to see the current game data directory',
-          'Use "config set game-data-dir [path]" to change the game data directory',
-          'Use "config reset" to restore all settings to defaults',
-          'Configuration changes may require restarting the application'
+          'config reset',
+          'config get  # View all current settings',
+          'config set game-data-dir /path/to/new/location  # Change data directory',
+          'config reset  # Restore all defaults if settings become corrupted'
         ]
+      }
+    };
+
+    // Command schema definitions
+    // Defines valid switches and positional arguments for each command
+    const commandSchemas = {
+      'dir': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          },
+          'a': { 
+            long: 'all', 
+            type: 'boolean', 
+            description: 'Show hidden files and directories' 
+          },
+          'v': {
+            long: 'verbose',
+            type: 'boolean',
+            description: 'Show verbose output with additional file details'
+          }
+        },
+        positionals: {
+          min: 0,
+          max: 1,
+          names: ['directory']
+        }
+      },
+      'set-size': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 3,
+          max: 3,
+          names: ['windowID', 'width', 'height']
+        }
+      },
+      'set-position': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 3,
+          max: 3,
+          names: ['windowID', 'x', 'y']
+        }
+      },
+      'info': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 1,
+          max: 1,
+          names: ['windowID']
+        }
+      },
+      'get-title': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 1,
+          max: 1,
+          names: ['windowID']
+        }
+      },
+      'set-title': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 2,
+          max: Infinity,
+          names: ['windowID', 'title']
+        }
+      },
+      'set-resizable': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 2,
+          max: 2,
+          names: ['windowID', 'resizable']
+        }
+      },
+      'set-visibility': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 2,
+          max: 2,
+          names: ['windowID', 'visible']
+        }
+      },
+      'show': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 1,
+          max: 1,
+          names: ['windowID']
+        }
+      },
+      'hide': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 1,
+          max: 1,
+          names: ['windowID']
+        }
+      },
+      'reload-html': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 2,
+          max: 2,
+          names: ['windowID', 'htmlPath']
+        }
+      },
+      'create-picture': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 2,
+          max: 3,
+          names: ['windowID', 'imagePath', 'fitMode']
+        }
+      },
+      'set-picture': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 2,
+          max: 3,
+          names: ['windowID', 'imagePath', 'fitMode']
+        }
+      },
+      'set-fit-mode': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 2,
+          max: 2,
+          names: ['windowID', 'fitMode']
+        }
+      },
+      'create-content': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 2,
+          max: 5,
+          names: ['windowID', 'type', 'path', 'blurAmount', 'shouldBlur']
+        }
+      },
+      'create-lens': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 2,
+          max: 4,
+          names: ['lensID', 'targetWindowID', 'width', 'height']
+        }
+      },
+      'set-opacity': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 2,
+          max: 2,
+          names: ['windowID', 'opacity']
+        }
+      },
+      'set-always-on-top': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 2,
+          max: 3,
+          names: ['windowID', 'alwaysOnTop', 'level']
+        }
+      },
+      'update-blur': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 2,
+          max: 2,
+          names: ['windowID', 'blurAmount']
+        }
+      },
+      'destroy-lens': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 1,
+          max: 1,
+          names: ['lensID']
+        }
+      },
+      'lens-info': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 1,
+          max: 1,
+          names: ['lensID']
+        }
+      },
+      'save-window': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 1,
+          max: 2,
+          names: ['windowID', 'filename']
+        }
+      },
+      'restore-window': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 1,
+          max: 1,
+          names: ['filePath']
+        }
+      },
+      'delete-saved': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 1,
+          max: 1,
+          names: ['filename']
+        }
+      },
+      'cd': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 0,
+          max: 1,
+          names: ['directory']
+        }
+      },
+      'config': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 1,
+          max: 3,
+          names: ['action', 'key', 'value']
+        }
+      },
+      'list': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          },
+          'a': {
+            long: 'all',
+            type: 'boolean',
+            description: 'Show detailed information for all windows'
+          },
+          'v': {
+            long: 'verbose',
+            type: 'boolean',
+            description: 'Show verbose output with additional details'
+          }
+        },
+        positionals: {
+          min: 0,
+          max: 0,
+          names: []
+        }
+      },
+      'ls': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          },
+          'a': {
+            long: 'all',
+            type: 'boolean',
+            description: 'Show detailed information for all windows'
+          },
+          'v': {
+            long: 'verbose',
+            type: 'boolean',
+            description: 'Show verbose output with additional details'
+          }
+        },
+        positionals: {
+          min: 0,
+          max: 0,
+          names: []
+        }
+      },
+      'getwindows': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          },
+          'v': {
+            long: 'verbose',
+            type: 'boolean',
+            description: 'Show verbose output with additional details'
+          }
+        },
+        positionals: {
+          min: 0,
+          max: 0,
+          names: []
+        }
+      },
+      'list-lens': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          },
+          'a': {
+            long: 'all',
+            type: 'boolean',
+            description: 'Show detailed information for all lens systems'
+          },
+          'v': {
+            long: 'verbose',
+            type: 'boolean',
+            description: 'Show verbose output with additional details'
+          }
+        },
+        positionals: {
+          min: 0,
+          max: 0,
+          names: []
+        }
+      },
+      'lens-list': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          },
+          'a': {
+            long: 'all',
+            type: 'boolean',
+            description: 'Show detailed information for all lens systems'
+          },
+          'v': {
+            long: 'verbose',
+            type: 'boolean',
+            description: 'Show verbose output with additional details'
+          }
+        },
+        positionals: {
+          min: 0,
+          max: 0,
+          names: []
+        }
+      },
+      'list-saved': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          },
+          'a': {
+            long: 'all',
+            type: 'boolean',
+            description: 'Show detailed information for all saved files'
+          },
+          'v': {
+            long: 'verbose',
+            type: 'boolean',
+            description: 'Show verbose output with additional details'
+          }
+        },
+        positionals: {
+          min: 0,
+          max: 0,
+          names: []
+        }
+      },
+      'help': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          },
+          'v': {
+            long: 'verbose',
+            type: 'boolean',
+            description: 'Show verbose help with additional details'
+          }
+        },
+        positionals: {
+          min: 0,
+          max: 1,
+          names: ['command']
+        }
+      },
+      'tips': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          },
+          'v': {
+            long: 'verbose',
+            type: 'boolean',
+            description: 'Show verbose tips with additional details'
+          }
+        },
+        positionals: {
+          min: 0,
+          max: 0,
+          names: []
+        }
+      },
+      'clear': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          }
+        },
+        positionals: {
+          min: 0,
+          max: 0,
+          names: []
+        }
+      },
+      'pwd': {
+        switches: {
+          'h': {
+            long: 'help',
+            type: 'boolean',
+            description: 'Show help for this command'
+          },
+          'v': {
+            long: 'verbose',
+            type: 'boolean',
+            description: 'Show verbose output with additional path details'
+          }
+        },
+        positionals: {
+          min: 0,
+          max: 0,
+          names: []
+        }
       }
     };
 
@@ -1171,6 +1640,134 @@
       print(message, 'example');
     }
 
+    /**
+     * Display enhanced error messages for parser errors
+     * Formats parser errors with clear messages, position indicators, and suggested syntax
+     * 
+     * @param {Object} error - Error object from parseArguments
+     * @param {string} commandName - Name of the command that failed
+     * @param {string[]} originalTokens - Original command tokens for context
+     */
+    function displayParserError(error, commandName, originalTokens = []) {
+      if (!error) return;
+
+      // Display main error message
+      print(`[ERROR] ${error.message}`, 'error');
+
+      // Show position indicator if available
+      if (error.position !== null && error.position !== undefined && originalTokens.length > 0) {
+        const position = error.position;
+        if (position >= 0 && position < originalTokens.length) {
+          // Build position indicator
+          const beforeTokens = originalTokens.slice(0, position);
+          const errorToken = originalTokens[position];
+          const afterTokens = originalTokens.slice(position + 1);
+          
+          // Show the command line with position indicator
+          print('', 'info');
+          print('Command line:', 'info');
+          const commandLine = `${commandName} ${originalTokens.join(' ')}`;
+          print(`  ${commandLine}`, 'info');
+          
+          // Calculate position of error token in the display
+          const prefixLength = `  ${commandName} ${beforeTokens.join(' ')}`.length;
+          const spacePadding = beforeTokens.length > 0 ? 1 : 0; // Space before error token
+          const indicatorPosition = prefixLength + spacePadding;
+          
+          // Create position indicator
+          const indicator = ' '.repeat(indicatorPosition) + '^'.repeat(errorToken.length);
+          print(indicator, 'error');
+        }
+      }
+
+      // Display context-specific help and suggestions
+      switch (error.type) {
+        case PARSE_ERROR_TYPES.SWITCH_AFTER_POSITIONAL:
+          print('', 'info');
+          print('Suggestion: Place all switches before positional arguments', 'tip');
+          print('Correct format: command [OPTIONS] <arguments>', 'example');
+          if (commandName && commandSchemas[commandName]) {
+            print(`Example: ${commandName} --help`, 'example');
+          }
+          break;
+
+        case PARSE_ERROR_TYPES.UNKNOWN_SWITCH:
+          print('', 'info');
+          if (error.context && error.context.validSwitches && error.context.validSwitches.length > 0) {
+            print('Valid switches for this command:', 'tip');
+            error.context.validSwitches.forEach(switchInfo => {
+              print(`  ${switchInfo}`, 'example');
+            });
+          } else {
+            print(`Use "${commandName} --help" to see available options`, 'tip');
+          }
+          break;
+
+        case PARSE_ERROR_TYPES.MISSING_VALUE:
+          print('', 'info');
+          if (error.context && error.context.switchName) {
+            print(`Suggestion: Provide a value after ${error.context.switchName}`, 'tip');
+            print(`Example: ${error.context.switchName} <value>`, 'example');
+          }
+          if (error.context && error.context.received) {
+            print(`Note: Got "${error.context.received}" which looks like another switch`, 'info');
+          }
+          break;
+
+        case PARSE_ERROR_TYPES.TOO_FEW_ARGUMENTS:
+          print('', 'info');
+          if (error.context && error.context.names && error.context.names.length > 0) {
+            const requiredArgs = error.context.names.slice(0, error.context.expected);
+            print('Required arguments:', 'tip');
+            requiredArgs.forEach(argName => {
+              print(`  <${argName}>`, 'example');
+            });
+          } else {
+            print(`This command requires at least ${error.context.expected} argument(s)`, 'tip');
+          }
+          if (commandName) {
+            print(`Use "${commandName} --help" for usage information`, 'tip');
+          }
+          break;
+
+        case PARSE_ERROR_TYPES.TOO_MANY_ARGUMENTS:
+          print('', 'info');
+          if (error.context && error.context.names && error.context.names.length > 0) {
+            print('Expected arguments:', 'tip');
+            error.context.names.forEach(argName => {
+              print(`  <${argName}>`, 'example');
+            });
+          } else {
+            print(`This command accepts at most ${error.context.expected} argument(s)`, 'tip');
+          }
+          if (commandName) {
+            print(`Use "${commandName} --help" for usage information`, 'tip');
+          }
+          break;
+
+        case PARSE_ERROR_TYPES.INVALID_SWITCH:
+          print('', 'info');
+          if (error.context && error.context.token) {
+            print(`Note: In combined switches like "${error.context.token}", value switches must be last`, 'tip');
+            print('Example: -abc is valid if only "c" requires a value', 'example');
+          } else {
+            print('Suggestion: Use valid switch format like -a or --option', 'tip');
+          }
+          if (commandName) {
+            print(`Use "${commandName} --help" to see valid switches`, 'tip');
+          }
+          break;
+
+        default:
+          // Generic help for unknown error types
+          if (commandName) {
+            print('', 'info');
+            print(`Use "${commandName} --help" for usage information`, 'tip');
+          }
+          break;
+      }
+    }
+
     // Parse command with help detection
     function parseCommandWithHelp(cmdStr) {
       const parts = parseCommand(cmdStr);
@@ -1193,6 +1790,7 @@
     // Show help for a specific command
     function showCommandHelp(commandName) {
       const helpData = commandHelp[commandName];
+      const schema = commandSchemas[commandName];
       
       if (!helpData) {
         print(`[ERROR] Unknown command: ${commandName}`, 'error');
@@ -1219,9 +1817,76 @@
       print(`Description: ${helpData.description}`, 'info');
       print('', 'info');
       
+      // Generate usage line with [OPTIONS] and positional placeholders
+      let usageLine = commandName;
+      
+      // Add [OPTIONS] if command has switches
+      if (schema && schema.switches && Object.keys(schema.switches).length > 0) {
+        usageLine += ' [OPTIONS]';
+      }
+      
+      // Add positional argument placeholders
+      if (schema && schema.positionals && schema.positionals.names) {
+        schema.positionals.names.forEach((name, index) => {
+          // Determine if positional is required or optional
+          const isRequired = index < schema.positionals.min;
+          if (isRequired) {
+            usageLine += ` <${name}>`;
+          } else {
+            usageLine += ` [${name}]`;
+          }
+        });
+      }
+      
       // Usage
-      printParameter(`Usage: ${helpData.usage}`);
+      printParameter(`Usage: ${usageLine}`);
       print('', 'info');
+      
+      // Display switches if command has a schema with switches
+      if (schema && schema.switches && Object.keys(schema.switches).length > 0) {
+        printParameter('Optional Switches:');
+        
+        // Sort switches alphabetically for consistent display
+        const sortedSwitches = Object.entries(schema.switches).sort((a, b) => 
+          a[0].localeCompare(b[0])
+        );
+        
+        sortedSwitches.forEach(([shortForm, switchDef]) => {
+          // Build switch display line
+          let switchLine = `  -${shortForm}`;
+          
+          // Add long form if available
+          if (switchDef.long) {
+            switchLine += `, --${switchDef.long}`;
+          }
+          
+          // Add value indicator if switch requires a value
+          if (switchDef.type === 'value') {
+            switchLine += ' <value>';
+          }
+          
+          // Pad the switch line to align descriptions
+          const padding = ' '.repeat(Math.max(1, 30 - switchLine.length));
+          switchLine += padding;
+          
+          // Add description
+          if (switchDef.description) {
+            switchLine += switchDef.description;
+          }
+          
+          // Add default value if available
+          if (switchDef.default !== undefined) {
+            switchLine += ` [default: ${switchDef.default}]`;
+          } else if (switchDef.type === 'boolean') {
+            // Boolean switches default to false if not specified
+            switchLine += ` [default: false]`;
+          }
+          
+          print(switchLine, 'info');
+        });
+        
+        print('', 'info');
+      }
       
       // Aliases (if any)
       if (helpData.aliases && helpData.aliases.length > 0) {
@@ -1229,8 +1894,9 @@
         print('', 'info');
       }
       
-      // Parameters
-      if (helpData.parameters && helpData.parameters.length > 0) {
+      // Parameters (legacy - only show if not using schema-based display)
+      if (helpData.parameters && helpData.parameters.length > 0 && 
+          !(schema && schema.switches && Object.keys(schema.switches).length > 0)) {
         printParameter('Parameters:');
         helpData.parameters.forEach(param => {
           const required = param.required ? '(required)' : '(optional)';
@@ -1246,14 +1912,6 @@
           printExample(`  ${example}`);
         });
         print('', 'info');
-      }
-      
-      // Tips
-      if (helpData.tips && helpData.tips.length > 0) {
-        printParameter('Tips:');
-        helpData.tips.forEach(tip => {
-          printTip(`  ${tip}`);
-        });
       }
     }
 
@@ -1405,19 +2063,79 @@
 
       // Execute local commands
       if (cmd === 'help') {
-        if (args.length > 0) {
-          showCommandHelp(args[0]);
+        // Parse arguments using schema
+        const parsed = parseArguments(args, commandSchemas['help']);
+        
+        if (!parsed.success) {
+          displayParserError(parsed.error, 'help', args);
+          return;
+        }
+        
+        // Check for help switch (help for help command)
+        if (parsed.switches.h || parsed.switches.help) {
+          showCommandHelp('help');
+          return;
+        }
+        
+        const verbose = parsed.switches.v || parsed.switches.verbose || false;
+        const commandName = parsed.positionals[0];
+        
+        if (commandName) {
+          showCommandHelp(commandName);
         } else {
           showHelp();
         }
       } else if (cmd === 'tips') {
+        // Parse arguments using schema
+        const parsed = parseArguments(args, commandSchemas['tips']);
+        
+        if (!parsed.success) {
+          displayParserError(parsed.error, 'tips', args);
+          return;
+        }
+        
+        // Check for help switch
+        if (parsed.switches.h || parsed.switches.help) {
+          showCommandHelp('tips');
+          return;
+        }
+        
+        const verbose = parsed.switches.v || parsed.switches.verbose || false;
         showTips();
       } else if (cmd === 'clear') {
+        // Parse arguments using schema
+        const parsed = parseArguments(args, commandSchemas['clear']);
+        
+        if (!parsed.success) {
+          displayParserError(parsed.error, 'clear', args);
+          return;
+        }
+        
+        // Check for help switch
+        if (parsed.switches.h || parsed.switches.help) {
+          showCommandHelp('clear');
+          return;
+        }
+        
         clearTerminal();
       } else if (cmd === 'cd') {
         // Handle directory change command
         try {
-          const targetPath = args.length > 0 ? args.join(' ') : '';
+          // Parse arguments using schema
+          const parsed = parseArguments(args, commandSchemas['cd']);
+          
+          if (!parsed.success) {
+            displayParserError(parsed.error, 'cd', args);
+            return;
+          }
+          
+          // Check for help switch
+          if (parsed.switches.h || parsed.switches.help) {
+            showCommandHelp('cd');
+            return;
+          }
+          
+          const targetPath = parsed.positionals[0] || '';
           const result = await window.electronAPI.changeDirectory({ 
             targetPath, 
             currentDir: autoCompleter.currentDirectory 
@@ -1438,39 +2156,23 @@
       } else if (cmd === 'pwd') {
         // Handle print working directory command
         try {
-          const result = await window.electronAPI.getWorkingDirectory();
+          // Parse arguments using schema
+          const parsed = parseArguments(args, commandSchemas['pwd']);
           
-          if (result.success) {
-            print(result.message, 'success');
-          } else {
-            print(`[ERROR] ${result.message}`, 'error');
+          if (!parsed.success) {
+            displayParserError(parsed.error, 'pwd', args);
+            return;
           }
-        } catch (error) {
-          print(`[ERROR] ${error.message}`, 'error');
-        }
-      } else if (cmd === 'dir') {
-        // Handle directory listing command
-        try {
-          const showHidden = args.includes('-a') || args.includes('--all');
-          const dirPath = args.filter(arg => !arg.startsWith('-')).join(' ') || '';
           
-          const result = await window.electronAPI.listDirectory({ 
-            dirPath, 
-            showHidden 
-          });
-          
-          if (result.success) {
-            print(result.message, 'success');
-          } else {
-            print(`[ERROR] ${result.message}`, 'error');
+          // Check for help switch
+          if (parsed.switches.h || parsed.switches.help) {
+            showCommandHelp('pwd');
+            return;
           }
-        } catch (error) {
-          print(`[ERROR] ${error.message}`, 'error');
-        }
-      } else {
-        // Send to main process for handling
-        try {
-          const result = await window.electronAPI.executeTerminalCommand(cmd, args);
+          
+          // Execute pwd command through the terminal command handler
+          const result = await window.electronAPI.executeTerminalCommand('pwd', parsed.positionals);
+          
           if (result.success) {
             if (result.message) {
               print(result.message, 'success');
@@ -1483,6 +2185,124 @@
           }
         } catch (error) {
           print(`[ERROR] ${error.message}`, 'error');
+        }
+      } else if (cmd === 'dir') {
+        // Handle directory listing command
+        try {
+          // Parse arguments using new parser with schema
+          const parsed = parseArguments(args, commandSchemas['dir']);
+          
+          // Handle parsing errors
+          if (!parsed.success) {
+            displayParserError(parsed.error, 'dir', args);
+            return;
+          }
+          
+          // Check for help switch - display help instead of executing
+          if (parsed.switches.h || parsed.switches.help) {
+            showCommandHelp('dir');
+            return;
+          }
+          
+          // Extract switches and positionals
+          const showHidden = parsed.switches.a || parsed.switches.all || false;
+          const verbose = parsed.switches.v || parsed.switches.verbose || false;
+          const dirPath = parsed.positionals[0] || '';
+          
+          const result = await window.electronAPI.listDirectory({ 
+            dirPath, 
+            showHidden,
+            verbose
+          });
+          
+          if (result.success) {
+            print(result.message, 'success');
+          } else {
+            print(`[ERROR] ${result.message}`, 'error');
+          }
+        } catch (error) {
+          print(`[ERROR] ${error.message}`, 'error');
+        }
+      } else {
+        // Commands that use backend parsing (send raw args)
+        const backendParsedCommands = new Set([
+          'create-picture', 'set-picture', 'set-fit-mode'
+        ]);
+        
+        if (backendParsedCommands.has(cmd)) {
+          // Send raw arguments to backend for parsing
+          try {
+            const result = await window.electronAPI.executeTerminalCommand(cmd, args);
+            if (result.success) {
+              // Handle help response from backend
+              if (result.showHelp) {
+                showCommandHelp(result.command);
+                return;
+              }
+              
+              if (result.message) {
+                print(result.message, 'success');
+              }
+              if (result.data) {
+                print(JSON.stringify(result.data, null, 2), 'info');
+              }
+            } else {
+              print(`[ERROR] ${result.message}`, 'error');
+            }
+          } catch (error) {
+            print(`[ERROR] ${error.message}`, 'error');
+          }
+        }
+        // Parse arguments for commands with schemas before sending to main process
+        else if (commandSchemas[cmd]) {
+          const parsed = parseArguments(args, commandSchemas[cmd]);
+          
+          // Handle parsing errors
+          if (!parsed.success) {
+            displayParserError(parsed.error, cmd, args);
+            return;
+          }
+          
+          // Check for help switch - display help instead of executing
+          if (parsed.switches.h || parsed.switches.help) {
+            showCommandHelp(cmd);
+            return;
+          }
+          
+          // Send parsed positionals to main process
+          // (switches would be handled here if the command had any)
+          try {
+            const result = await window.electronAPI.executeTerminalCommand(cmd, parsed.positionals);
+            if (result.success) {
+              if (result.message) {
+                print(result.message, 'success');
+              }
+              if (result.data) {
+                console.log('[TERMINAL_DATA]', JSON.stringify(result.data, null, 2));
+              }
+            } else {
+              print(`[ERROR] ${result.message}`, 'error');
+            }
+          } catch (error) {
+            print(`[ERROR] ${error.message}`, 'error');
+          }
+        } else {
+          // Send to main process for handling (no schema, backward compatibility)
+          try {
+            const result = await window.electronAPI.executeTerminalCommand(cmd, args);
+            if (result.success) {
+              if (result.message) {
+                print(result.message, 'success');
+              }
+              if (result.data) {
+                print(JSON.stringify(result.data, null, 2), 'info');
+              }
+            } else {
+              print(`[ERROR] ${result.message}`, 'error');
+            }
+          } catch (error) {
+            print(`[ERROR] ${error.message}`, 'error');
+          }
         }
       }
     }
@@ -1522,92 +2342,573 @@
       return parts;
     }
 
+    /**
+     * Error type constants for argument parsing
+     * These constants define all possible error types that can occur during parsing
+     */
+    const PARSE_ERROR_TYPES = {
+      SWITCH_AFTER_POSITIONAL: 'SWITCH_AFTER_POSITIONAL',
+      UNKNOWN_SWITCH: 'UNKNOWN_SWITCH',
+      MISSING_VALUE: 'MISSING_VALUE',
+      TOO_FEW_ARGUMENTS: 'TOO_FEW_ARGUMENTS',
+      TOO_MANY_ARGUMENTS: 'TOO_MANY_ARGUMENTS',
+      INVALID_SWITCH: 'INVALID_SWITCH'
+    };
+
+    /**
+     * Create a standardized error response object
+     * 
+     * @param {string} type - Error type from PARSE_ERROR_TYPES
+     * @param {string} message - Human-readable error message
+     * @param {number} position - Token index where error occurred (optional)
+     * @param {Object} context - Additional context information (optional)
+     * @returns {Object} Error response object
+     */
+    function createParseError(type, message, position = null, context = null) {
+      const error = {
+        type: type,
+        message: message
+      };
+      
+      if (position !== null) {
+        error.position = position;
+      }
+      
+      if (context !== null) {
+        error.context = context;
+      }
+      
+      return error;
+    }
+
+    /**
+     * Parse command tokens into switches and positional arguments
+     * Implements a state machine that enforces switches-before-positionals ordering
+     * 
+     * @param {string[]} tokens - Array of command tokens (excluding command name)
+     * @param {Object} schema - Command schema defining valid switches (optional for basic parsing)
+     * @returns {Object} Parsed arguments or error
+     * 
+     * Success response: { success: true, switches: {}, positionals: [], error: null }
+     * Error response: { success: false, switches: {}, positionals: [], error: {...} }
+     */
+    function parseArguments(tokens, schema = null) {
+      // Initialize result structure
+      const result = {
+        success: true,
+        switches: {},
+        positionals: [],
+        error: null
+      };
+
+      // State machine: PARSING_SWITCHES -> PARSING_POSITIONALS
+      const STATE = {
+        PARSING_SWITCHES: 'PARSING_SWITCHES',
+        PARSING_POSITIONALS: 'PARSING_POSITIONALS'
+      };
+      
+      let state = STATE.PARSING_SWITCHES;
+      let i = 0;
+
+      // Handle empty input - but still need to validate positionals later
+      if (!tokens || tokens.length === 0) {
+        // Don't return early - we need to validate positionals
+        // Just skip the parsing loop
+      } else {
+
+      // Helper function to check if a switch requires a value
+      function switchRequiresValue(switchName) {
+        if (!schema || !schema.switches) {
+          return false; // Without schema, assume boolean
+        }
+        
+        // Check both short and long forms
+        for (const [key, def] of Object.entries(schema.switches)) {
+          if (key === switchName || def.long === switchName) {
+            return def.type === 'value';
+          }
+        }
+        
+        return false; // Default to boolean if not in schema
+      }
+
+      // Helper function to check if a switch is valid in the schema
+      function isSwitchValid(switchName) {
+        if (!schema || !schema.switches) {
+          return true; // Without schema, all switches are valid
+        }
+        
+        // Check both short and long forms
+        for (const [key, def] of Object.entries(schema.switches)) {
+          if (key === switchName || def.long === switchName) {
+            return true;
+          }
+        }
+        
+        return false;
+      }
+
+      // Helper function to get the long form of a switch (for mapping short to long)
+      function getLongForm(switchName) {
+        if (!schema || !schema.switches) {
+          return switchName; // Without schema, return as-is
+        }
+        
+        // Check if this is a short form that has a long form
+        for (const [key, def] of Object.entries(schema.switches)) {
+          if (key === switchName && def.long) {
+            return def.long;
+          }
+        }
+        
+        return switchName; // Return original if no long form found
+      }
+
+      // Helper function to get valid switches for error messages
+      function getValidSwitches() {
+        if (!schema || !schema.switches) {
+          return [];
+        }
+        
+        const switches = [];
+        for (const [key, def] of Object.entries(schema.switches)) {
+          if (def.long) {
+            switches.push(`-${key}, --${def.long}`);
+          } else {
+            switches.push(`-${key}`);
+          }
+        }
+        
+        return switches;
+      }
+
+      while (i < tokens.length) {
+        const token = tokens[i];
+
+        // Detect switch tokens (starting with - or --)
+        // Special case: single "-" is not a valid switch
+        const isSwitch = token.startsWith('-') && token.length > 1;
+        const isSingleDash = token === '-';
+
+        if (isSingleDash) {
+          // Single "-" is invalid
+          result.success = false;
+          result.error = createParseError(
+            PARSE_ERROR_TYPES.INVALID_SWITCH,
+            'Invalid switch format: "-"',
+            i
+          );
+          return result;
+        }
+
+        if (isSwitch) {
+          // Check if we've already started parsing positionals
+          if (state === STATE.PARSING_POSITIONALS) {
+            // Error: switch after positional
+            result.success = false;
+            result.error = createParseError(
+              PARSE_ERROR_TYPES.SWITCH_AFTER_POSITIONAL,
+              'Switches must appear before positional arguments',
+              i
+            );
+            return result;
+          }
+
+          // Parse the switch
+          if (token.startsWith('--')) {
+            // Long form switch (e.g., --verbose, --all)
+            const switchName = token.substring(2);
+            
+            if (switchName.length === 0) {
+              // Just "--" by itself - could be used as separator in future
+              result.success = false;
+              result.error = createParseError(
+                PARSE_ERROR_TYPES.INVALID_SWITCH,
+                'Invalid switch format: "--"',
+                i
+              );
+              return result;
+            }
+
+            // Validate switch against schema
+            if (schema && schema.switches && !isSwitchValid(switchName)) {
+              result.success = false;
+              result.error = createParseError(
+                PARSE_ERROR_TYPES.UNKNOWN_SWITCH,
+                `Unknown switch: --${switchName}`,
+                i,
+                {
+                  switchName: `--${switchName}`,
+                  validSwitches: getValidSwitches()
+                }
+              );
+              return result;
+            }
+
+            // Check if this switch requires a value
+            if (switchRequiresValue(switchName)) {
+              // Value switch - consume next token as value
+              i++; // Move to next token
+              
+              if (i >= tokens.length) {
+                // No value provided
+                result.success = false;
+                result.error = createParseError(
+                  PARSE_ERROR_TYPES.MISSING_VALUE,
+                  `Switch --${switchName} requires a value`,
+                  i - 1,
+                  {
+                    switchName: `--${switchName}`
+                  }
+                );
+                return result;
+              }
+              
+              const nextToken = tokens[i];
+              
+              // Check if next token is a switch (which would be an error)
+              if (nextToken.startsWith('-') && nextToken.length > 1) {
+                result.success = false;
+                result.error = createParseError(
+                  PARSE_ERROR_TYPES.MISSING_VALUE,
+                  `Switch --${switchName} requires a value, got switch ${nextToken} instead`,
+                  i - 1,
+                  {
+                    switchName: `--${switchName}`,
+                    received: nextToken
+                  }
+                );
+                return result;
+              }
+              
+              // Store switch with its value
+              result.switches[switchName] = nextToken;
+              i++;
+            } else {
+              // Boolean flag - store as true
+              result.switches[switchName] = true;
+              i++;
+            }
+          } else {
+            // Short form switch (e.g., -a, -v)
+            const switchChars = token.substring(1);
+            
+            if (switchChars.length === 0) {
+              // Just "-" by itself
+              result.success = false;
+              result.error = createParseError(
+                PARSE_ERROR_TYPES.INVALID_SWITCH,
+                'Invalid switch format: "-"',
+                i
+              );
+              return result;
+            }
+
+            // Parse each character as a separate switch
+            // Note: For combined switches like -abc, only the last one can be a value switch
+            for (let j = 0; j < switchChars.length; j++) {
+              const switchChar = switchChars[j];
+              const isLastChar = j === switchChars.length - 1;
+              
+              // Validate switch against schema
+              if (schema && schema.switches && !isSwitchValid(switchChar)) {
+                result.success = false;
+                result.error = createParseError(
+                  PARSE_ERROR_TYPES.UNKNOWN_SWITCH,
+                  `Unknown switch: -${switchChar}`,
+                  i,
+                  {
+                    switchName: `-${switchChar}`,
+                    validSwitches: getValidSwitches()
+                  }
+                );
+                return result;
+              }
+              
+              // Check if this switch requires a value
+              if (switchRequiresValue(switchChar)) {
+                // Value switch
+                if (!isLastChar) {
+                  // Value switch must be the last character in combined form
+                  result.success = false;
+                  result.error = createParseError(
+                    PARSE_ERROR_TYPES.INVALID_SWITCH,
+                    `Value switch -${switchChar} must be the last character in combined switch ${token}`,
+                    i,
+                    {
+                      switchName: `-${switchChar}`,
+                      token: token
+                    }
+                  );
+                  return result;
+                }
+                
+                // Consume next token as value
+                i++; // Move to next token
+                
+                if (i >= tokens.length) {
+                  // No value provided
+                  result.success = false;
+                  result.error = createParseError(
+                    PARSE_ERROR_TYPES.MISSING_VALUE,
+                    `Switch -${switchChar} requires a value`,
+                    i - 1,
+                    {
+                      switchName: `-${switchChar}`
+                    }
+                  );
+                  return result;
+                }
+                
+                const nextToken = tokens[i];
+                
+                // Check if next token is a switch (which would be an error)
+                if (nextToken.startsWith('-') && nextToken.length > 1) {
+                  result.success = false;
+                  result.error = createParseError(
+                    PARSE_ERROR_TYPES.MISSING_VALUE,
+                    `Switch -${switchChar} requires a value, got switch ${nextToken} instead`,
+                    i - 1,
+                    {
+                      switchName: `-${switchChar}`,
+                      received: nextToken
+                    }
+                  );
+                  return result;
+                }
+                
+                // Map short form to long form and store switch with its value
+                const longForm = getLongForm(switchChar);
+                result.switches[longForm] = nextToken;
+                // Also store short form for backward compatibility
+                if (longForm !== switchChar) {
+                  result.switches[switchChar] = nextToken;
+                }
+              } else {
+                // Boolean flag - store as true
+                // Map short form to long form
+                const longForm = getLongForm(switchChar);
+                result.switches[longForm] = true;
+                // Also store short form for backward compatibility
+                if (longForm !== switchChar) {
+                  result.switches[switchChar] = true;
+                }
+              }
+            }
+            i++;
+          }
+        } else {
+          // Not a switch - it's a positional argument
+          state = STATE.PARSING_POSITIONALS;
+          result.positionals.push(token);
+          i++;
+        }
+      }
+      } // End of parsing loop
+
+      // Validate positional argument count against schema
+      if (schema && schema.positionals) {
+        const positionalCount = result.positionals.length;
+        const min = schema.positionals.min !== undefined ? schema.positionals.min : 0;
+        const max = schema.positionals.max !== undefined ? schema.positionals.max : Infinity;
+        
+        if (positionalCount < min) {
+          // Too few positional arguments
+          result.success = false;
+          result.error = createParseError(
+            PARSE_ERROR_TYPES.TOO_FEW_ARGUMENTS,
+            `Too few arguments: expected at least ${min}, got ${positionalCount}`,
+            null,
+            {
+              expected: min,
+              received: positionalCount,
+              names: schema.positionals.names || []
+            }
+          );
+          return result;
+        }
+        
+        if (positionalCount > max) {
+          // Too many positional arguments
+          result.success = false;
+          result.error = createParseError(
+            PARSE_ERROR_TYPES.TOO_MANY_ARGUMENTS,
+            `Too many arguments: expected at most ${max}, got ${positionalCount}`,
+            null,
+            {
+              expected: max,
+              received: positionalCount,
+              names: schema.positionals.names || []
+            }
+          );
+          return result;
+        }
+      }
+
+      return result;
+    }
+
     // Display help information
     function showHelp() {
-      printCommandHelp('--- Available Commands ---');
+      printCommandHelp('--- Fenestra Terminal Help ---');
       print('', 'info');
+      
+      // Getting Help Section (Enhanced)
       printCommandHelp('Getting Help:');
       print('  help                              - Show this help information', 'info');
       print('  help [command]                    - Get detailed help for a specific command', 'info');
       print('  [command] --help                  - Alternative way to get command help', 'info');
       print('  [command] -h                      - Short form of --help flag', 'info');
+      print('  tips                              - Show usage tips and shortcuts', 'info');
       print('', 'info');
-      printCommandHelp('Basic Commands:');
-      print('  clear                             - Clear terminal', 'info');
+      
+      printParameter('Help Usage Examples:');
+      printExample('  help set-title                   - Learn about setting window titles');
+      printExample('  create-picture --help            - Get help for picture creation');
+      printExample('  info -h                          - Quick help for window info command');
+      print('', 'info');
+      
+
+      // Window Management Section
+      printCommandHelp('Window Management:');
       print('  list, ls                          - List all windows', 'info');
-      print('  getWindows                        - Get detailed information for all windows', 'info');
       print('  info [windowID]                   - View detailed window information', 'info');
+      print('  show [windowID]                   - Make window visible', 'info');
+      print('  hide [windowID]                   - Hide window from view', 'info');
       print('', 'info');
-      printCommandHelp('Directory Navigation:');
+      
+      // Window Properties Section
+      printCommandHelp('Window Properties:');
+      print('  set-title [windowID] [title]      - Set window title', 'info');
+      print('  get-title [windowID]              - Get window title', 'info');
+      print('  set-resizable [windowID] [bool]   - Control window resizing', 'info');
+      print('  set-opacity [windowID] [value]    - Set window transparency', 'info');
+      print('  set-size [windowID] [width] [height] - Set window size', 'info');
+      print('  set-position [windowID] [x] [y]   - Set window position', 'info');
+      print('  set-visibility [windowID] [bool]  - Set window visibility', 'info');
+      print('  set-always-on-top [windowID] [bool] - Set window always on top', 'info');
+      print('', 'info');
+      
+      // Content Management Section
+      printCommandHelp('Content Management:');
+      print('  create-picture [id] [path]        - Create picture viewer window', 'info');
+      print('  set-picture [windowID] [path]     - Change displayed image', 'info');
+      print('  set-fit-mode [windowID] [mode]    - Change image scaling mode', 'info');
+      print('  create-content [id] [type] [path] - Create content window', 'info');
+      print('  reload-html [windowID] [path]     - Reload window HTML content', 'info');
+      print('', 'info');
+      
+      // Lens System Section
+      printCommandHelp('Lens System:');
+      print('  create-lens [id] [target]         - Create lens window', 'info');
+      print('  destroy-lens [lensID]             - Destroy lens window', 'info');
+      print('  list-lens, lens-list              - List all lens windows', 'info');
+      print('  lens-info [lensID]                - Get lens window information', 'info');
+      print('  update-blur [windowID] [amount]   - Update blur effect', 'info');
+      print('', 'info');
+      
+      // Window Persistence Section
+      printCommandHelp('Window Persistence:');
+      print('  save-window [windowID]            - Save window state', 'info');
+      print('  restore-window [name]             - Restore saved window', 'info');
+      print('  list-saved                        - List saved windows', 'info');
+      print('  delete-saved [name]               - Delete saved window', 'info');
+      print('', 'info');
+      
+      // System Commands Section
+      printCommandHelp('System Commands:');
+      print('  clear                             - Clear terminal screen', 'info');
       print('  cd [directory]                    - Change current directory', 'info');
-      print('  pwd                               - Show current directory path', 'info');
+      print('  pwd                               - Show current directory', 'info');
       print('  dir [directory] [-a]              - List directory contents', 'info');
-      printParameter('      -a, --all: show hidden files');
+      print('  getwindows                        - Get detailed window information', 'info');
+      print('  config [action] [parameters]      - Manage configuration settings', 'info');
       print('', 'info');
-      printCommandHelp('Window Operations:');
-      print('  get-title [ID]                    - Get window title', 'info');
-      print('  set-title [ID] "title"            - Set window title', 'info');
-      print('  set-size [ID] [width] [height]    - Set window size', 'info');
-      print('  set-position [ID] [x] [y]         - Set window position', 'info');
-      print('  set-resizable [ID] [true/false]   - Set whether window is resizable', 'info');
-      print('  set-visibility [ID] [true/false]  - Set window visibility', 'info');
-      print('  show [ID]                         - Show window', 'info');
-      print('  hide [ID]                         - Hide window', 'info');
-      print('  reload-html [ID] [htmlPath]       - Reload HTML file', 'info');
+      
+      // Switch Syntax Section (Enhanced)
+      printCommandHelp('Switch Syntax Guide:');
+      print('  -h, --help                        - Show command help', 'info');
+      print('  -v, --verbose                     - Show detailed output (where available)', 'info');
+      print('  -a, --all                         - Show all items (where available)', 'info');
       print('', 'info');
-      printCommandHelp('Picture Window Commands:');
-      print('  create-picture [ID] [path] [mode] - Create picture window', 'info');
-      printParameter('      modes: fill/contain/cover/scale-down/none');
-      print('  set-picture [ID] [path] [mode]    - Change window displayed image', 'info');
-      print('  set-fit-mode [ID] [mode]          - Change image scaling mode', 'info');
+      
+      printParameter('Switch Rules:');
+      printParameter('  • Switches must appear before positional arguments');
+      printParameter('  • Short switches can be combined: -av (same as -a -v)');
+      printParameter('  • Long switches use double dashes: --help, --verbose');
+      printParameter('  • Value switches need arguments: --config value');
       print('', 'info');
-      printCommandHelp('Lens System Commands:');
-      print('  create-content [ID] [type] [path] [blur] [shouldBlur]', 'info');
-      printParameter('      - Create content window (text/image, blur 0-50)');
-      print('  create-lens [lensID] [targetID] [width] [height]', 'info');
-      printParameter('      - Create lens window (maximum 3)');
-      print('  set-opacity [ID] [0-1]            - Set window opacity', 'info');
-      print('  set-always-on-top [ID] [true/false] - Set window always on top', 'info');
-      print('  update-blur [ID] [0-50]           - Update content blur level', 'info');
-      print('  destroy-lens [lensID]             - Destroy lens system', 'info');
-      print('  list-lens, lens-list              - List all lenses', 'info');
-      print('  lens-info [lensID]                - View lens details', 'info');
-      print('', 'info');
-      printCommandHelp('Window Storage Commands:');
-      print('  save-window [ID] [filename]       - Save window configuration to file', 'info');
-      printExample('      example: save-window window1 my-config');
-      printParameter('      filename optional, defaults to timestamp naming');
-      print('  restore-window [filePath]         - Restore window from file', 'info');
-      printExample('      example: restore-window .fenestra-storage/window1.fenestra');
-      printParameter('      supports dragging .fenestra files to terminal');
-      print('  list-saved                        - List all saved window files', 'info');
-      print('  delete-saved [filename]           - Delete saved window file', 'info');
-      printExample('      example: delete-saved window1-20241014.fenestra');
-      print('', 'info');
-      printCommandHelp('Configuration Commands:');
-      print('  config get                        - Show current configuration', 'info');
-      print('  config get game-data-dir          - Show game data directory', 'info');
-      print('  config set game-data-dir [path]   - Set game data directory', 'info');
-      print('  config reset                      - Reset configuration to defaults', 'info');
-      print('', 'info');
-      printTip('Tip: Type "tips" to see helpful usage tips and shortcuts');
+      
+
+
+
     }
 
     // Display terminal usage tips
     function showTips() {
       printCommandHelp('--- Terminal Usage Tips ---');
       print('', 'info');
-      printTip('Tip: Use "help [command]" to get detailed help for any specific command');
-      printTip('Tip: Commands support --help and -h flags (e.g., "set-title --help")');
-      printTip('Tip: Use Tab key to autocomplete commands and file paths');
-      printTip('Tip: Use up/down arrows to browse command history');
-      printTip('Tip: Use cd, pwd, and dir commands to navigate directories like a traditional terminal');
-      printTip('Tip: Directory navigation is restricted to the game data directory for security');
-      printTip('Tip: Some directories may be locked and require keys from game progression');
-      printTip('Tip: Image paths support both absolute and relative paths');
-      printTip('Tip: Lens windows can display clear versions of blurred background content');
-      printTip('Tip: Window configuration files are saved in .fenestra-storage directory');
-      printTip('Tip: You can drag .fenestra files to terminal for quick window restoration');
+      
+      printCommandHelp('🚀 Getting Started:');
+      printTip('• New to Fenestra? Start with "help" to see all available commands');
+      printTip('• Use "list" to see your current windows, then "info [windowID]" for details');
+      printTip('• Try "create-picture pic1 /path/to/image.jpg" to create your first window');
+      printTip('• Use "help [command]" to get detailed help for any specific command');
+      print('', 'info');
+      
+      printCommandHelp('⌨️ Keyboard Shortcuts:');
+      printTip('• Tab key: Auto-complete commands and file paths');
+      printTip('• Up/Down arrows: Browse through command history');
+      printTip('• Ctrl+L (or Cmd+L on Mac): Clear terminal screen');
+      printTip('• Ctrl+~ (or Cmd+~ on Mac): Close terminal window');
+      print('', 'info');
+      
+      printCommandHelp('📁 File and Directory Navigation:');
+      printTip('• Use "cd", "pwd", and "dir" commands like a traditional terminal');
+      printTip('• Directory navigation is restricted to the game data directory for security');
+      printTip('• Some directories may be locked and require keys from game progression');
+      printTip('• Use "dir -a" to show hidden files and directories');
+      printTip('• Tab completion works for both commands and file paths');
+      print('', 'info');
+      
+      printCommandHelp('🖼️ Working with Images and Content:');
+      printTip('• Image paths support both absolute and relative paths');
+      printTip('• Supported formats: JPG, PNG, GIF, BMP, WebP, SVG');
+      printTip('• Use quotes around file paths with spaces: "my image.jpg"');
+      printTip('• Fit modes: contain, cover, fill, scale-down, none');
+      printTip('• Drag image files to terminal for quick path insertion');
+      print('', 'info');
+      
+      printCommandHelp('🔍 Lens System Tips:');
+      printTip('• Lens windows show clear versions of blurred background content');
+      printTip('• Create content with blur: "create-content bg1 image pic.jpg 25"');
+      printTip('• Then create lens: "create-lens lens1 bg1 400 300"');
+      printTip('• Maximum of 3 lens windows can exist simultaneously');
+      printTip('• Use "list-lens" to see active lens windows');
+      print('', 'info');
+      
+      printCommandHelp('💾 Window Persistence:');
+      printTip('• Window configuration files are saved in .fenestra-storage directory');
+      printTip('• Use descriptive filenames: "save-window pic1 my-favorite-setup"');
+      printTip('• You can drag .fenestra files to terminal for quick window restoration');
+      printTip('• Saved configurations include position, size, content, and properties');
+      printTip('• Use "list-saved" to see all your saved configurations');
+      print('', 'info');
+      
+      printCommandHelp('🔧 Troubleshooting Tips:');
+      printTip('• If a command fails, try "[command] --help" for correct syntax');
+      printTip('• Use "list" if you get "window not found" errors');
+      printTip('• Check file paths with "pwd" and "dir" if files aren\'t found');
+      printTip('• Remember: switches must come before positional arguments');
+      printTip('• Use "clear" to clean up cluttered terminal output');
+      print('', 'info');
+      
+      printCommandHelp('⚡ Pro Workflow Tips:');
+      printTip('• Chain commands: list → info → modify with set-* commands');
+      printTip('• Use descriptive window IDs for easier management');
+      printTip('• Save important window setups before experimenting');
+      printTip('• Organize your images in subdirectories for better management');
+      printTip('• Use the lens system for interactive content exploration');
     }
 
     // Clear terminal
@@ -1669,7 +2970,7 @@
       }
       
       // Show performance or access messages
-      if (result.message && result.message.includes('大目录')) {
+      if (result.message && result.message.includes('large directory')) {
         printTip('Large directory detected - completion may be slower');
       }
       
