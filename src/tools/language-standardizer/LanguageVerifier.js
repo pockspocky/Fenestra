@@ -4,6 +4,7 @@
  */
 
 import fs from 'fs/promises';
+import path from 'node:path';
 import { LanguageScanner } from './LanguageScanner.js';
 
 export class LanguageVerifier {
@@ -140,7 +141,7 @@ export class LanguageVerifier {
   async exportVerificationReport(verificationResult, outputPath) {
     try {
       const report = this.generateVerificationReport(verificationResult);
-      await fs.mkdir(require('path').dirname(outputPath), { recursive: true });
+      await fs.mkdir(path.dirname(outputPath), { recursive: true });
       await fs.writeFile(outputPath, report, 'utf-8');
       console.log(`Verification report exported to: ${outputPath}`);
     } catch (error) {
