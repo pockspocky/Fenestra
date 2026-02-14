@@ -17,6 +17,7 @@ import {
   triggerEmailValidationFailed 
 } from '../core/callbacks/emailCallbacks.js';
 import { emailSchemaValidator } from '../security/emailSchemaValidator.js';
+import { getGameDataDirectory } from '../core/config.js';
 
 // Error codes for email storage operations
 const EMAIL_ERROR_CODES = {
@@ -141,10 +142,10 @@ async function checkDirectoryAccess(dirPath) {
  */
 export async function initializeEmailStorage(customInboxPath = null) {
   try {
-    // Set inbox path - use project directory for development
+    // Set inbox path - use game data directory for email storage
     // Use cross-platform path construction
-    const projectRoot = process.cwd();
-    inboxPath = customInboxPath || joinPaths(projectRoot, 'inbox');
+    const gameDataDir = getGameDataDirectory();
+    inboxPath = customInboxPath || joinPaths(gameDataDir, 'emails');
     
     console.log('[EMAIL] Initializing email storage', { inboxPath });
 
@@ -891,6 +892,38 @@ export async function stopWatching() {
       success: false,
       error: error.message
     };
+  }
+}
+
+/**
+ * Cleans up old incorrect directories from previous versions
+ * Removes game-data/test-dir and project-root/inbox directories
+ * Logs errors but does not throw to allow application to continue
+ * @returns {void}
+ */
+export function cleanupOldDirectories() {
+  const projectRoot = process.cwd();
+  const oldInboxPath = path.join(projectRoot, 'inbox');
+  const oldTestDirPath = path.join(projectRoot, 'game-data', 'test-dir');
+  
+  // Remove old inbox directory
+  if (fsSync.existsSync(oldInboxPath)) {
+    try {
+      fsSync.rmSync(oldInboxPath, { recursive: true, force: true });
+      console.log('[CLEANUP] Removed old inbox directory');
+    } catch (error) {
+      console.error('[CLEANUP] Failed to remove old inbox directory:', error);
+    }
+  }
+  
+  // Remove old test-dir directory
+  if (fsSync.existsSync(oldTestDirPath)) {
+    try {
+      fsSync.rmSync(oldTestDirPath, { recursive: true, force: true });
+      console.log('[CLEANUP] Removed old test-dir directory');
+    } catch (error) {
+      console.error('[CLEANUP] Failed to remove old test-dir directory:', error);
+    }
   }
 }
 

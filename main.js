@@ -57,6 +57,10 @@ import {
 } from './src/systems/emailSystem.js';
 
 import {
+  cleanupOldDirectories
+} from './src/storage/emailStorage.js';
+
+import {
   createStartMenu,
   setGameStartedCallback
 } from './src/handlers/startMenuManager.js';
@@ -120,6 +124,11 @@ async function initializeApp() {
     mitigationAction: 'application_initialized',
     inputData: JSON.stringify({ platform: process.platform, version: app.getVersion() })
   });
+
+  // Clean up old directories from previous incorrect paths
+  console.log('[MAIN] Cleaning up old storage directories...');
+  cleanupOldDirectories();
+  console.log('[MAIN] Old directory cleanup completed');
 
   // 设置窗口偏移量（每个新窗口向右下偏移30像素）
   setWindowOffset(30, 30);
