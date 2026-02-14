@@ -44,7 +44,10 @@ export function navigateToDirectory(targetPath, currentDir, gameDataRoot = null)
     const actualGameDataRoot = gameDataRoot || getGameDataDirectory();
     
     // Validate and resolve the target path
-    const pathValidation = validateAndResolvePath(targetPath, currentDir, actualGameDataRoot);
+    // Use allowlist validation (useBlocklist=false) for directory navigation commands (cd, pwd, dir)
+    // This enforces game scope restrictions - users can only navigate within the game data directory
+    // File operation commands use blocklist validation for broader access to user content
+    const pathValidation = validateAndResolvePath(targetPath, currentDir, actualGameDataRoot, false);
     
     if (!pathValidation.isValid) {
       throw new FileCompletionError(
@@ -272,7 +275,8 @@ export function resolveRelativePath(relativePath, basePath, gameDataRoot = null)
     const actualGameDataRoot = gameDataRoot || getGameDataDirectory();
     
     // Use the path security validator for consistent validation
-    const validation = validateAndResolvePath(relativePath, basePath, actualGameDataRoot);
+    // Use allowlist mode (useBlocklist=false) for directory navigation to enforce game scope
+    const validation = validateAndResolvePath(relativePath, basePath, actualGameDataRoot, false);
     
     if (!validation.isValid) {
       return {

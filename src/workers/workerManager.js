@@ -2,53 +2,53 @@ import { Worker } from 'worker_threads';
 import { getBounds, getAllWindows } from '../systems/windowManager.js';
 import { canOpenDoor, handleFailedOpen, handleDoorToggle } from '../systems/doorKeySystem.js';
 import { isLevel1Completed } from '../systems/gameLogic.js';
-import '../../logger.js'; // 导入日志系统
+import '../../logger.js'; // Import logging system
 
 let worker = null;
 let overlapTimer = null;
 
 /**
- * 初始化 Worker
+ * Initialize Worker
  */
 export function initializeWorker() {
   worker = new Worker(new URL('../../nodeWorker.mjs', import.meta.url));
   
-  // Worker 消息处理器
+  // Worker message handler
   worker.on('message', (msg) => {
     console.debug('Received message from worker thread:', msg);
     
     if (msg.type === 'overlapResult') {
       const { ratio, doorId, keyId, threshold } = msg;
-      console.debug(`[WORKER] 重叠比例: ${ratio.toFixed(4)}`);
+      console.debug(`[WORKER] Overlap ratio: ${ratio.toFixed(4)}`);
       
       if (ratio >= threshold) {
-        // 检查开门权限
+        // Check door opening permission
         if (canOpenDoor(doorId, keyId)) {
-          console.log(`[LEVEL1] ${keyId} 与 ${doorId} 重叠，尝试开关门...`);
+          console.log(`[LEVEL1] ${keyId} overlaps with ${doorId}, attempting to toggle door...`);
           handleDoorToggle(doorId, keyId);
         } else {
-          console.warn(`[LEVEL1] ${keyId} 无法打开 ${doorId}（权限不足）`);
+          console.warn(`[LEVEL1] ${keyId} cannot open ${doorId} (insufficient permission)`);
           handleFailedOpen(doorId, keyId);
         }
       }
     }
   });
   
-  console.debug('[WORKER] Worker 已初始化');
+  console.debug('[WORKER] Worker initialized');
 }
 
 /**
- * 启动重叠检测循环
+ * Start overlap detection loop
  */
 export function startOverlapLoop() {
   if (overlapTimer) {
-    console.debug('[OVERLAP] 重叠检测循环已在运行，跳过启动');
+    console.debug('[OVERLAP] Overlap detection loop already running, skipping start');
     return;
   }
   
-  console.debug('[OVERLAP] 设置定时器，每1000ms检测一次');
+  console.debug('[OVERLAP] Setting up timer, checking every 1000ms');
   overlapTimer = setInterval(() => {
-    // 检查所有门和钥匙的重叠
+    // Check all doors and keys for overlap
     const windows = getAllWindows();
     
     for (const [doorId, doorWin] of windows) {
@@ -60,7 +60,7 @@ export function startOverlapLoop() {
         const doorBounds = doorWin.getBounds();
         const keyBounds = keyWin.getBounds();
         
-        // 发送到 Worker 计算重叠
+        // Send to Worker to calculate overlap
         if (worker) {
           worker.postMessage({ 
             type: 'calculateOverlap',
@@ -75,22 +75,22 @@ export function startOverlapLoop() {
     }
   }, 1000);
   
-  console.debug('[OVERLAP] 重叠检测循环已启动');
+  console.debug('[OVERLAP] Overlap detection loop started');
 }
 
 /**
- * 停止重叠检测循环
+ * Stop overlap detection loop
  */
 export function stopOverlapLoop() {
   if (overlapTimer) {
     clearInterval(overlapTimer);
     overlapTimer = null;
-    console.debug('[OVERLAP] 重叠检测循环已停止');
+    console.debug('[OVERLAP] Overlap detection loop stopped');
   }
 }
 
 /**
- * 重启重叠检测循环
+ * Restart overlap detection loop
  */
 export function restartOverlapLoop() {
   stopOverlapLoop();
@@ -98,8 +98,8 @@ export function restartOverlapLoop() {
 }
 
 /**
- * 获取 Worker 状态
- * @returns {Object} Worker 状态信息
+ * Get Worker status
+ * @returns {Object} Worker status information
  */
 export function getWorkerStatus() {
   return {
@@ -110,7 +110,7 @@ export function getWorkerStatus() {
 }
 
 /**
- * 清理 Worker 资源
+ * Clean up Worker resources
  */
 export function cleanupWorker() {
   stopOverlapLoop();
@@ -118,7 +118,7 @@ export function cleanupWorker() {
   if (worker) {
     worker.terminate();
     worker = null;
-    console.debug('[WORKER] Worker 已终止');
+    console.debug('[WORKER] Worker terminated');
   }
 }
 

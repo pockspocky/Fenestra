@@ -1,67 +1,67 @@
 /**
- * 日志配置管理器
- * 统一管理所有模块的日志级别
+ * Logger Configuration Manager
+ * Centrally manages log levels for all modules
  */
 
-// 设置日志级别
-global.logLevel = "debug"; // 可以改为 "debug", "log", "warn", "error", "none"
+// Set log level
+global.logLevel = "debug"; // Can be changed to "debug", "log", "warn", "error", "none"
 
 /**
- * 设置日志级别
- * @param {string} level - 日志级别
+ * Set log level
+ * @param {string} level - Log level
  */
 export function setLogLevel(level) {
   const validLevels = ["debug", "log", "warn", "error", "none"];
   if (validLevels.includes(level)) {
     global.logLevel = level;
-    console.log(`[LOGGER] 日志级别已设置为: ${level}`);
+    console.log(`[LOGGER] Log level set to: ${level}`);
   } else {
-    console.warn(`[LOGGER] 无效的日志级别: ${level}，有效级别: ${validLevels.join(', ')}`);
+    console.warn(`[LOGGER] Invalid log level: ${level}, valid levels: ${validLevels.join(', ')}`);
   }
 }
 
 /**
- * 获取当前日志级别
- * @returns {string} 当前日志级别
+ * Get current log level
+ * @returns {string} Current log level
  */
 export function getLogLevel() {
   return global.logLevel;
 }
 
 /**
- * 获取所有可用的日志级别
- * @returns {Array} 日志级别数组
+ * Get all available log levels
+ * @returns {Array} Log level array
  */
 export function getAvailableLogLevels() {
   return ["debug", "log", "warn", "error", "none"];
 }
 
 /**
- * 设置开发环境日志级别
+ * Set development environment log level
  */
 export function setDevelopmentLogLevel() {
   setLogLevel("debug");
-  console.debug("[LOGGER] 已设置为开发环境日志级别");
+  console.debug("[LOGGER] Set to development environment log level");
 }
 
 /**
- * 设置生产环境日志级别
+ * Set production environment log level
  */
 export function setProductionLogLevel() {
   setLogLevel("warn");
-  console.warn("[LOGGER] 已设置为生产环境日志级别");
+  console.warn("[LOGGER] Set to production environment log level");
 }
 
 /**
- * 设置测试环境日志级别
+ * Set test environment log level
  */
 export function setTestLogLevel() {
   setLogLevel("error");
-  console.error("[LOGGER] 已设置为测试环境日志级别");
+  console.error("[LOGGER] Set to test environment log level");
 }
 
 /**
- * 根据环境变量设置日志级别
+ * Set log level from environment variable
  */
 export function setLogLevelFromEnv() {
   const env = process.env.NODE_ENV || 'development';
@@ -80,5 +80,5 @@ export function setLogLevelFromEnv() {
   }
 }
 
-// 根据环境自动设置日志级别
+// Automatically set log level based on environment
 setLogLevelFromEnv();
