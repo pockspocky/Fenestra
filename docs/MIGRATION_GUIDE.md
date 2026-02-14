@@ -4,6 +4,8 @@
 
 This guide documents the file reorganization and new callback system features introduced in the callback system refactor. **No migration is required for existing code** - all changes are backward compatible.
 
+> **⚠️ IMPORTANT:** The callback system described in this document has been **deprecated**. For new code, please use the modern event system. See the [Callback Migration Guide](CALLBACK_MIGRATION_GUIDE.md) for complete migration instructions.
+
 ## What Changed
 
 ### 1. File Organization
@@ -113,110 +115,117 @@ registerStateSavedCallback((eventType, eventData) => {
 
 ### For New Code
 
-New code can optionally use the callback system:
+New code should use the modern event system:
 
-#### Step 1: Import Callback Functions
+#### Step 1: Import Event System
 
 ```javascript
 import { 
-  registerWindowCreatedCallback,
-  registerDoorOpenedCallback,
-  callbackRegistry 
-} from './src/core/index.js';
+  systemEvents,
+  WINDOW_EVENTS,
+  DOOR_KEY_EVENTS,
+  GAME_EVENTS
+} from './src/events/systemEvents.js';
+
+import {
+  domainEvents,
+  EMAIL_EVENTS,
+  LENS_EVENTS
+} from './src/events/domainEvents.js';
 ```
 
-#### Step 2: Register Callbacks
+#### Step 2: Register Event Listeners
 
 ```javascript
-// Global callback (applies to all windows)
-const regId1 = registerWindowCreatedCallback((eventType, eventData) => {
+// Global listener (applies to all windows)
+const listenerId1 = systemEvents.on(WINDOW_EVENTS.CREATED, (eventData) => {
   console.log('Any window created:', eventData.entityId);
 });
 
-// Entity-specific callback (applies to specific window)
-const regId2 = registerWindowCreatedCallback((eventType, eventData) => {
+// Entity-specific listener (applies to specific window)
+const listenerId2 = systemEvents.on(WINDOW_EVENTS.CREATED, (eventData) => {
   console.log('Main window created');
 }, { entityId: 'main-window' });
 
-// High-priority callback (executes first)
-const regId3 = registerDoorOpenedCallback((eventType, eventData) => {
+// High-priority listener (executes first)
+const listenerId3 = systemEvents.on(DOOR_KEY_EVENTS.DOOR_OPENED, (eventData) => {
   console.log('Door opened (high priority)');
 }, { priority: 100 });
 ```
 
-#### Step 3: Unregister When Done (Optional)
+#### Step 3: Clean Up When Done
 
 ```javascript
-// Unregister specific callback
-callbackRegistry.unregister(regId1);
+// Remove specific listener
+systemEvents.off(listenerId1);
 
-// Clear all callbacks for an entity
-callbackRegistry.clearEntity('main-window');
+// Clean up all listeners for an entity
+systemEvents.cleanup('main-window');
 
-// Clear all callbacks for an event type
-callbackRegistry.clearEventType('window-created');
+// Remove all listeners for an event type
+systemEvents.removeAllListeners(WINDOW_EVENTS.CREATED);
 ```
 
-## Available Callback Events
+## Available Events
 
-### Window Events
-- `window-created` - Window created
-- `window-closed` - Window closed
-- `window-moved` - Window moved
-- `window-resized` - Window resized
-- `window-ready` - Window ready to show
+### System Events (systemEvents)
+- `GAME_EVENTS.STATE_RESET` - Game state reset
+- `GAME_EVENTS.LEVEL_COMPLETED` - Level completed
+- `GAME_EVENTS.STATE_SAVED` - Game state saved
+- `GAME_EVENTS.STATE_LOADED` - Game state loaded
+- `GAME_EVENTS.STATE_EXPORTED` - Game state exported
 
-### Door-Key Events
-- `door-opened` - Door opened
-- `door-closed` - Door closed
-- `key-used` - Key used on door
-- `access-denied` - Access denied
-- `door-state-changed` - Door state changed
+- `WINDOW_EVENTS.CREATED` - Window created
+- `WINDOW_EVENTS.CLOSED` - Window closed
+- `WINDOW_EVENTS.MOVED` - Window moved
+- `WINDOW_EVENTS.RESIZED` - Window resized
+- `WINDOW_EVENTS.READY` - Window ready to show
 
-### IPC Events
-- `ipc-before-{channel}` - Before IPC handler execution
-- `ipc-after-{channel}` - After IPC handler execution
-- `ipc-error-{channel}` - IPC handler error
+- `DOOR_KEY_EVENTS.DOOR_OPENED` - Door opened
+- `DOOR_KEY_EVENTS.DOOR_CLOSED` - Door closed
+- `DOOR_KEY_EVENTS.KEY_USED` - Key used on door
+- `DOOR_KEY_EVENTS.ACCESS_DENIED` - Access denied
+- `DOOR_KEY_EVENTS.DOOR_STATE_CHANGED` - Door state changed
 
-### File System Events
-- `file-saved` - File saved
-- `file-loaded` - File loaded
-- `file-deleted` - File deleted
-- `directory-changed` - Directory navigation
-- `validation-failed` - File validation failed
+### Domain Events (domainEvents)
+- `EMAIL_EVENTS.RECEIVED` - Email received
+- `EMAIL_EVENTS.READ` - Email marked as read
+- `EMAIL_EVENTS.ACTION_EXECUTED` - Email action executed
+- `EMAIL_EVENTS.INBOX_CHANGED` - Inbox directory changed
+- `EMAIL_EVENTS.VALIDATION_FAILED` - Email validation failed
 
-### Game State Events
-- `state-saved` - Game state saved
-- `state-loaded` - Game state loaded
-- `state-reset` - Game state reset
-- `level-completed` - Level completed
-- `state-exported` - Game state exported
+- `LENS_EVENTS.CREATED` - Lens created
+- `LENS_EVENTS.MOVED` - Lens moved
+- `LENS_EVENTS.DESTROYED` - Lens destroyed
+- `LENS_EVENTS.TRACKING_STARTED` - Lens tracking started
+- `LENS_EVENTS.TRACKING_STOPPED` - Lens tracking stopped
 
-### Email Events
-- `email-received` - Email received
-- `email-read` - Email marked as read
-- `email-action-executed` - Email action executed
-- `inbox-changed` - Inbox directory changed
-- `email-validation-failed` - Email validation failed
+- `FS_EVENTS.FILE_SAVED` - File saved
+- `FS_EVENTS.FILE_LOADED` - File loaded
+- `FS_EVENTS.FILE_DELETED` - File deleted
+- `FS_EVENTS.DIRECTORY_CHANGED` - Directory navigation
+- `FS_EVENTS.VALIDATION_FAILED` - File validation failed
 
-### Lens Events
-- `lens-created` - Lens created
-- `lens-moved` - Lens moved
-- `lens-destroyed` - Lens destroyed
-- `lens-tracking-started` - Lens tracking started
-- `lens-tracking-stopped` - Lens tracking stopped
+- `IPC_EVENTS.BEFORE` - Before IPC handler execution
+- `IPC_EVENTS.AFTER` - After IPC handler execution
+- `IPC_EVENTS.ERROR` - IPC handler error
 
 ## Common Patterns
 
 ### Pattern 1: Logging All Events
 
 ```javascript
-import { callbackRegistry } from './src/core/index.js';
+import { systemEvents, WINDOW_EVENTS, DOOR_KEY_EVENTS } from './src/events/systemEvents.js';
 
-const events = ['window-created', 'window-closed', 'door-opened'];
+const events = [
+  WINDOW_EVENTS.CREATED,
+  WINDOW_EVENTS.CLOSED,
+  DOOR_KEY_EVENTS.DOOR_OPENED
+];
+
 events.forEach(eventType => {
-  callbackRegistry.register(eventType, (type, data) => {
-    console.log(`[AUDIT] ${type}:`, data);
+  systemEvents.on(eventType, (eventData) => {
+    console.log(`[AUDIT] ${eventType.toString()}:`, eventData);
   }, { priority: -100 }); // Low priority, executes last
 });
 ```
@@ -224,9 +233,9 @@ events.forEach(eventType => {
 ### Pattern 2: Validation with Prevention
 
 ```javascript
-import { registerWindowCreatedCallback } from './src/core/index.js';
+import { systemEvents, WINDOW_EVENTS } from './src/events/systemEvents.js';
 
-registerWindowCreatedCallback((eventType, eventData) => {
+systemEvents.on(WINDOW_EVENTS.CREATED, (eventData) => {
   if (!isValidWindowConfig(eventData.data)) {
     console.warn('Invalid window configuration');
     return { preventDefault: true }; // Prevent window creation
@@ -237,9 +246,9 @@ registerWindowCreatedCallback((eventType, eventData) => {
 ### Pattern 3: Entity-Specific Behavior
 
 ```javascript
-import { registerDoorOpenedCallback } from './src/core/index.js';
+import { systemEvents, DOOR_KEY_EVENTS } from './src/events/systemEvents.js';
 
-registerDoorOpenedCallback((eventType, eventData) => {
+systemEvents.on(DOOR_KEY_EVENTS.DOOR_OPENED, (eventData) => {
   console.log('Secret door opened!');
   triggerSecretRoomLogic();
 }, { entityId: 'secret-door-1' }); // Only for this specific door
@@ -248,14 +257,11 @@ registerDoorOpenedCallback((eventType, eventData) => {
 ### Pattern 4: One-Time Initialization
 
 ```javascript
-import { registerWindowReadyCallback } from './src/core/index.js';
+import { systemEvents, WINDOW_EVENTS } from './src/events/systemEvents.js';
 
-registerWindowReadyCallback((eventType, eventData) => {
+systemEvents.once(WINDOW_EVENTS.READY, (eventData) => {
   initializeWindowContent(eventData.entityId);
-}, { 
-  entityId: 'main-window',
-  once: true  // Auto-unregister after first execution
-});
+}, { entityId: 'main-window' }); // Auto-unregister after first execution
 ```
 
 ## Testing
@@ -270,9 +276,10 @@ npm test
 
 ## Documentation
 
-For detailed callback system documentation, see:
-- `.kiro/steering/callback-system.md` - Comprehensive callback system guide
-- `BACKWARD_COMPATIBILITY.md` - Backward compatibility verification
+For detailed event system documentation, see:
+- **[Callback Migration Guide](CALLBACK_MIGRATION_GUIDE.md)** - Complete migration from deprecated callback system
+- **[Event System README](../src/events/README.md)** - Modern event system documentation
+- **[Core README](../src/core/README.md)** - Core module documentation with event system examples
 - `src/core/index.js` - JSDoc comments for all exports
 
 ## Support
@@ -284,10 +291,51 @@ If you encounter any issues:
 3. Review the callback system guide: `.kiro/steering/callback-system.md`
 4. Check the backward compatibility document: `BACKWARD_COMPATIBILITY.md`
 
+## Callback System Migration
+
+**IMPORTANT:** The callback system described above has been **deprecated**. Please use the modern event system instead.
+
+### Modern Event System (Recommended)
+
+The modern event system provides better performance, type safety, and cleaner code:
+
+```javascript
+// Import modern event system
+import { systemEvents, WINDOW_EVENTS } from './src/events/systemEvents.js';
+import { domainEvents, EMAIL_EVENTS } from './src/events/domainEvents.js';
+
+// Register event listeners
+const listenerId = systemEvents.on(WINDOW_EVENTS.CREATED, (eventData) => {
+  console.log('Window created:', eventData.entityId);
+});
+
+// Emit events
+systemEvents.emit(WINDOW_EVENTS.CREATED, {
+  entityId: 'win-1',
+  data: { title: 'My Window' }
+});
+
+// Clean up
+systemEvents.off(listenerId);
+```
+
+### Migration Resources
+
+For complete migration instructions, see:
+- **[Callback Migration Guide](CALLBACK_MIGRATION_GUIDE.md)** - Complete API mappings and examples
+- **[Event System README](../src/events/README.md)** - Modern event system documentation
+- **[Core README](../src/core/README.md)** - Updated core module documentation
+
+### Deprecated Files
+
+The following files have been moved to deprecated directories and should **not** be used in new code:
+- `src/core/deprecated/callbackRegistry.js` - Kept for test compatibility only
+- `src/events/deprecated/compatibilityLayer.js` - Kept for test compatibility only
+
 ## Summary
 
 - ✅ **No breaking changes** - All existing code works without modification
 - ✅ **Better organization** - Files grouped by functionality
-- ✅ **New features** - Comprehensive callback system for extensibility
+- ✅ **Modern event system** - Use `systemEvents` and `domainEvents` for new code
 - ✅ **Full documentation** - Complete guides and examples
 - ✅ **All tests pass** - 120/120 tests passing

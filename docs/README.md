@@ -6,6 +6,7 @@ This directory contains all documentation for the Fenestra project.
 
 ### System Guides
 
+- **[Callback Migration Guide](CALLBACK_MIGRATION_GUIDE.md)** - Migrate from deprecated callback system to modern events
 - **[Configuration Guide](CONFIGURATION_GUIDE.md)** - How to configure Fenestra's game data directory and settings
 - **[Email System](EMAIL_SYSTEM.md)** - Email receiver interface documentation, testing, and integration
 - **[Email JSON Guide](EMAIL_JSON_GUIDE.md)** - Complete guide to writing email JSON files
@@ -24,6 +25,7 @@ All documentation has been organized into this `docs/` directory for better main
 ## 📖 Quick Links
 
 ### For Users
+- **Start with the [Callback Migration Guide](CALLBACK_MIGRATION_GUIDE.md)** if you're updating code from the deprecated callback system
 - Start with the [Configuration Guide](CONFIGURATION_GUIDE.md) to set up your environment
 - Learn about the [Email System](EMAIL_SYSTEM.md) for in-game communication
 - Read the [Email JSON Guide](EMAIL_JSON_GUIDE.md) to create custom emails with callback actions
