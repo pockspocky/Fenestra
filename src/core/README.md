@@ -16,12 +16,47 @@ src/core/
 ├── loggerConfig.js             # 日志配置模块
 ├── LOGGING_GUIDE.md            # 日志系统指南
 ├── README.md                   # 本文档
+├── deprecated/                 # 已弃用的模块（仅用于测试兼容性）
+│   └── callbackRegistry.js     # 已弃用的回调注册系统
 └── utils/                      # 工具模块
     ├── directoryNavigator.js   # 目录导航工具
     ├── errorHandler.js         # 错误处理工具
     ├── pathSecurityValidator.js # 路径安全验证
     └── ERROR_HANDLING_GUIDE.md # 错误处理指南
 ```
+
+## 事件系统
+
+Fenestra 使用现代事件系统进行组件间通信。**不要使用已弃用的 `callbackRegistry`**，请使用 `systemEvents` 和 `domainEvents`。
+
+### 快速开始
+
+```javascript
+// 导入事件系统
+import { systemEvents, WINDOW_EVENTS } from '../events/systemEvents.js';
+import { domainEvents, EMAIL_EVENTS } from '../events/domainEvents.js';
+
+// 注册事件监听器
+const listenerId = systemEvents.on(WINDOW_EVENTS.CREATED, (eventData) => {
+  console.log('Window created:', eventData.entityId);
+});
+
+// 触发事件
+systemEvents.emit(WINDOW_EVENTS.CREATED, {
+  entityId: 'win-1',
+  data: { title: 'My Window' }
+});
+
+// 清理监听器
+systemEvents.off(listenerId);
+```
+
+### 事件系统选择
+
+- **systemEvents**: 用于游戏状态、窗口生命周期、门钥匙系统等核心功能
+- **domainEvents**: 用于邮件系统、镜头系统、文件系统等领域特定功能
+
+详见 [回调系统迁移指南](../../docs/CALLBACK_MIGRATION_GUIDE.md) 了解完整的 API 映射和最佳实践。
 
 ## 模块功能
 
@@ -218,6 +253,10 @@ import { saveWindowToFile, loadWindowFromFile } from './src/core/windowStorage.j
 // 导入镜头系统
 import { registerLensSystem, getLensSystemInfo } from './src/core/lensSystem.js';
 
+// 导入事件系统（推荐用于事件处理）
+import { systemEvents, WINDOW_EVENTS, DOOR_KEY_EVENTS } from './src/events/systemEvents.js';
+import { domainEvents, EMAIL_EVENTS, LENS_EVENTS } from './src/events/domainEvents.js';
+
 // 统一导入（推荐）
 import { 
   createWindow, 
@@ -296,6 +335,8 @@ import {
 - 模块间通过导入/导出来共享功能
 - 全局状态（如窗口映射）在 `windowManager.js` 中管理
 - 每个模块都有完整的错误处理和日志记录
+- **使用现代事件系统**: 使用 `systemEvents` 和 `domainEvents` 进行事件处理，不要使用已弃用的 `callbackRegistry`
+  - 详见 [回调系统迁移指南](../../docs/CALLBACK_MIGRATION_GUIDE.md)
 
 ### 窗口存储
 - 窗口存储使用 `.fenestra` 文件格式
@@ -327,6 +368,40 @@ import {
 - 日志系统支持配置日志级别以控制输出量
 
 ## 使用示例
+
+### 事件处理（现代事件系统）
+```javascript
+import { systemEvents, WINDOW_EVENTS, DOOR_KEY_EVENTS } from '../events/systemEvents.js';
+import { domainEvents, EMAIL_EVENTS } from '../events/domainEvents.js';
+
+// 监听窗口创建事件
+const listenerId = systemEvents.on(WINDOW_EVENTS.CREATED, (eventData) => {
+  console.log('Window created:', eventData.entityId, eventData.data);
+});
+
+// 一次性监听器
+systemEvents.once(WINDOW_EVENTS.CLOSED, (eventData) => {
+  console.log('Window closed:', eventData.entityId);
+});
+
+// 带优先级的监听器
+systemEvents.on(DOOR_KEY_EVENTS.DOOR_OPENED, handleDoorOpen, {
+  priority: 100, // 高优先级
+  entityId: 'door-1' // 用于自动清理
+});
+
+// 触发事件
+systemEvents.emit(WINDOW_EVENTS.CREATED, {
+  entityId: 'win-1',
+  data: { title: 'My Window', x: 100, y: 100 }
+});
+
+// 清理监听器
+systemEvents.off(listenerId);
+
+// 清理特定实体的所有监听器
+systemEvents.cleanup('door-1');
+```
 
 ### 基础窗口操作
 ```javascript
@@ -730,40 +805,52 @@ setGlobalMessage('progress_update', 'Progress: {progress}/{total}. Next key need
 
 ## 最佳实践
 
-### 1. 窗口创建
+### 1. 事件处理
+- **使用现代事件系统**: 始终使用 `systemEvents` 和 `domainEvents`，不要使用已弃用的 `callbackRegistry`
+- **使用事件常量**: 使用 `WINDOW_EVENTS.CREATED` 而不是字符串 `'window-created'` 以防止拼写错误
+- **选择正确的发射器**: 
+  - 核心游戏功能使用 `systemEvents`（窗口、门钥匙、游戏状态）
+  - 领域特定功能使用 `domainEvents`（邮件、镜头、文件系统）
+- **清理监听器**: 始终存储监听器 ID 并在不再需要时清理
+- **使用 entityId 选项**: 为自动清理设置 `entityId` 选项
+- 详见 [回调系统迁移指南](../../docs/CALLBACK_MIGRATION_GUIDE.md)
+
+### 2. 窗口创建
 - 使用描述性的窗口ID
 - 为特殊窗口类型使用专用创建函数（createDoor, createKey等）
 - 利用自动位置计算避免窗口重叠
 
-### 2. 门钥匙系统
+### 3. 门钥匙系统
 - 始终在创建门和钥匙后建立关系
 - 对加密门和钥匙调用 `addEncryptedItem()`
 - 使用自定义消息提供更好的用户体验
 - 为多钥匙门设置合理的超时时间
 
-### 3. 内容窗口与镜头
+### 4. 内容窗口与镜头
 - 使用 "表面|||隐藏" 格式提供双内容
 - 模糊程度建议在10-30之间以保持可读性
 - 镜头窗口大小应小于目标窗口
 - 注意3个镜头的数量限制
 
-### 4. 目录访问控制
+### 5. 目录访问控制
 - 在设置目录访问前确保门已创建
 - 使用 `filterAccessibleDirectories()` 自动过滤目录列表
 - 检查返回的 `errorCode` 以提供详细的错误信息
 
-### 5. 错误处理
+### 6. 错误处理
 - 始终检查函数返回的 `success` 字段
 - 使用 `try-catch` 包裹可能失败的操作
 - 记录错误信息以便调试
 
-### 6. 性能优化
+### 7. 性能优化
 - 避免创建过多窗口（建议<20个）
 - 及时销毁不需要的镜头系统
 - 使用窗口存储系统保存状态而不是保持窗口打开
+- 使用现代事件系统以获得更好的性能（比已弃用的 callbackRegistry 快 2-3 倍）
 
 ## 相关文档
 
+- **[回调系统迁移指南](../../docs/CALLBACK_MIGRATION_GUIDE.md)** - 从已弃用的 callbackRegistry 迁移到现代事件系统
 - **LOGGING_GUIDE.md** - 日志系统使用指南
 - **utils/ERROR_HANDLING_GUIDE.md** - 错误处理指南
 - **CONFIGURATION_GUIDE.md** - 配置指南（项目根目录）
