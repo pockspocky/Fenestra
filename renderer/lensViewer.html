@@ -17,10 +17,10 @@
       overflow: hidden;
       background: transparent;
       cursor: move;
-      -webkit-app-region: drag; /* 允许整个窗口拖动 */
+      -webkit-app-region: drag; /* Allow entire window to be draggable */
     }
 
-    /* 镜头边框 */
+    /* Lens frame */
     #lens-frame {
       width: 100%;
       height: 100%;
@@ -29,20 +29,20 @@
       box-shadow: 0 0 20px rgba(0, 150, 255, 0.5);
       background: rgba(255, 255, 255, 0.1);
       backdrop-filter: blur(1px);
-      -webkit-app-region: drag; /* 整个边框区域可拖动 */
+      -webkit-app-region: drag; /* Entire frame area is draggable */
     }
 
-    /* 内容容器 */
+    /* Content container */
     #lens-content {
       width: 100%;
       height: 100%;
       overflow: hidden;
       position: relative;
       background: #fff;
-      -webkit-app-region: drag; /* 内容区域也可拖动 */
+      -webkit-app-region: drag; /* Content area is also draggable */
     }
 
-    /* 文字内容 */
+    /* Text content */
     .text-content {
       position: absolute;
       top: 0;
@@ -55,18 +55,18 @@
       min-width: 800px;
       min-height: 600px;
       transform-origin: top left;
-      -webkit-app-region: drag; /* 文字区域可拖动 */
-      pointer-events: none; /* 禁止文字选择，确保拖动流畅 */
+      -webkit-app-region: drag; /* Text area is draggable */
+      pointer-events: none; /* Disable text selection to ensure smooth dragging */
     }
 
-    /* 图片内容 */
+    /* Image content */
     .image-content {
       width: 100%;
       height: 100%;
       display: flex;
       align-items: center;
       justify-content: center;
-      -webkit-app-region: drag; /* 图片区域可拖动 */
+      -webkit-app-region: drag; /* Image area is draggable */
       background: #000;
     }
 
@@ -74,10 +74,10 @@
       max-width: 100%;
       max-height: 100%;
       object-fit: contain;
-      pointer-events: none; /* 禁止图片交互，确保拖动流畅 */
+      pointer-events: none; /* Disable image interaction to ensure smooth dragging */
     }
 
-    /* 加载状态 */
+    /* Loading state */
     #loading {
       position: absolute;
       top: 50%;
@@ -86,11 +86,11 @@
       font-size: 16px;
       color: #0096ff;
       text-align: center;
-      -webkit-app-region: drag; /* 加载区域可拖动 */
+      -webkit-app-region: drag; /* Loading area is draggable */
       pointer-events: none;
     }
 
-    /* 镜头标识 */
+    /* Lens label */
     #lens-label {
       position: absolute;
       top: 5px;
@@ -100,7 +100,7 @@
       padding: 2px 8px;
       font-size: 12px;
       border-radius: 3px;
-      pointer-events: none; /* 标签不阻止拖动 */
+      pointer-events: none; /* Label does not block dragging */
       z-index: 1000;
     }
   </style>
@@ -108,35 +108,35 @@
 <body>
   <div id="lens-frame">
     <div id="lens-label"></div>
-    <div id="loading">🔍 镜头加载中...</div>
+    <div id="loading">🔍 Loading lens...</div>
     <div id="lens-content"></div>
   </div>
 
   <script>
-    console.log('[LENS] Lens Viewer 初始化');
+    console.log('[LENS] Lens Viewer initialized');
 
-    // 解析URL参数
+    // Parse URL parameters
     const urlParams = new URLSearchParams(window.location.search);
     const lensId = urlParams.get('lensId') || 'lens';
     const targetWindowId = urlParams.get('targetId') || '';
     const contentType = urlParams.get('type') || 'text';
     const contentPath = urlParams.get('path') || '';
-    const hiddenContent = urlParams.get('hiddenContent') || ''; // 隐藏内容（镜头显示）
+    const hiddenContent = urlParams.get('hiddenContent') || ''; // Hidden content (lens display)
 
-    console.log('[LENS] 参数:', { lensId, targetWindowId, contentType, contentPath, hiddenContent: hiddenContent.substring(0, 50) });
+    console.log('[LENS] Parameters:', { lensId, targetWindowId, contentType, contentPath, hiddenContent: hiddenContent.substring(0, 50) });
 
     const loadingEl = document.getElementById('loading');
     const contentEl = document.getElementById('lens-content');
     const labelEl = document.getElementById('lens-label');
 
-    // 设置标签
+    // Set label
     labelEl.textContent = `🔍 ${lensId}`;
 
-    // 存储目标窗口信息
+    // Store target window information
     let targetWindowBounds = null;
     let currentLensBounds = null;
 
-    // 加载清晰内容
+    // Load clear content
     async function loadContent() {
       try {
         if (contentType === 'image') {
@@ -146,35 +146,35 @@
         }
 
         loadingEl.style.display = 'none';
-        console.log('[LENS] 内容加载成功');
+        console.log('[LENS] Content loaded successfully');
 
-        // 开始监听位置变化
+        // Start listening for position changes
         startPositionTracking();
       } catch (error) {
-        console.error('[LENS] 加载失败:', error);
-        loadingEl.textContent = '❌ 加载失败: ' + error.message;
+        console.error('[LENS] Loading failed:', error);
+        loadingEl.textContent = '❌ Loading failed: ' + error.message;
       }
     }
 
-    // 加载图片（显示隐藏图片）
+    // Load image (display hidden image)
     async function loadImage(imagePath) {
-      console.log('[LENS] 加载图片 - 隐藏图片');
+      console.log('[LENS] Loading image - hidden image');
 
-      // 优先使用 hiddenContent（隐藏图片路径）
+      // Prioritize hiddenContent (hidden image path)
       let actualImagePath = imagePath;
       if (hiddenContent) {
         actualImagePath = hiddenContent;
-        console.log('[LENS] 使用隐藏图片路径: ' + actualImagePath);
+        console.log('[LENS] Using hidden image path: ' + actualImagePath);
       }
 
       if (!actualImagePath) {
-        throw new Error('未指定图片路径');
+        throw new Error('Image path not specified');
       }
 
       const imageData = await window.electronAPI.loadPicture(actualImagePath);
       
       if (!imageData.success) {
-        throw new Error(imageData.error || '加载图片失败');
+        throw new Error(imageData.error || 'Failed to load image');
       }
 
       const imgDiv = document.createElement('div');
@@ -182,9 +182,9 @@
       
       const img = document.createElement('img');
       img.src = imageData.dataUrl;
-      img.alt = '隐藏图片';
+      img.alt = 'Hidden image';
       
-      // 计算偏移
+      // Calculate offset
       img.onload = () => {
         updateImagePosition();
       };
@@ -193,26 +193,26 @@
       contentEl.appendChild(imgDiv);
     }
 
-    // 加载文字（显示隐藏内容）
+    // Load text (display hidden content)
     async function loadText(textPath) {
-      console.log('[LENS] 加载文字 - 隐藏内容');
+      console.log('[LENS] Loading text - hidden content');
 
       let textContent = '';
 
-      // 优先使用 hiddenContent（隐藏内容）
+      // Prioritize hiddenContent (hidden content)
       if (hiddenContent) {
         textContent = hiddenContent;
-        console.log('[LENS] 使用隐藏内容（长度: ' + textContent.length + '）');
+        console.log('[LENS] Using hidden content (length: ' + textContent.length + ')');
       } else if (textPath && textPath.startsWith('file://')) {
-        // 从文件加载（向后兼容）
+        // Load from file (backward compatibility)
         const response = await fetch(textPath);
         textContent = await response.text();
       } else if (textPath) {
-        // 直接使用传入的文字（向后兼容）
+        // Use passed text directly (backward compatibility)
         textContent = decodeURIComponent(textPath);
       } else {
-        // 使用与contentViewer相同的默认文字
-        textContent = '这是一段秘密文字。\n\n只有通过镜头窗口才能看清楚这些内容。\n\n您可以尝试创建一个镜头窗口来查看清晰的文字。';
+        // Use same default text as contentViewer
+        textContent = 'This is secret text.\n\nOnly through a lens window can you see this content clearly.\n\nYou can try creating a lens window to view the clear text.';
       }
 
       const textDiv = document.createElement('div');
@@ -222,20 +222,20 @@
       contentEl.appendChild(textDiv);
     }
 
-    // 开始位置追踪
+    // Start position tracking
     async function startPositionTracking() {
-      // 首先获取目标窗口信息
+      // First get target window information
       try {
         const targetInfo = await window.api.invoke('window/get-info', targetWindowId);
         if (targetInfo && targetInfo.success) {
           targetWindowBounds = targetInfo.bounds;
-          console.log('[LENS] 目标窗口信息:', targetWindowBounds);
+          console.log('[LENS] Target window info:', targetWindowBounds);
         }
       } catch (error) {
-        console.error('[LENS] 获取目标窗口失败:', error);
+        console.error('[LENS] Failed to get target window:', error);
       }
 
-      // 获取初始镜头位置
+      // Get initial lens position
       try {
         const lensInfo = await window.api.invoke('lens/get-position', lensId);
         if (lensInfo && lensInfo.success) {
@@ -243,16 +243,16 @@
           updateContentPosition();
         }
       } catch (error) {
-        console.error('[LENS] 获取初始镜头位置失败:', error);
+        console.error('[LENS] Failed to get initial lens position:', error);
       }
 
-      // 使用事件驱动方式监听镜头位置更新（替代轮询）
+      // Use event-driven approach to listen for lens position updates (instead of polling)
       if (window.electronAPI.onLensPositionUpdate) {
         window.electronAPI.onLensPositionUpdate((data) => {
-          console.log('[LENS] 镜头位置更新事件:', data);
+          console.log('[LENS] Lens position update event:', data);
           if (data.lensBounds) {
             currentLensBounds = data.lensBounds;
-            // 同时更新目标窗口边界（如果提供）
+            // Also update target window bounds (if provided)
             if (data.targetBounds) {
               targetWindowBounds = data.targetBounds;
             }
@@ -262,32 +262,32 @@
       }
     }
 
-    // 更新内容位置（用于内容裁剪和偏移）
+    // Update content position (for content cropping and offset)
     function updateContentPosition() {
       if (!targetWindowBounds || !currentLensBounds) return;
 
-      // 计算镜头相对于目标窗口的位置
+      // Calculate lens position relative to target window
       const offsetX = currentLensBounds.x - targetWindowBounds.x;
       const offsetY = currentLensBounds.y - targetWindowBounds.y;
 
-      // 更新图片位置（CSS transform）
+      // Update image position (CSS transform)
       const imgElement = contentEl.querySelector('.image-content img');
       if (imgElement) {
         imgElement.style.transform = `translate(${-offsetX}px, ${-offsetY}px)`;
       }
 
-      // 更新文字位置（CSS transform）
+      // Update text position (CSS transform)
       const textElement = contentEl.querySelector('.text-content');
       if (textElement) {
         textElement.style.transform = `translate(${-offsetX}px, ${-offsetY}px)`;
       }
 
-      console.log('[LENS] 内容位置已更新:', { offsetX, offsetY });
+      console.log('[LENS] Content position updated:', { offsetX, offsetY });
     }
 
-    // 更新图片位置
+    // Update image position
     function updateImagePosition() {
-      // 获取目标窗口信息并更新位置
+      // Get target window information and update position
       if (targetWindowId) {
         window.api.invoke('window/get-info', targetWindowId)
           .then(info => {
@@ -296,14 +296,14 @@
               updateContentPosition();
             }
           })
-          .catch(err => console.error('[LENS] 获取目标窗口信息失败:', err));
+          .catch(err => console.error('[LENS] Failed to get target window info:', err));
       }
     }
 
-    // 监听目标窗口移动（事件驱动，无需轮询）
+    // Listen for target window movement (event-driven, no polling needed)
     if (window.electronAPI.onTargetWindowMove) {
       window.electronAPI.onTargetWindowMove((data) => {
-        console.log('[LENS] 目标窗口移动:', data);
+        console.log('[LENS] Target window moved:', data);
         if (data.windowId === targetWindowId) {
           targetWindowBounds = data.bounds;
           updateContentPosition();
@@ -311,7 +311,7 @@
       });
     }
 
-    // 初始加载
+    // Initial load
     loadContent();
   </script>
 </body>

@@ -29,7 +29,7 @@
       filter: blur(10px);
     }
 
-    /* 文字内容样式 */
+    /* Text content styles */
     .text-content {
       padding: 40px;
       font-size: 18px;
@@ -39,7 +39,7 @@
       min-height: 600px;
     }
 
-    /* 图片内容样式 */
+    /* Image content styles */
     .image-content {
       width: 100%;
       height: 100%;
@@ -55,7 +55,7 @@
       object-fit: contain;
     }
 
-    /* 加载状态 */
+    /* Loading state */
     #loading {
       position: absolute;
       top: 50%;
@@ -65,7 +65,7 @@
       color: #666;
     }
 
-    /* 错误状态 */
+    /* Error state */
     #error {
       position: absolute;
       top: 50%;
@@ -81,37 +81,37 @@
   </style>
 </head>
 <body>
-  <div id="loading">加载中...</div>
+  <div id="loading">Loading...</div>
   <div id="error" style="display: none;">
-    <h2>⚠️ 加载失败</h2>
+    <h2>⚠️ Loading Failed</h2>
     <p id="error-message"></p>
   </div>
   <div id="content-container"></div>
 
   <script>
-    console.log('[CONTENT] Content Viewer 初始化');
+    console.log('[CONTENT] Content Viewer initialized');
 
-    // 解析URL参数
+    // Parse URL parameters
     const urlParams = new URLSearchParams(window.location.search);
-    const contentType = urlParams.get('type') || 'text'; // 'text' 或 'image'
+    const contentType = urlParams.get('type') || 'text'; // 'text' or 'image'
     const contentPath = urlParams.get('path') || '';
-    const surfaceContent = urlParams.get('surfaceContent') || ''; // 表面内容（模糊显示）
+    const surfaceContent = urlParams.get('surfaceContent') || ''; // Surface content (blurred display)
     const blurAmount = parseFloat(urlParams.get('blur')) || 10;
     const isBlurred = urlParams.get('blurred') === 'true';
 
-    console.log('[CONTENT] 参数:', { contentType, contentPath, surfaceContent: surfaceContent.substring(0, 50), blurAmount, isBlurred });
+    console.log('[CONTENT] Parameters:', { contentType, contentPath, surfaceContent: surfaceContent.substring(0, 50), blurAmount, isBlurred });
 
     const loadingEl = document.getElementById('loading');
     const errorEl = document.getElementById('error');
     const errorMessageEl = document.getElementById('error-message');
     const containerEl = document.getElementById('content-container');
 
-    // 设置初始模糊状态
+    // Set initial blur state
     if (isBlurred) {
       containerEl.style.filter = `blur(${blurAmount}px)`;
     }
 
-    // 加载内容
+    // Load content
     async function loadContent() {
       try {
         if (contentType === 'image') {
@@ -119,38 +119,38 @@
         } else if (contentType === 'text') {
           await loadText(contentPath);
         } else {
-          throw new Error('未知的内容类型: ' + contentType);
+          throw new Error('Unknown content type: ' + contentType);
         }
 
         loadingEl.style.display = 'none';
-        console.log('[CONTENT] 内容加载成功');
+        console.log('[CONTENT] Content loaded successfully');
       } catch (error) {
-        console.error('[CONTENT] 加载失败:', error);
+        console.error('[CONTENT] Loading failed:', error);
         loadingEl.style.display = 'none';
         errorMessageEl.textContent = error.message;
         errorEl.style.display = 'block';
       }
     }
 
-    // 加载图片（显示表面图片）
+    // Load image (display surface image)
     async function loadImage(imagePath) {
-      console.log('[CONTENT] 加载图片 - 表面图片');
+      console.log('[CONTENT] Loading image - surface image');
 
-      // 优先使用 surfaceContent（表面图片路径）
+      // Prioritize surfaceContent (surface image path)
       let actualImagePath = imagePath;
       if (surfaceContent) {
         actualImagePath = surfaceContent;
-        console.log('[CONTENT] 使用表面图片路径: ' + actualImagePath);
+        console.log('[CONTENT] Using surface image path: ' + actualImagePath);
       }
 
       if (!actualImagePath) {
-        throw new Error('未指定图片路径');
+        throw new Error('Image path not specified');
       }
 
       const imageData = await window.electronAPI.loadPicture(actualImagePath);
       
       if (!imageData.success) {
-        throw new Error(imageData.error || '加载图片失败');
+        throw new Error(imageData.error || 'Failed to load image');
       }
 
       const imgDiv = document.createElement('div');
@@ -158,31 +158,31 @@
       
       const img = document.createElement('img');
       img.src = imageData.dataUrl;
-      img.alt = '表面图片';
+      img.alt = 'Surface image';
       
       imgDiv.appendChild(img);
       containerEl.appendChild(imgDiv);
     }
 
-    // 加载文字（显示表面内容）
+    // Load text (display surface content)
     async function loadText(textPath) {
-      console.log('[CONTENT] 加载文字 - 表面内容');
+      console.log('[CONTENT] Loading text - surface content');
 
       let textContent = '';
 
-      // 优先使用 surfaceContent（表面内容）
+      // Prioritize surfaceContent (surface content)
       if (surfaceContent) {
         textContent = surfaceContent;
-        console.log('[CONTENT] 使用表面内容（长度: ' + textContent.length + '）');
+        console.log('[CONTENT] Using surface content (length: ' + textContent.length + ')');
       } else if (textPath && textPath.startsWith('file://')) {
-        // 从文件加载（向后兼容）
+        // Load from file (backward compatibility)
         const response = await fetch(textPath);
         textContent = await response.text();
       } else if (textPath) {
-        // 直接使用传入的文字（向后兼容）
+        // Use passed text directly (backward compatibility)
         textContent = decodeURIComponent(textPath);
       } else {
-        textContent = '这是一段秘密文字。\n\n只有通过镜头窗口才能看清楚这些内容。\n\n您可以尝试创建一个镜头窗口来查看清晰的文字。';
+        textContent = 'This is secret text.\n\nOnly through a lens window can you see this content clearly.\n\nYou can try creating a lens window to view the clear text.';
       }
 
       const textDiv = document.createElement('div');
@@ -192,9 +192,9 @@
       containerEl.appendChild(textDiv);
     }
 
-    // 监听模糊度变化
+    // Listen for blur changes
     window.electronAPI.onUpdateBlur((blurValue) => {
-      console.log('[CONTENT] 更新模糊度:', blurValue);
+      console.log('[CONTENT] Update blur:', blurValue);
       if (blurValue === 0) {
         containerEl.style.filter = 'none';
       } else {
@@ -202,14 +202,14 @@
       }
     });
 
-    // 监听内容变化
+    // Listen for content changes
     window.electronAPI.onContentChange((data) => {
-      console.log('[CONTENT] 内容变化:', data);
+      console.log('[CONTENT] Content changed:', data);
       containerEl.innerHTML = '';
       loadContent();
     });
 
-    // 初始加载
+    // Initial load
     loadContent();
   </script>
 </body>
