@@ -1,7 +1,7 @@
 import { dialog } from 'electron';
 import path from 'node:path';
 import { getWindow } from './windowManager.js';
-import '../../logger.js'; // 导入日志系统
+import '../../logger.js'; // Import logging system
 import { 
   FileCompletionError, 
   ERROR_CODES, 
@@ -15,38 +15,52 @@ import {
   triggerDoorStateChanged
 } from '../core/callbacks/doorKeyCallbacks.js';
 
-// 门钥匙关系管理系统
+// TODO: Future integration with pathValidator singleton
+// When implementing directory unlocking via door/key system:
+// 1. Import pathValidator: import { pathValidator } from '../security/pathSecurityValidator.js';
+// 2. In setDoorState() when opening a door, unlock associated directories:
+//    if (state === 'open' && directoryPath) {
+//      pathValidator.unlockDirectory(directoryPath);
+//    }
+// 3. In setDoorState() when closing a door, lock associated directories:
+//    if (state === 'closed' && directoryPath) {
+//      pathValidator.lockDirectory(directoryPath);
+//    }
+// 4. Map doorId to directory paths in directoryAccessMap
+// See pathSecurityValidator.js for singleton usage documentation.
+
+// Door-key relationship management system
 const doorKeyRelations = new Map(); // doorId -> Set of keyIds
 const keyDoorRelations = new Map(); // keyId -> Set of doorIds
-const encryptedItems = new Set(); // 存储加密的物品ID
+const encryptedItems = new Set(); // Store encrypted item IDs
 const doorStates = new Map(); // doorId -> { isOpen: boolean, lastKeyUsed: string, state: 'open'|'closed', isLocked: boolean, isEncrypted: boolean, closedImagePath: string, openedImagePath: string, createdAt: number, lastStateChange: number }
 
-// 消息配置系统
+// Message configuration system
 const globalMessages = new Map(); // messageType -> template
 const doorMessages = new Map(); // doorId -> Map(messageType -> template)
 const keyMessages = new Map(); // keyId -> Map(messageType -> template)
 
-// 一次性钥匙系统
-const oneTimeKeys = new Set(); // keyId - 配置为一次性使用的钥匙
-const usedKeys = new Set(); // keyId - 已经使用过的钥匙
-const closeAfterUse = new Set(); // keyId - 使用后应该关闭的钥匙
+// One-time key system
+const oneTimeKeys = new Set(); // keyId - keys configured for one-time use
+const usedKeys = new Set(); // keyId - keys that have already been used
+const closeAfterUse = new Set(); // keyId - keys that should close after use
 
-// 多钥匙门系统
+// Multi-key door system
 const multiKeyDoors = new Map(); // doorId -> { requiredKeys: Array, timeoutDuration: number }
 
 /**
- * 建立双向关系
- * @param {string} doorId - 门ID
- * @param {string} keyId - 钥匙ID
+ * Establish bidirectional relationship
+ * @param {string} doorId - Door ID
+ * @param {string} keyId - Key ID
  */
 export function establishRelation(doorId, keyId) {
-  // door -> key 关系
+  // door -> key relationship
   if (!doorKeyRelations.has(doorId)) {
     doorKeyRelations.set(doorId, new Set());
   }
   doorKeyRelations.get(doorId).add(keyId);
   
-  // key -> door 关系
+  // key -> door relationship
   if (!keyDoorRelations.has(keyId)) {
     keyDoorRelations.set(keyId, new Set());
   }
@@ -54,10 +68,10 @@ export function establishRelation(doorId, keyId) {
 }
 
 /**
- * 检查开门权限
- * @param {string} doorId - 门ID
- * @param {string} keyId - 钥匙ID
- * @returns {boolean} 是否有权限开门
+ * Check door opening permission
+ * @param {string} doorId - Door ID
+ * @param {string} keyId - Key ID
+ * @returns {boolean} Whether has permission to open door
  */
 export function canOpenDoor(doorId, keyId) {
   // NEW: Check for custom authorization callback
@@ -87,13 +101,13 @@ export function canOpenDoor(doorId, keyId) {
   }
   
   // EXISTING: Default authorization logic continues unchanged
-  // 首先检查钥匙是否可用（一次性钥匙使用状态检查）
+  // First check if key is usable (one-time key usage status check)
   if (!isKeyUsable(keyId)) {
     console.log(`[DOOR_ACCESS] Key '${keyId}' is not usable (already used)`);
     return false;
   }
   
-  // 检查是否为多钥匙门
+  // Check if it's a multi-key door
   if (isMultiKeyDoor(doorId)) {
     const progress = getMultiKeyProgress(doorId);
     if (!progress) {
@@ -101,13 +115,13 @@ export function canOpenDoor(doorId, keyId) {
       return false;
     }
     
-    // 检查是否已经完全解锁
+    // Check if already fully unlocked
     if (progress.isComplete) {
       console.log(`[MULTI_KEY] Door '${doorId}' is already fully unlocked`);
       return true;
     }
     
-    // 检查是否是下一个需要的钥匙
+    // Check if it's the next required key
     if (progress.nextKey !== keyId) {
       console.log(`[MULTI_KEY] Key '${keyId}' is not the next required key for door '${doorId}'. Expected: '${progress.nextKey}'`);
       return false;
@@ -120,12 +134,12 @@ export function canOpenDoor(doorId, keyId) {
   const isDoorEncrypted = encryptedItems.has(doorId);
   const isKeyEncrypted = encryptedItems.has(keyId);
   
-  // 如果门没有加密，任何钥匙都可以打开
+  // If door is not encrypted, any key can open it
   if (!isDoorEncrypted) {
     return true;
   }
   
-  // 如果门加密了，检查钥匙是否有权限
+  // If door is encrypted, check if key has permission
   if (isDoorEncrypted && isKeyEncrypted) {
     const authorizedKeys = doorKeyRelations.get(doorId);
     return authorizedKeys && authorizedKeys.has(keyId);
@@ -135,9 +149,9 @@ export function canOpenDoor(doorId, keyId) {
 }
 
 /**
- * 处理开门失败
- * @param {string} doorId - 门ID
- * @param {string} keyId - 钥匙ID
+ * Handle failed door opening
+ * @param {string} doorId - Door ID
+ * @param {string} keyId - Key ID
  */
 export function handleFailedOpen(doorId, keyId) {
   // Determine denial reason
@@ -174,22 +188,22 @@ export function handleFailedOpen(doorId, keyId) {
   // Trigger access denied callback
   triggerAccessDenied(doorId, keyId, reason);
   
-  // 弹出错误窗口
+  // Show error window
   const doorWin = getWindow(doorId);
   const keyWin = getWindow(keyId);
   
   if (doorWin) {
-    // 检查是否为多钥匙门，如果是则重置进度
+    // Check if it's a multi-key door, if so reset progress
     if (isMultiKeyDoor(doorId)) {
       const progress = getMultiKeyProgress(doorId);
       
-      // 如果有进度，说明用户使用了错误的钥匙，需要重置
+      // If there's progress, user used wrong key, need to reset
       if (progress && progress.progress > 0) {
         resetMultiKeyProgress(doorId);
         
-        // 更新门标题移除进度指示
+        // Update door title to remove progress indicator
         const currentTitle = doorWin.getTitle();
-        const baseTitle = currentTitle.replace(/\s*\([^)]*\)$/, ''); // 移除现有状态
+        const baseTitle = currentTitle.replace(/\s*\([^)]*\)$/, ''); // Remove existing state
         const resetTitle = `${baseTitle} (locked)`;
         doorWin.setTitle(resetTitle);
         
@@ -197,7 +211,7 @@ export function handleFailedOpen(doorId, keyId) {
         setDoorState(doorId, 'closed');
         setDoorLocked(doorId, true);
         
-        // 显示序列重置消息
+        // Show sequence reset message
         const resetVariables = { doorId, keyId };
         const resetMessage = getFormattedMessage('sequence_reset', resetVariables, 'Wrong key! Sequence reset.');
         
@@ -210,7 +224,7 @@ export function handleFailedOpen(doorId, keyId) {
         
         console.log(`[MULTI_KEY] Wrong key '${keyId}' used on door '${doorId}', sequence reset`);
       } else {
-        // 没有进度，显示标准错误消息
+        // No progress, show standard error message
         const variables = { doorId, keyId, reason: 'not the first required key in sequence' };
         const accessDeniedMessage = getFormattedMessage('access_denied', variables, 'This key cannot open this door!');
         
@@ -222,8 +236,8 @@ export function handleFailedOpen(doorId, keyId) {
         });
       }
     } else {
-      // 普通门的错误处理
-      // 确定拒绝原因
+      // Regular door error handling
+      // Determine denial reason
       const isDoorEncrypted = encryptedItems.has(doorId);
       const isKeyEncrypted = encryptedItems.has(keyId);
       let reason = 'insufficient permissions';
@@ -239,12 +253,12 @@ export function handleFailedOpen(doorId, keyId) {
         }
       }
       
-      // 检查是否是已使用的一次性钥匙
+      // Check if it's a used one-time key
       if (!isKeyUsable(keyId)) {
         reason = 'key has already been used and is no longer functional';
       }
       
-      // 获取自定义访问拒绝消息
+      // Get custom access denied message
       const variables = { doorId, keyId, reason };
       const accessDeniedMessage = getFormattedMessage('access_denied', variables, 'This key cannot open this door!');
       
@@ -257,10 +271,10 @@ export function handleFailedOpen(doorId, keyId) {
     }
   }
   
-  // 分离钥匙和门（将钥匙移动到远离门的位置）
+  // Separate key and door (move key away from door)
   if (doorWin && keyWin) {
     bounceKeyAway(keyWin, doorWin, keyId, doorId);
-    console.log(`[SEPARATE] 钥匙 ${keyId} 已从门 ${doorId} 分离`);
+    console.log(`[SEPARATE] Key ${keyId} separated from door ${doorId}`);
   }
 }
 
