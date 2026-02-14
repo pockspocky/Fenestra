@@ -2,7 +2,7 @@ import { BrowserWindow } from 'electron';
 import path from 'node:path';
 import url from 'node:url';
 import fs from 'node:fs';
-import '../../logger.js'; // 导入日志系统
+import '../../logger.js'; // Import logging system
 import {
   registerLensSystem,
   unregisterLensSystem,
@@ -24,16 +24,16 @@ import { validateAndResolvePath, getDefaultGameDataDirectory } from '../security
 import { memoryManager } from '../utils/memoryManager.js';
 import { securityAuditSystem } from '../security/auditSystem.js';
 
-// 全局窗口映射
+// Global window mapping
 export const windows = new Map(); // id -> BrowserWindow
 
-// 窗口偏移配置
+// Window offset configuration
 const WINDOW_OFFSET = {
-  x: 30, // 水平偏移
-  y: 30  // 垂直偏移
+  x: 30, // Horizontal offset
+  y: 30  // Vertical offset
 };
 
-// 计算两个矩形的重叠比例
+// Calculate overlap ratio between two rectangles
 function calculateOverlapRatio(rect1, rect2) {
   const x1 = Math.max(rect1.x, rect2.x);
   const y1 = Math.max(rect1.y, rect2.y);
@@ -55,15 +55,15 @@ function calculateOverlapRatio(rect1, rect2) {
   return interArea / minArea;
 }
 
-// 检查位置是否与现有窗口重叠过多
+// Check if position overlaps too much with existing windows
 function checkOverlapWithWindows(newBounds, windowId, maxOverlapRatio = 0.4) {
   for (const [id, win] of windows) {
-    if (id === windowId) continue; // 跳过自己
+    if (id === windowId) continue; // Skip self
     
     const existingBounds = win.getBounds();
     const overlapRatio = calculateOverlapRatio(newBounds, existingBounds);
     
-    console.debug(`[OVERLAP_CHECK] 检查与窗口 ${id} 的重叠: ${(overlapRatio * 100).toFixed(1)}%`);
+    console.debug(`[OVERLAP_CHECK] Checking overlap with window ${id}: ${(overlapRatio * 100).toFixed(1)}%`);
     
     if (overlapRatio > maxOverlapRatio) {
       return { hasOverlap: true, overlapWindow: id, ratio: overlapRatio };
@@ -73,40 +73,40 @@ function checkOverlapWithWindows(newBounds, windowId, maxOverlapRatio = 0.4) {
   return { hasOverlap: false };
 }
 
-// 为钥匙窗口寻找合适的位置（避免与门重叠超过40%）
+// Find suitable position for key window (avoid overlapping with doors more than 40%)
 function findSuitablePositionForKey(keyId, width, height, maxOverlapRatio = 0.4) {
-  console.debug(`[KEY_POSITION] 为钥匙 ${keyId} 寻找合适位置，避免与门重叠超过 ${(maxOverlapRatio * 100)}%`);
+  console.debug(`[KEY_POSITION] Finding suitable position for key ${keyId}, avoiding door overlap exceeding ${(maxOverlapRatio * 100)}%`);
   
-  // 获取所有门窗口
+  // Get all door windows
   const doorWindows = Array.from(windows.entries()).filter(([id, win]) => id.startsWith('door'));
   
   if (doorWindows.length === 0) {
-    // 没有门窗口，使用默认偏移逻辑
+    // No door windows, use default offset logic
     return getNextWindowPosition();
   }
   
-  // 尝试多个位置
-  const screenWidth = 1920; // 假设屏幕宽度
-  const screenHeight = 1080; // 假设屏幕高度
+  // Try multiple positions
+  const screenWidth = 1920; // Assumed screen width
+  const screenHeight = 1080; // Assumed screen height
   const maxAttempts = 50;
   
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     let x, y;
     
     if (attempt < 10) {
-      // 前10次尝试：在屏幕左上角区域
+      // First 10 attempts: top-left area of screen
       x = 100 + (attempt % 5) * 250;
       y = 100 + Math.floor(attempt / 5) * 150;
     } else if (attempt < 20) {
-      // 接下来10次尝试：在屏幕右上角区域
+      // Next 10 attempts: top-right area of screen
       x = screenWidth - width - 100 - (attempt % 10) * 50;
       y = 100 + Math.floor(attempt / 10) * 150;
     } else if (attempt < 30) {
-      // 接下来10次尝试：在屏幕左下角区域
+      // Next 10 attempts: bottom-left area of screen
       x = 100 + (attempt % 10) * 100;
       y = screenHeight - height - 100 - Math.floor(attempt / 10) * 100;
     } else {
-      // 最后20次尝试：随机位置
+      // Last 20 attempts: random positions
       x = 100 + Math.random() * (screenWidth - width - 200);
       y = 100 + Math.random() * (screenHeight - height - 200);
     }
@@ -115,53 +115,53 @@ function findSuitablePositionForKey(keyId, width, height, maxOverlapRatio = 0.4)
     const overlapCheck = checkOverlapWithWindows(newBounds, keyId, maxOverlapRatio);
     
     if (!overlapCheck.hasOverlap) {
-      console.debug(`[KEY_POSITION] 找到合适位置: (${x}, ${y}), 尝试次数: ${attempt + 1}`);
+      console.debug(`[KEY_POSITION] Found suitable position: (${x}, ${y}), attempts: ${attempt + 1}`);
       return { x, y };
     }
     
-    console.debug(`[KEY_POSITION] 位置 (${x}, ${y}) 与窗口 ${overlapCheck.overlapWindow} 重叠 ${(overlapCheck.ratio * 100).toFixed(1)}%，继续尝试...`);
+    console.debug(`[KEY_POSITION] Position (${x}, ${y}) overlaps with window ${overlapCheck.overlapWindow} by ${(overlapCheck.ratio * 100).toFixed(1)}%, continuing...`);
   }
   
-  // 如果找不到合适位置，使用默认偏移逻辑
-  console.warn(`[KEY_POSITION] 无法为钥匙 ${keyId} 找到合适位置，使用默认偏移逻辑`);
+  // If no suitable position found, use default offset logic
+  console.warn(`[KEY_POSITION] Unable to find suitable position for key ${keyId}, using default offset logic`);
   return getNextWindowPosition();
 }
 
-// 获取下一个窗口位置
+// Get next window position
 function getNextWindowPosition(defaultX, defaultY) {
-  // 如果没有指定位置，使用默认位置
+  // If no position specified, use default position
   if (defaultX !== undefined && defaultY !== undefined) {
     return { x: defaultX, y: defaultY };
   }
   
-  // 获取最后一个窗口的位置
+  // Get position of last window
   const windowEntries = Array.from(windows.entries());
   if (windowEntries.length === 0) {
-    // 如果没有窗口，使用默认位置
+    // If no windows, use default position
     return { x: 100, y: 100 };
   }
   
-  // 获取最后一个窗口的边界
+  // Get bounds of last window
   const lastWindow = windowEntries[windowEntries.length - 1][1];
   const lastBounds = lastWindow.getBounds();
   
-  // 计算新位置（加上偏移）
+  // Calculate new position (add offset)
   const newX = lastBounds.x + WINDOW_OFFSET.x;
   const newY = lastBounds.y + WINDOW_OFFSET.y;
   
-  console.debug(`[WINDOW_OFFSET] 计算新窗口位置: (${newX}, ${newY}), 基于窗口: ${windowEntries[windowEntries.length - 1][0]}`);
+  console.debug(`[WINDOW_OFFSET] Calculating new window position: (${newX}, ${newY}), based on window: ${windowEntries[windowEntries.length - 1][0]}`);
   
   return { x: newX, y: newY };
 }
 
 /**
- * 创建窗口
- * @param {string} id - 窗口ID
- * @param {Object} opts - 窗口选项
- * @returns {BrowserWindow} 创建的窗口
+ * Create window
+ * @param {string} id - Window ID
+ * @param {Object} opts - Window options
+ * @returns {BrowserWindow} Created window
  */
 export function createWindow(id, opts = {}) {
-  console.debug(`[WINDOW] 开始创建窗口 ID: ${id}`);
+  console.debug(`[WINDOW] Starting to create window ID: ${id}`);
   
   // Register memory cleanup for this window
   memoryManager.registerCleanupHandler(`window_${id}`, () => {
@@ -172,10 +172,10 @@ export function createWindow(id, opts = {}) {
     }
   });
   
-  // 获取窗口位置（支持自动偏移）
+  // Get window position (supports automatic offset)
   const position = getNextWindowPosition(opts.x, opts.y);
   
-  console.debug(`[WINDOW] 窗口配置:`, { 
+  console.debug(`[WINDOW] Window configuration:`, { 
     width: opts.width ?? 800, 
     height: opts.height ?? 500, 
     x: position.x, 
@@ -204,23 +204,23 @@ export function createWindow(id, opts = {}) {
     }
   });
   
-  console.debug(`[WINDOW] BrowserWindow已创建，ID: ${id}, webContentsId: ${win.webContents.id}`);
+  console.debug(`[WINDOW] BrowserWindow created, ID: ${id}, webContentsId: ${win.webContents.id}`);
   
-  // 解析 otherContents 中的文件名和查询参数
+  // Parse filename and query parameters from otherContents
   const otherContents = opts.otherContents;
   const htmlName = opts.htmlName;
   let htmlFileName;
   let queryObj = { id };
   
-  // 判断 otherContents 的类型
+  // Determine the type of otherContents
   if (typeof otherContents === 'string') {
-    // 字符串格式：可能是 "file.html" 或 "file.html?param=value"
+    // String format: could be "file.html" or "file.html?param=value"
     if (otherContents.includes('?')) {
       const parts = otherContents.split('?');
       htmlFileName = parts[0];
       const additionalQuery = parts[1];
       
-      // 合并查询参数
+      // Merge query parameters
       const additionalParams = new url.URLSearchParams(additionalQuery);
       for (const [key, value] of additionalParams) {
         queryObj[key] = value;
@@ -229,14 +229,14 @@ export function createWindow(id, opts = {}) {
       htmlFileName = otherContents;
     }
   } else if (typeof otherContents === 'object' && otherContents !== null) {
-    // 对象格式：直接作为查询参数
-    // 优先使用 htmlName，否则默认为 'index.html'
+    // Object format: directly use as query parameters
+    // Prioritize htmlName, otherwise default to 'index.html'
     htmlFileName = htmlName || 'index.html';
-    // 确保窗口的 id 不会被 otherContents 中的 id 覆盖
+    // Ensure window's id is not overwritten by id in otherContents
     queryObj = { ...otherContents, id };
   } else {
-    // 未提供 otherContents 或为其他类型
-    // 优先使用 htmlName，否则默认为 'index.html'
+    // otherContents not provided or is other type
+    // Prioritize htmlName, otherwise default to 'index.html'
     htmlFileName = htmlName || 'index.html';
   }
   
@@ -269,11 +269,11 @@ export function createWindow(id, opts = {}) {
     throw new Error(`Invalid HTML file path: Path outside renderer directory`);
   }
   
-  console.debug(`[WINDOW] 加载HTML文件: ${resolvedHtmlPath}`);
-  console.debug(`[WINDOW] 查询参数对象:`, queryObj);
+  console.debug(`[WINDOW] Loading HTML file: ${resolvedHtmlPath}`);
+  console.debug(`[WINDOW] Query parameter object:`, queryObj);
   win.loadFile(resolvedHtmlPath, { query: queryObj });
   
-  // 设置窗口事件监听器
+  // Set window event listeners
   setupWindowEvents(win, id);
   
   // Trigger window-created callback before adding to windows map
@@ -307,7 +307,7 @@ export function createWindow(id, opts = {}) {
   }
   
   windows.set(id, win);
-  console.debug(`[WINDOW] 窗口已添加到映射, ID: ${id}, 总窗口数: ${windows.size}`);
+  console.debug(`[WINDOW] Window added to mapping, ID: ${id}, total windows: ${windows.size}`);
   
   // Log successful window creation
   securityAuditSystem.logSecurityEvent('window_operation', 'low', {
@@ -325,20 +325,20 @@ export function createWindow(id, opts = {}) {
 }
 
 /**
- * 设置窗口事件监听器
- * @param {BrowserWindow} win - 窗口对象
- * @param {string} id - 窗口ID
+ * Set up window event listeners
+ * @param {BrowserWindow} win - Window object
+ * @param {string} id - Window ID
  */
 function setupWindowEvents(win, id) {
   win.on('closed', () => {
-    console.debug(`[WINDOW] 窗口关闭事件触发, ID: ${id}`);
+    console.debug(`[WINDOW] Window closed event triggered, ID: ${id}`);
     
     // Trigger window-closed callback before cleanup
     triggerWindowClosed(id);
     
-    // 如果是镜头窗口，先注销镜头系统（在删除窗口之前）
+    // If it's a lens window, unregister lens system first (before deleting window)
     if (lensSystemExists(id)) {
-      console.debug(`[WINDOW] 检测到镜头窗口关闭，先注销镜头系统: ${id}`);
+      console.debug(`[WINDOW] Detected lens window closure, unregistering lens system first: ${id}`);
       unregisterLensSystem(id);
     }
     
@@ -346,7 +346,7 @@ function setupWindowEvents(win, id) {
     memoryManager.unregisterCleanupHandler(`window_${id}`);
     
     windows.delete(id);
-    console.log(`[WINDOW] 从窗口映射中移除 ID: ${id}, 剩余窗口数量: ${windows.size}`);
+    console.log(`[WINDOW] Removed from window mapping ID: ${id}, remaining windows: ${windows.size}`);
     
     // Log window closure for audit
     securityAuditSystem.logSecurityEvent('window_operation', 'low', {
@@ -360,7 +360,7 @@ function setupWindowEvents(win, id) {
       remainingWindows: windows.size
     });
     
-    // 触发窗口关闭回调 (legacy support)
+    // Trigger window closed callback (legacy support)
     if (windowCloseCallback) {
       windowCloseCallback(id);
     }
@@ -620,7 +620,7 @@ export function createDoor(doorId = 'door', title = null, encrypt = false, optio
  * @param {number} height - 窗口高度
  * @returns {BrowserWindow} 图片窗口
  */
-export function createPicture(pictureId = 'picture', imagePath = 'renderer/assets/doors/DoorClosed.png', fitMode = 'fill', title = null, width = 400, height = 300) {
+export function createPicture(pictureId = 'picture', imagePath = 'renderer/assets/doors/DoorClosed.png', fitMode = 'fill', title = null, width = 400, height = 300, opacity = 1.0) {
   // Resolve image path with backward compatibility
   const resolvedPath = resolveAssetPath(imagePath);
   
@@ -646,6 +646,13 @@ export function createPicture(pictureId = 'picture', imagePath = 'renderer/asset
     resizable: true,
     otherContents: `pictureViewer.html?${queryString}`,
   });
+  
+  if (win && !win.isDestroyed()) {
+    // Apply opacity if specified
+    if (opacity !== 1.0) {
+      setWindowOpacity(pictureId, opacity);
+    }
+  }
   
   console.log('[WINDOW] 图片窗口创建完成');
   return win;
@@ -1149,7 +1156,8 @@ export function createContentWindow(id, options = {}) {
     height = 600,
     x,
     y,
-    title = '内容窗口'
+    title = '内容窗口',
+    opacity = 1.0                // 窗口透明度 (0.0-1.0)
   } = options;
 
   // 解析内容（支持文字和图片）
@@ -1200,6 +1208,10 @@ export function createContentWindow(id, options = {}) {
   const win = createWindow(id, windowOptions);
   
   if (win && !win.isDestroyed()) {
+    // Apply opacity if specified
+    if (opacity !== 1.0) {
+      setWindowOpacity(id, opacity);
+    }
     console.log(`[WINDOW] 内容窗口创建成功: ${id}, 类型: ${contentType}, 模糊: ${blurred}`);
     return { success: true, message: `内容窗口 ${id} 创建成功`, id };
   }
@@ -1249,7 +1261,8 @@ export function createLensWindow(lensId, targetWindowId, options = {}) {
     width = 300,
     height = 200,
     x,
-    y
+    y,
+    opacity = 1.0                // 窗口透明度 (0.0-1.0)
   } = options;
 
   // 从目标窗口获取实际的内容信息
@@ -1342,11 +1355,16 @@ export function createLensWindow(lensId, targetWindowId, options = {}) {
   const lensWindow = createWindow(lensId, windowOptions);
 
   if (lensWindow && !lensWindow.isDestroyed()) {
-    // 注册镜头系统
+    // Register lens system
     registerLensSystem(lensId, lensWindow, targetWindowId, targetWindow);
 
-    // 注意：镜头窗口关闭时的清理已在 setupWindowEvents 中统一处理
-    // 无需在此处添加额外的 closed 监听器
+    // Apply opacity if specified
+    if (opacity !== 1.0) {
+      setWindowOpacity(lensId, opacity);
+    }
+
+    // Note: Cleanup when lens window closes is handled uniformly in setupWindowEvents
+    // No need to add additional 'closed' listener here
 
     console.log(`[WINDOW] 镜头窗口创建成功: ${lensId} -> ${targetWindowId}`);
     return { success: true, message: `镜头窗口 ${lensId} 创建成功`, id: lensId };

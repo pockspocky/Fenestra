@@ -1,6 +1,6 @@
 /**
- * 镜头窗口系统
- * 管理镜头窗口与内容窗口的同步
+ * Lens Window System
+ * Manages synchronization between lens windows and content windows
  */
 
 import '../../logger.js';
@@ -12,21 +12,21 @@ import {
   triggerLensTrackingStopped
 } from '../core/callbacks/lensCallbacks.js';
 
-// 存储镜头系统的映射关系
+// Store lens system mapping relationships
 const lensSystems = new Map(); // lensId -> { lensWindow, targetWindow, targetWindowId }
 
 /**
- * 注册镜头系统
- * @param {string} lensId - 镜头窗口ID
- * @param {BrowserWindow} lensWindow - 镜头窗口对象
- * @param {string} targetWindowId - 目标窗口ID
- * @param {BrowserWindow} targetWindow - 目标窗口对象
+ * Register lens system
+ * @param {string} lensId - Lens window ID
+ * @param {BrowserWindow} lensWindow - Lens window object
+ * @param {string} targetWindowId - Target window ID
+ * @param {BrowserWindow} targetWindow - Target window object
  */
 export function registerLensSystem(lensId, lensWindow, targetWindowId, targetWindow) {
-  console.log(`[LENS_SYS] 注册镜头系统: ${lensId} -> ${targetWindowId}`);
+  console.log(`[LENS_SYS] Registering lens system: ${lensId} -> ${targetWindowId}`);
   
   if (lensSystems.has(lensId)) {
-    console.warn(`[LENS_SYS] 镜头 ${lensId} 已存在，将被覆盖`);
+    console.warn(`[LENS_SYS] Lens ${lensId} already exists, will be overwritten`);
   }
 
   const system = {
@@ -46,39 +46,39 @@ export function registerLensSystem(lensId, lensWindow, targetWindowId, targetWin
     targetWindow
   });
   
-  // 开始位置追踪
+  // Start position tracking
   startPositionTracking(lensId, system);
 
-  console.log(`[LENS_SYS] 镜头系统注册成功，当前总数: ${lensSystems.size}`);
+  console.log(`[LENS_SYS] Lens system registered successfully, current total: ${lensSystems.size}`);
 }
 
 /**
- * 注销镜头系统
- * @param {string} lensId - 镜头窗口ID
+ * Unregister lens system
+ * @param {string} lensId - Lens window ID
  */
 export function unregisterLensSystem(lensId) {
-  console.log(`[LENS_SYS] 注销镜头系统: ${lensId}`);
+  console.log(`[LENS_SYS] Unregistering lens system: ${lensId}`);
   
   const system = lensSystems.get(lensId);
   if (!system) {
-    console.warn(`[LENS_SYS] 镜头 ${lensId} 不存在`);
+    console.warn(`[LENS_SYS] Lens ${lensId} does not exist`);
     return;
   }
 
-  // 停止位置追踪
+  // Stop position tracking
   stopPositionTracking(lensId, system);
 
   // Trigger lens destroyed callback
   triggerLensDestroyed(lensId);
 
   lensSystems.delete(lensId);
-  console.log(`[LENS_SYS] 镜头系统注销成功，当前总数: ${lensSystems.size}`);
+  console.log(`[LENS_SYS] Lens system unregistered successfully, current total: ${lensSystems.size}`);
 }
 
 /**
- * 获取镜头系统信息
- * @param {string} lensId - 镜头窗口ID
- * @returns {Object|null} 镜头系统信息
+ * Get lens system information
+ * @param {string} lensId - Lens window ID
+ * @returns {Object|null} Lens system information
  */
 export function getLensSystemInfo(lensId) {
   const system = lensSystems.get(lensId);
@@ -89,7 +89,7 @@ export function getLensSystemInfo(lensId) {
   const { lensWindow, targetWindow, targetWindowId } = system;
 
   if (lensWindow.isDestroyed() || targetWindow.isDestroyed()) {
-    console.warn(`[LENS_SYS] 镜头或目标窗口已销毁: ${lensId}`);
+    console.warn(`[LENS_SYS] Lens or target window destroyed: ${lensId}`);
     unregisterLensSystem(lensId);
     return null;
   }
@@ -104,8 +104,8 @@ export function getLensSystemInfo(lensId) {
 }
 
 /**
- * 获取所有镜头系统
- * @returns {Array} 镜头系统列表
+ * Get all lens systems
+ * @returns {Array} Lens system list
  */
 export function getAllLensSystems() {
   const systems = [];
@@ -121,19 +121,19 @@ export function getAllLensSystems() {
 }
 
 /**
- * 开始位置追踪
- * @param {string} lensId - 镜头窗口ID
- * @param {Object} system - 镜头系统对象
+ * Start position tracking
+ * @param {string} lensId - Lens window ID
+ * @param {Object} system - Lens system object
  */
 function startPositionTracking(lensId, system) {
   if (system.isTracking) {
-    console.warn(`[LENS_SYS] 镜头 ${lensId} 已在追踪中`);
+    console.warn(`[LENS_SYS] Lens ${lensId} is already being tracked`);
     return;
   }
 
   const { lensWindow, targetWindow } = system;
 
-  // 监听镜头窗口移动
+  // Listen for lens window movement
   const lensMoveListener = () => {
     if (lensWindow.isDestroyed() || targetWindow.isDestroyed()) {
       stopPositionTracking(lensId, system);
@@ -143,11 +143,11 @@ function startPositionTracking(lensId, system) {
     const lensBounds = lensWindow.getBounds();
     const targetBounds = targetWindow.getBounds();
 
-    // 计算相对位置
+    // Calculate relative position
     const relativeX = lensBounds.x - targetBounds.x;
     const relativeY = lensBounds.y - targetBounds.y;
 
-    console.debug(`[LENS_SYS] 镜头 ${lensId} 移动: 相对位置 (${relativeX}, ${relativeY})`);
+    console.debug(`[LENS_SYS] Lens ${lensId} moved: relative position (${relativeX}, ${relativeY})`);
 
     // Trigger lens moved callback
     triggerLensMoved(lensId, {
@@ -157,7 +157,7 @@ function startPositionTracking(lensId, system) {
       relativeY
     });
 
-    // 通知镜头窗口更新显示区域
+    // Notify lens window to update display area
     if (!lensWindow.isDestroyed()) {
       lensWindow.webContents.send('lens-position-update', {
         lensBounds,
@@ -168,7 +168,7 @@ function startPositionTracking(lensId, system) {
     }
   };
 
-  // 监听目标窗口移动
+  // Listen for target window movement
   const targetMoveListener = () => {
     if (lensWindow.isDestroyed() || targetWindow.isDestroyed()) {
       stopPositionTracking(lensId, system);
@@ -177,9 +177,9 @@ function startPositionTracking(lensId, system) {
 
     const targetBounds = targetWindow.getBounds();
 
-    console.debug(`[LENS_SYS] 目标窗口 ${system.targetWindowId} 移动`);
+    console.debug(`[LENS_SYS] Target window ${system.targetWindowId} moved`);
 
-    // 通知镜头窗口目标窗口已移动
+    // Notify lens window that target window has moved
     if (!lensWindow.isDestroyed()) {
       lensWindow.webContents.send('target-window-move', {
         windowId: system.targetWindowId,
@@ -188,32 +188,32 @@ function startPositionTracking(lensId, system) {
     }
   };
 
-  // 注册事件监听器
+  // Register event listeners
   lensWindow.on('move', lensMoveListener);
-  lensWindow.on('moved', lensMoveListener); // macOS使用'moved'
+  lensWindow.on('moved', lensMoveListener); // macOS uses 'moved'
   targetWindow.on('move', targetMoveListener);
   targetWindow.on('moved', targetMoveListener);
 
-  // 保存监听器引用
+  // Save listener references
   system.moveListener = {
     lensMove: lensMoveListener,
     targetMove: targetMoveListener,
   };
 
   system.isTracking = true;
-  console.log(`[LENS_SYS] 镜头 ${lensId} 开始位置追踪`);
+  console.log(`[LENS_SYS] Lens ${lensId} started position tracking`);
 
   // Trigger lens tracking started callback
   triggerLensTrackingStarted(lensId);
 
-  // 立即触发一次更新
+  // Trigger an immediate update
   lensMoveListener();
 }
 
 /**
- * 停止位置追踪
- * @param {string} lensId - 镜头窗口ID
- * @param {Object} system - 镜头系统对象
+ * Stop position tracking
+ * @param {string} lensId - Lens window ID
+ * @param {Object} system - Lens system object
  */
 function stopPositionTracking(lensId, system) {
   if (!system.isTracking) {
@@ -222,7 +222,7 @@ function stopPositionTracking(lensId, system) {
 
   const { lensWindow, targetWindow, moveListener } = system;
 
-  // 移除事件监听器
+  // Remove event listeners
   if (moveListener && !lensWindow.isDestroyed()) {
     lensWindow.removeListener('move', moveListener.lensMove);
     lensWindow.removeListener('moved', moveListener.lensMove);
@@ -239,21 +239,21 @@ function stopPositionTracking(lensId, system) {
   // Trigger lens tracking stopped callback
   triggerLensTrackingStopped(lensId);
 
-  console.log(`[LENS_SYS] 镜头 ${lensId} 停止位置追踪`);
+  console.log(`[LENS_SYS] Lens ${lensId} stopped position tracking`);
 }
 
 /**
- * 获取当前镜头系统数量
- * @returns {number} 镜头数量
+ * Get current lens system count
+ * @returns {number} Lens count
  */
 export function getLensSystemCount() {
   return lensSystems.size;
 }
 
 /**
- * 检查镜头ID是否已存在
- * @param {string} lensId - 镜头窗口ID
- * @returns {boolean} 是否存在
+ * Check if lens ID already exists
+ * @param {string} lensId - Lens window ID
+ * @returns {boolean} Whether it exists
  */
 export function lensSystemExists(lensId) {
   return lensSystems.has(lensId);
