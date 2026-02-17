@@ -81,16 +81,24 @@ export async function initializeEmailSystem(options = {}) {
 
     // Start watching inbox directory
     const watchResult = watchInboxDirectory((event, fileName) => {
-      console.log('[EMAIL_SYSTEM] Inbox file event', { event, fileName });
+      console.log('[EMAIL_SYSTEM] Inbox file event received', { event, fileName });
       
       // Validate email file if it's a new email
       if (event === 'add' && fileName.endsWith('.json')) {
+        console.log('[EMAIL_SYSTEM] Validating new email file', { fileName });
         validateInboxEmail(fileName);
       }
       
       // Notify email window if it's open
       if (emailWindow && !emailWindow.isDestroyed()) {
+        console.log('[EMAIL_SYSTEM] Sending email-inbox-update to renderer', { event, fileName });
         emailWindow.webContents.send('email-inbox-update', { event, fileName });
+        console.log('[EMAIL_SYSTEM] IPC message sent successfully');
+      } else {
+        console.warn('[EMAIL_SYSTEM] Email window not available for notification', {
+          windowExists: !!emailWindow,
+          isDestroyed: emailWindow ? emailWindow.isDestroyed() : 'N/A'
+        });
       }
     });
 
