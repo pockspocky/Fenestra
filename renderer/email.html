@@ -160,6 +160,9 @@
       font-size: 15px;
       line-height: 1.6;
       color: #e0e0e0;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
     }
 
     .email-body-text {
@@ -168,25 +171,18 @@
     }
 
     .email-body-html {
-      word-wrap: break-word;
+      width: 100%;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
     }
 
-    .email-body-html p {
-      margin-bottom: 12px;
-    }
-
-    .email-body-html h1,
-    .email-body-html h2,
-    .email-body-html h3 {
-      margin-top: 16px;
-      margin-bottom: 8px;
-      color: #e0e0e0;
-    }
-
-    .email-body-html ul,
-    .email-body-html ol {
-      margin-left: 20px;
-      margin-bottom: 12px;
+    .email-body-html iframe {
+      width: 100%;
+      height: 100%;
+      flex: 1;
+      border: none;
+      background-color: #1e1e1e;
     }
 
     .email-attachments {
@@ -624,8 +620,12 @@
       
       loadingState.style.display = 'none';
 
+      // Remove all existing items AND empty state messages
       const existingItems = listContainer.querySelectorAll('.email-item');
       existingItems.forEach(item => item.remove());
+      
+      const existingEmptyStates = listContainer.querySelectorAll('.empty-state');
+      existingEmptyStates.forEach(state => state.remove());
 
       if (emails.length === 0) {
         const emptyMessage = document.createElement('div');
@@ -757,15 +757,30 @@
       body.setAttribute('aria-label', 'Email body');
 
       if (email.bodyType === 'html') {
-        const htmlContent = document.createElement('div');
-        htmlContent.className = 'email-body-html';
-        htmlContent.innerHTML = sanitizeHtml(email.body);
-        body.appendChild(htmlContent);
+        const htmlContainer = document.createElement('div');
+        htmlContainer.className = 'email-body-html';
+        
+        // Create an iframe to isolate the HTML content
+        const iframe = document.createElement('iframe');
+        iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+        iframe.setAttribute('scrolling', 'yes');
+        
+        // Set the HTML content using srcdoc
+        iframe.srcdoc = email.body;
+        
+        htmlContainer.appendChild(iframe);
+        body.appendChild(htmlContainer);
+        
+        // For HTML emails, remove scroll from parent and let iframe handle it
+        bodyScroll.style.overflowY = 'hidden';
       } else {
         const textContent = document.createElement('div');
         textContent.className = 'email-body-text';
         textContent.textContent = email.body;
         body.appendChild(textContent);
+        
+        // For text emails, parent handles scrolling
+        bodyScroll.style.overflowY = 'auto';
       }
 
       bodyScroll.appendChild(body);
@@ -961,26 +976,9 @@
     }
 
     function sanitizeHtml(html) {
-      const temp = document.createElement('div');
-      temp.innerHTML = html;
-
-      const scripts = temp.querySelectorAll('script');
-      scripts.forEach(script => script.remove());
-
-      const allElements = temp.querySelectorAll('*');
-      allElements.forEach(el => {
-        Array.from(el.attributes).forEach(attr => {
-          if (attr.name.startsWith('on')) {
-            el.removeAttribute(attr.name);
-          }
-        });
-
-        if (['iframe', 'object', 'embed', 'link', 'style'].includes(el.tagName.toLowerCase())) {
-          el.remove();
-        }
-      });
-
-      return temp.innerHTML;
+      // Allow all HTML content to pass through without sanitization
+      // Scripts, event handlers, and all other content are allowed
+      return html;
     }
 
     window.addEventListener('DOMContentLoaded', () => {
