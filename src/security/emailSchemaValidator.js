@@ -8,7 +8,7 @@ import '../../logger.js';
 // Email JSON Schema Definition
 const EMAIL_JSON_SCHEMA = {
   type: 'object',
-  required: ['id', 'senderName', 'senderEmail', 'subject', 'body', 'timestamp', 'isRead'],
+  required: ['id', 'senderName', 'senderEmail', 'subject', 'timestamp', 'isRead'],
   properties: {
     id: {
       type: 'string',
@@ -41,9 +41,14 @@ const EMAIL_JSON_SCHEMA = {
       minLength: 1,
       maxLength: 10000
     },
+    bodyFile: {
+      type: 'string',
+      minLength: 1,
+      maxLength: 500
+    },
     bodyType: {
       type: 'string',
-      enum: ['text', 'html']
+      enum: ['text', 'html', 'html-file']
     },
     timestamp: {
       type: 'string',
@@ -306,6 +311,17 @@ export class EmailSchemaValidator {
   validateEmailJson(emailData) {
     try {
       const validation = this._validateObject(emailData, this.emailSchema, 'email');
+      
+      // Custom validation: ensure at least body or bodyFile is present
+      if (!emailData.body && !emailData.bodyFile) {
+        validation.errors.push('email must have either body or bodyFile field');
+        validation.isValid = false;
+      }
+      
+      // Custom validation: warn if bodyType is html-file but bodyFile is missing
+      if (emailData.bodyType === 'html-file' && !emailData.bodyFile) {
+        validation.warnings.push('bodyType is "html-file" but bodyFile field is missing');
+      }
       
       if (!validation.isValid) {
         console.warn('[EMAIL_SCHEMA] Email JSON validation failed', {

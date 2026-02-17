@@ -18,6 +18,7 @@ import {
 } from '../core/callbacks/emailCallbacks.js';
 import { emailSchemaValidator } from '../security/emailSchemaValidator.js';
 import { getGameDataDirectory } from '../core/config.js';
+import { loadHtmlFile, ensureTemplatesDirectory } from './htmlFileLoader.js';
 
 // Error codes for email storage operations
 const EMAIL_ERROR_CODES = {
@@ -47,6 +48,10 @@ let watcherCallback = null;
 
 // Track read-only status
 let isReadOnly = false;
+
+// Track watcher ready state
+let watcherReady = false;
+let watcherReadyPromise = null;
 
 /**
  * Validates email JSON structure according to schema
@@ -400,6 +405,53 @@ async function loadEmailFile(filePath) {
       });
     }
 
+    // Load HTML file if bodyType is "html-file"
+    if (emailData.bodyType === 'html-file' && emailData.bodyFile) {
+      try {
+        const projectRoot = path.resolve(process.cwd());
+        const templatesDir = path.join(projectRoot, 'game-data', 'emails', 'templates');
+        
+        // Ensure templates directory exists
+        await ensureTemplatesDirectory(templatesDir);
+        
+        // Load HTML file
+        const htmlResult = await loadHtmlFile(emailData.bodyFile, projectRoot, templatesDir);
+        
+        if (htmlResult.success) {
+          // Store HTML content in a separate field
+          emailData._htmlContent = htmlResult.content;
+          emailData._htmlFilePath = htmlResult.filePath;
+          
+          console.log('[EMAIL] HTML file loaded successfully', {
+            emailId: emailData.id,
+            bodyFile: emailData.bodyFile,
+            htmlFilePath: htmlResult.filePath
+          });
+        } else {
+          // Store error information
+          emailData._htmlLoadError = htmlResult.error;
+          emailData._htmlErrorMessage = htmlResult.userMessage;
+          
+          console.warn('[EMAIL] Failed to load HTML file', {
+            emailId: emailData.id,
+            bodyFile: emailData.bodyFile,
+            error: htmlResult.error,
+            userMessage: htmlResult.userMessage
+          });
+        }
+      } catch (error) {
+        // Store error information for unexpected errors
+        emailData._htmlLoadError = error.message;
+        emailData._htmlErrorMessage = `Failed to load HTML file: ${error.message}`;
+        
+        console.error('[EMAIL] Unexpected error loading HTML file', {
+          emailId: emailData.id,
+          bodyFile: emailData.bodyFile,
+          error: error.message
+        });
+      }
+    }
+
     // Add to cache
     emailCache.set(emailData.id, {
       ...emailData,
@@ -482,6 +534,24 @@ export async function getEmails(limit = 50, offset = 0) {
 }
 
 /**
+ * Formats an HTML load error as styled HTML for display in email body
+ * @param {string} error - Technical error message
+ * @param {string} bodyFile - Path to the HTML file that failed to load
+ * @returns {string} Formatted HTML error message
+ * @private
+ */
+function formatHtmlLoadError(error, bodyFile) {
+  return `
+    <div style="padding: 20px; background-color: #2d2d2d; border-left: 4px solid #ff6b6b; color: #e0e0e0;">
+      <h3 style="color: #ff6b6b; margin-bottom: 12px;">⚠️ Failed to Load Email Template</h3>
+      <p style="margin-bottom: 8px;">The email template file could not be loaded.</p>
+      <p style="margin-bottom: 8px;"><strong>File:</strong> <code style="background-color: #1e1e1e; padding: 2px 6px; border-radius: 3px;">${bodyFile}</code></p>
+      <p style="margin-bottom: 0;"><strong>Error:</strong> ${error}</p>
+    </div>
+  `;
+}
+
+/**
  * Gets a single email by ID
  * @param {string} emailId - Email ID to retrieve
  * @returns {Promise<Object|null>} Email object or null if not found
@@ -504,12 +574,33 @@ export async function getEmailById(emailId) {
       return null;
     }
 
+    // Create a copy to avoid modifying the cached email
+    const emailData = { ...email };
+    
+    // Replace body with HTML content if available
+    if (emailData._htmlContent) {
+      emailData.body = emailData._htmlContent;
+      emailData.bodyType = 'html'; // Treat as HTML for rendering
+    } else if (emailData._htmlLoadError) {
+      // Replace body with formatted error message
+      emailData.body = formatHtmlLoadError(emailData._htmlLoadError, emailData.bodyFile);
+      emailData.bodyType = 'html'; // Render error as HTML
+    }
+    
+    // Remove internal fields before returning
+    delete emailData._htmlContent;
+    delete emailData._htmlFilePath;
+    delete emailData._htmlLoadError;
+    delete emailData._htmlErrorMessage;
+    delete emailData._filePath;
+    delete emailData._fileName;
+
     console.log('[EMAIL] Retrieved email', {
       emailId,
-      subject: email.subject
+      subject: emailData.subject
     });
 
-    return email;
+    return emailData;
   } catch (error) {
     console.error('[EMAIL] Failed to get email by ID', {
       emailId,
@@ -709,60 +800,82 @@ export function watchInboxDirectory(callback) {
     // Store callback
     watcherCallback = callback;
 
-    // Initialize chokidar watcher with Windows-compatible configuration
-    try {
-      // Watch the directory instead of glob pattern for better compatibility
-      watcher = chokidar.watch(inboxPath, {
-        persistent: true,
-        ignoreInitial: true, // Don't trigger for existing files
-        ignored: /(^|[\/\\])\../, // Ignore dotfiles
-        awaitWriteFinish: {
-          stabilityThreshold: 200, // Wait 200ms for file to stabilize (increased for Windows)
-          pollInterval: 100 // Poll every 100ms (increased for Windows)
-        },
-        depth: 0, // Don't watch subdirectories
-        // Windows-specific optimizations
-        usePolling: false, // Use native fs.watch on Windows (more efficient)
-        alwaysStat: false, // Don't stat files unnecessarily
-        atomic: true, // Handle atomic writes (common on Windows)
-        // Increase stability for Windows file system events
-        disableGlobbing: true // Disable globbing since we're watching a directory
-      });
-    } catch (error) {
-      console.error('[EMAIL] Failed to create file watcher', {
-        error: error.message,
-        errorCode: EMAIL_ERROR_CODES.WATCHER_ERROR
-      });
-      return {
-        success: false,
-        error: EMAIL_ERROR_CODES.WATCHER_ERROR,
-        message: `Failed to create file watcher: ${error.message}`
-      };
-    }
+    // Create a promise that resolves when watcher is ready
+    watcherReadyPromise = new Promise((resolve) => {
+      // Initialize chokidar watcher with cross-platform configuration
+      try {
+        // Watch the directory instead of glob pattern for better compatibility
+        watcher = chokidar.watch(inboxPath, {
+          persistent: true,
+          ignoreInitial: true, // Don't trigger for existing files
+          ignored: /(^|[\/\\])\../, // Ignore dotfiles
+          awaitWriteFinish: {
+            stabilityThreshold: 100, // Wait 100ms for file to stabilize
+            pollInterval: 50 // Poll every 50ms
+          },
+          depth: 0, // Don't watch subdirectories
+          // Cross-platform optimizations
+          usePolling: false, // Use native fs.watch (more efficient)
+          alwaysStat: true, // Stat files to ensure they're complete
+          atomic: true, // Handle atomic writes
+          disableGlobbing: true // Disable globbing since we're watching a directory
+        });
+        
+        // Resolve the promise when watcher is ready
+        watcher.on('ready', () => {
+          watcherReady = true;
+          console.log('[EMAIL] Inbox directory watcher ready and monitoring', { 
+            inboxPath,
+            watchedPaths: watcher.getWatched()
+          });
+          resolve();
+        });
+      } catch (error) {
+        console.error('[EMAIL] Failed to create file watcher', {
+          error: error.message,
+          errorCode: EMAIL_ERROR_CODES.WATCHER_ERROR
+        });
+        resolve(); // Resolve anyway to not block
+        return {
+          success: false,
+          error: EMAIL_ERROR_CODES.WATCHER_ERROR,
+          message: `Failed to create file watcher: ${error.message}`
+        };
+      }
+    });
 
     // Handle new email files
     watcher.on('add', async (filePath) => {
       // Only process .json files
       if (!filePath.endsWith('.json')) {
+        console.log('[EMAIL] Ignoring non-JSON file', { filePath });
         return;
       }
       
       console.log('[EMAIL] New email file detected', { filePath });
+      console.log('[EMAIL] Current cache size before add:', emailCache.size);
+      
       try {
         await loadEmailFile(filePath);
         
         const fileName = path.basename(filePath);
+        console.log('[EMAIL] Email file loaded successfully', { fileName, cacheSize: emailCache.size });
         
         // Trigger inbox changed callback
         triggerInboxChanged('add', fileName);
+        console.log('[EMAIL] Triggered inbox changed callback');
         
         if (watcherCallback) {
+          console.log('[EMAIL] Calling watcher callback');
           watcherCallback('add', fileName);
+        } else {
+          console.warn('[EMAIL] No watcher callback registered');
         }
       } catch (error) {
         console.error('[EMAIL] Error processing new email file', {
           filePath,
-          error: error.message
+          error: error.message,
+          stack: error.stack
         });
       }
     });
@@ -833,6 +946,7 @@ export function watchInboxDirectory(callback) {
     watcher.on('error', (error) => {
       console.error('[EMAIL] Inbox watcher error', {
         error: error.message,
+        stack: error.stack,
         errorCode: EMAIL_ERROR_CODES.WATCHER_ERROR,
         userMessage: 'Email monitoring encountered an error. New emails may not appear automatically.'
       });
@@ -933,6 +1047,25 @@ export function cleanupOldDirectories() {
  */
 export function getInboxPath() {
   return inboxPath;
+}
+
+/**
+ * Waits for the inbox watcher to be ready
+ * @returns {Promise<void>} Promise that resolves when watcher is ready
+ */
+export async function waitForWatcherReady() {
+  if (watcherReady) {
+    console.log('[EMAIL] Watcher already ready');
+    return;
+  }
+  
+  if (watcherReadyPromise) {
+    console.log('[EMAIL] Waiting for watcher to be ready...');
+    await watcherReadyPromise;
+    console.log('[EMAIL] Watcher is now ready');
+  } else {
+    console.warn('[EMAIL] No watcher initialized, cannot wait for ready state');
+  }
 }
 
 /**
