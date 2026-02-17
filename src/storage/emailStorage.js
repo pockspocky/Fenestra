@@ -495,27 +495,92 @@ export async function getEmails(limit = 50, offset = 0) {
       offset = 0;
     }
 
-    // Convert cache to array and sort by timestamp descending
-    const emails = Array.from(emailCache.values())
-      .sort((a, b) => {
+    // Check if inbox is initialized
+    if (!inboxPath) {
+      console.error('[EMAIL] Cannot get emails - inbox not initialized');
+      return [];
+    }
+
+    // Read emails directly from filesystem to ensure fresh data
+    const emails = [];
+    
+    try {
+      const files = await fs.readdir(inboxPath);
+      const jsonFiles = files.filter(file => file.endsWith('.json'));
+
+      console.log('[EMAIL] Reading emails from filesystem', {
+        inboxPath,
+        fileCount: jsonFiles.length
+      });
+
+      for (const file of jsonFiles) {
         try {
-          const dateA = new Date(a.timestamp);
-          const dateB = new Date(b.timestamp);
-          return dateB - dateA; // Descending order
+          const filePath = joinPaths(inboxPath, file);
+          const fileContent = await fs.readFile(filePath, 'utf8');
+          const emailData = JSON.parse(fileContent);
+          
+          // Validate email FIRST before adding any extra properties
+          const validation = validateEmailJson(emailData);
+          if (validation.isValid) {
+            // Create email object with base data
+            const email = {
+              ...emailData,
+              _filePath: filePath,
+              _fileName: file
+            };
+            
+            // Load HTML file if needed (after validation)
+            if (emailData.bodyType === 'html-file' && emailData.bodyFile) {
+              try {
+                const projectRoot = path.resolve(process.cwd());
+                const templatesDir = path.join(projectRoot, 'game-data', 'emails', 'templates');
+                const htmlResult = await loadHtmlFile(emailData.bodyFile, projectRoot, templatesDir);
+                
+                if (htmlResult.success) {
+                  email._htmlContent = htmlResult.content;
+                  email._htmlFilePath = htmlResult.filePath;
+                } else {
+                  email._htmlLoadError = htmlResult.error;
+                  email._htmlErrorMessage = htmlResult.userMessage;
+                }
+              } catch (error) {
+                email._htmlLoadError = error.message;
+                email._htmlErrorMessage = `Failed to load HTML file: ${error.message}`;
+              }
+            }
+            
+            emails.push(email);
+          }
         } catch (error) {
-          console.warn('[EMAIL] Error sorting emails by timestamp', {
-            emailA: a.id,
-            emailB: b.id,
+          console.warn('[EMAIL] Failed to read email file', {
+            file,
             error: error.message
           });
-          return 0;
         }
+      }
+    } catch (error) {
+      console.error('[EMAIL] Failed to read inbox directory', {
+        inboxPath,
+        error: error.message
       });
+      return [];
+    }
+
+    // Sort by timestamp descending
+    emails.sort((a, b) => {
+      try {
+        const dateA = new Date(a.timestamp);
+        const dateB = new Date(b.timestamp);
+        return dateB - dateA;
+      } catch (error) {
+        return 0;
+      }
+    });
 
     // Apply pagination
     const paginatedEmails = emails.slice(offset, offset + limit);
 
-    console.log('[EMAIL] Retrieved emails', {
+    console.log('[EMAIL] Retrieved emails from filesystem', {
       total: emails.length,
       limit,
       offset,
@@ -712,8 +777,13 @@ export async function markEmailAsRead(emailId) {
     // Update JSON file
     const filePath = email._filePath;
     const emailDataToSave = { ...email };
+    // Remove all internal metadata properties before saving
     delete emailDataToSave._filePath;
     delete emailDataToSave._fileName;
+    delete emailDataToSave._htmlContent;
+    delete emailDataToSave._htmlFilePath;
+    delete emailDataToSave._htmlLoadError;
+    delete emailDataToSave._htmlErrorMessage;
 
     try {
       // Check write permission before attempting
