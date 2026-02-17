@@ -8,6 +8,7 @@ import { deserializeWindow } from '../storage/windowStorage.js';
 import { importRelationshipState } from '../systems/doorKeySystem.js';
 import { importGameLogicState } from '../systems/gameLogic.js';
 import { getGameDataDirectory } from '../core/config.js';
+import { runInitializationSequence } from '../sequences/gameInitialization.js';
 
 // Start menu state
 let startMenuWindow = null;
@@ -250,9 +251,9 @@ export async function handleNewGame() {
       }
     }
     
-    // Initialize demo content after storage is cleared (Requirements 1.3, 5.3)
-    console.log('[START_MENU] Creating demo content');
-    createDemoDoorsAndKeys();
+    // Run initialization sequence after storage is cleared (Requirements 2.1, 2.2, 2.3, 2.4)
+    console.log('[START_MENU] Running initialization sequence');
+    await runInitializationSequence();
     
     // Notify that game has started
     if (gameStartedCallback) {

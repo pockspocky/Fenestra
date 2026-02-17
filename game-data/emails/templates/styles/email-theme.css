@@ -1,0 +1,76 @@
+/* Email Theme Stylesheet - Demonstrates CSS asset loading */
+
+/* This file is loaded via relative path from welcome-with-assets.html */
+
+/* Additional styling for email templates */
+.email-container {
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* Smooth transitions for interactive elements */
+* {
+  transition: transform 0.2s ease, background-color 0.2s ease;
+}
+
+/* Custom scrollbar for email content */
+.welcome-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.welcome-content::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+
+.welcome-content::-webkit-scrollbar-thumb {
+  background: #667eea;
+  border-radius: 4px;
+}
+
+.welcome-content::-webkit-scrollbar-thumb:hover {
+  background: #5568d3;
+}
+
+/* Responsive design for smaller screens */
+@media (max-width: 600px) {
+  .email-container {
+    margin: 0;
+    border-radius: 0;
+  }
+  
+  .welcome-banner {
+    border-radius: 0;
+  }
+  
+  .asset-grid {
+    grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  }
+}
+
+/* Animation for asset items */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.asset-item {
+  animation: fadeIn 0.5s ease-out;
+}
+
+/* Print styles */
+@media print {
+  .email-container {
+    box-shadow: none;
+  }
+  
+  .welcome-banner {
+    background: #667eea !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
