@@ -1,0 +1,10 @@
+{
+  "id": "email-001",
+  "senderName": "System Administrator",
+  "senderEmail": "admin@fenestra.game",
+  "subject": "Welcome to Fenestra",
+  "bodyType": "html-file",
+  "bodyFile": "welcome.html",
+  "timestamp": "2025-02-14T20:00:00.000Z",
+  "isRead": false
+}

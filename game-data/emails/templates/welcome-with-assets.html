@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to Fenestra</title>
+  <link rel="stylesheet" href="styles/email-theme.css">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #1a1a1a;
+      color: #e0e0e0;
+    }
+    
+    .email-container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #2d2d2d;
+    }
+    
+    .welcome-banner {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 40px 20px;
+      text-align: center;
+      color: white;
+      border-radius: 8px 8px 0 0;
+    }
+    
+    .logo-container {
+      margin-bottom: 20px;
+    }
+    
+    .logo-image {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background-color: rgba(255, 255, 255, 0.1);
+      padding: 10px;
+    }
+    
+    .welcome-banner h1 {
+      margin: 0 0 10px 0;
+      font-size: 32px;
+      font-weight: 600;
+    }
+    
+    .welcome-banner p {
+      margin: 0;
+      font-size: 18px;
+      opacity: 0.9;
+    }
+    
+    .welcome-content {
+      padding: 30px 20px;
+      line-height: 1.6;
+    }
+    
+    .asset-demo {
+      background-color: #3a3a3a;
+      padding: 20px;
+      border-radius: 8px;
+      margin: 20px 0;
+      border-left: 4px solid #4caf50;
+    }
+    
+    .asset-demo h3 {
+      color: #4caf50;
+      margin-top: 0;
+    }
+    
+    .asset-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+      gap: 15px;
+      margin-top: 15px;
+    }
+    
+    .asset-item {
+      text-align: center;
+      padding: 10px;
+      background-color: #2d2d2d;
+      border-radius: 6px;
+    }
+    
+    .asset-item img {
+      width: 60px;
+      height: 60px;
+      margin-bottom: 8px;
+    }
+    
+    .asset-label {
+      font-size: 12px;
+      color: #a0a0a0;
+    }
+  </style>
+</head>
+<body>
+  <div class="email-container">
+    <!-- Banner Section with Image Asset -->
+    <div class="welcome-banner">
+      <div class="logo-container">
+        <!-- Using relative path to demonstrate asset resolution -->
+        <img src="images/placeholder.svg" alt="Fenestra Logo" class="logo-image">
+      </div>
+      <h1>Welcome to Fenestra!</h1>
+      <p>Demonstrating asset path resolution</p>
+    </div>
+    
+    <!-- Main Content -->
+    <div class="welcome-content">
+      <h2>📁 Asset Path Resolution Demo</h2>
+      <p>This email template demonstrates how relative paths to images, CSS, and scripts are resolved correctly when loaded from external HTML files.</p>
+      
+      <div class="asset-demo">
+        <h3>🖼️ Relative Asset Paths</h3>
+        <p>The following assets are loaded using relative paths:</p>
+        
+        <div class="asset-grid">
+          <div class="asset-item">
+            <img src="images/placeholder.svg" alt="Logo">
+            <div class="asset-label">images/placeholder.svg</div>
+          </div>
+          <div class="asset-item">
+            <img src="images/placeholder.svg" alt="Icon 1">
+            <div class="asset-label">Relative path</div>
+          </div>
+          <div class="asset-item">
+            <img src="images/placeholder.svg" alt="Icon 2">
+            <div class="asset-label">Auto-resolved</div>
+          </div>
+        </div>
+        
+        <p style="margin-top: 15px; font-size: 14px; color: #a0a0a0;">
+          ℹ️ All image paths are relative to this HTML file's location and are automatically resolved by the email system.
+        </p>
+      </div>
+      
+      <h3>✨ Features Demonstrated:</h3>
+      <ul style="list-style: none; padding-left: 0;">
+        <li style="padding: 8px 0;">✓ Relative image paths (images/placeholder.svg)</li>
+        <li style="padding: 8px 0;">✓ Relative CSS paths (styles/email-theme.css)</li>
+        <li style="padding: 8px 0;">✓ Inline scripts with event handlers</li>
+        <li style="padding: 8px 0;">✓ External script loading (scripts/demo.js)</li>
+      </ul>
+      
+      <div style="background-color: #3a3a3a; padding: 15px; border-radius: 6px; margin-top: 20px;">
+        <p style="margin: 0; font-size: 14px;">
+          <strong>Note:</strong> This template is located at <code style="background-color: #2d2d2d; padding: 2px 6px; border-radius: 3px;">game-data/emails/templates/welcome-with-assets.html</code>
+        </p>
+        <p style="margin: 10px 0 0 0; font-size: 14px;">
+          All asset paths are resolved relative to this file's directory.
+        </p>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Inline script demonstrating functionality -->
+  <script>
+    console.log('Welcome email with assets loaded successfully');
+    console.log('Asset resolution: All relative paths are resolved correctly');
+    
+    // Log all images and their sources
+    const images = document.querySelectorAll('img');
+    console.log(`Found ${images.length} images in the template:`);
+    images.forEach((img, index) => {
+      console.log(`  Image ${index + 1}: ${img.src}`);
+    });
+    
+    // Demonstrate DOM manipulation
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('DOM loaded - all assets should be resolved');
+      
+      // Add click handlers to asset items
+      const assetItems = document.querySelectorAll('.asset-item');
+      assetItems.forEach(item => {
+        item.style.cursor = 'pointer';
+        item.addEventListener('click', () => {
+          const label = item.querySelector('.asset-label').textContent;
+          console.log(`Asset clicked: ${label}`);
+          item.style.transform = 'scale(1.1)';
+          setTimeout(() => {
+            item.style.transform = 'scale(1)';
+          }, 200);
+        });
+      });
+    });
+  </script>
+  
+  <!-- External script reference (relative path) -->
+  <script src="scripts/demo.js"></script>
+</body>
+</html>
