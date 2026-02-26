@@ -1,0 +1,9 @@
+{
+  "clicked": true,
+  "timestamp": "2026-02-26T16:12:47.336Z",
+  "windowsCreated": {
+    "door": "welcome-door",
+    "key": "welcome-key"
+  },
+  "version": 1
+}
