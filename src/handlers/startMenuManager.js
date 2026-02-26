@@ -16,11 +16,12 @@ let isMenuActive = false;
 let gameStartedCallback = null;
 
 /**
- * Clear all files from the storage directory
+ * Clear all files from storage, state, and emails directories
+ * This ensures a clean slate when starting a new game
  * @returns {Promise<Object>} Result object with files removed count and any errors
  */
 export async function clearStorageDirectory() {
-  console.log('[START_MENU] Clearing storage directory');
+  console.log('[START_MENU] Clearing storage, state, and emails directories');
   
   const result = {
     success: true,
@@ -29,40 +30,48 @@ export async function clearStorageDirectory() {
   };
   
   try {
-    // Get storage directory path
     const gameDataDir = getGameDataDirectory();
-    const storageDir = path.join(gameDataDir, '.fenestra-storage');
     
-    console.log(`[START_MENU] Storage directory path: ${storageDir}`);
+    // Define directories to clear
+    const directoriesToClear = [
+      { path: path.join(gameDataDir, '.fenestra-storage'), name: 'game storage' },
+      { path: path.join(gameDataDir, 'state'), name: 'state' },
+      { path: path.join(gameDataDir, 'emails'), name: 'emails' }
+    ];
     
-    // Check if directory exists
-    if (!fs.existsSync(storageDir)) {
-      console.log('[START_MENU] Storage directory does not exist, nothing to clear');
-      return result;
-    }
-    
-    // Read all files in directory
-    const files = fs.readdirSync(storageDir);
-    console.log(`[START_MENU] Found ${files.length} files in storage directory`);
-    
-    // Delete each file individually
-    for (const file of files) {
-      const filePath = path.join(storageDir, file);
+    // Clear each directory
+    for (const dir of directoriesToClear) {
+      console.log(`[START_MENU] Clearing ${dir.name} directory: ${dir.path}`);
       
-      try {
-        // Check if it's a file (not a directory)
-        const stats = fs.statSync(filePath);
-        if (stats.isFile()) {
-          fs.unlinkSync(filePath);
-          result.filesRemoved++;
-          console.log(`[START_MENU] Deleted file: ${file}`);
-        } else {
-          console.log(`[START_MENU] Skipping non-file: ${file}`);
+      // Check if directory exists
+      if (!fs.existsSync(dir.path)) {
+        console.log(`[START_MENU] ${dir.name} directory does not exist, skipping`);
+        continue;
+      }
+      
+      // Read all files in directory
+      const files = fs.readdirSync(dir.path);
+      console.log(`[START_MENU] Found ${files.length} files in ${dir.name} directory`);
+      
+      // Delete each file individually
+      for (const file of files) {
+        const filePath = path.join(dir.path, file);
+        
+        try {
+          // Check if it's a file (not a directory)
+          const stats = fs.statSync(filePath);
+          if (stats.isFile()) {
+            fs.unlinkSync(filePath);
+            result.filesRemoved++;
+            console.log(`[START_MENU] Deleted ${dir.name} file: ${file}`);
+          } else {
+            console.log(`[START_MENU] Skipping non-file in ${dir.name}: ${file}`);
+          }
+        } catch (error) {
+          const errorMsg = `Failed to delete ${file} from ${dir.name}: ${error.message}`;
+          result.errors.push(errorMsg);
+          console.error(`[START_MENU] ${errorMsg}`);
         }
-      } catch (error) {
-        const errorMsg = `Failed to delete ${file}: ${error.message}`;
-        result.errors.push(errorMsg);
-        console.error(`[START_MENU] ${errorMsg}`);
       }
     }
     
@@ -76,7 +85,7 @@ export async function clearStorageDirectory() {
     return result;
     
   } catch (error) {
-    console.error('[START_MENU] Failed to clear storage directory:', error);
+    console.error('[START_MENU] Failed to clear storage directories:', error);
     result.success = false;
     result.errors.push(`Storage clearing failed: ${error.message}`);
     return result;
