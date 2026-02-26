@@ -47,6 +47,11 @@ import {
 } from './src/handlers/ipcHandlers.js';
 
 import {
+  initializeWelcomeButtonHandlers,
+  cleanupWelcomeButtonHandlers
+} from './src/handlers/welcomeButtonHandler.js';
+
+import {
   getRelationsDebugInfo
 } from './src/systems/doorKeySystem.js';
 
@@ -146,6 +151,15 @@ async function initializeApp() {
 
   // 初始化 IPC 处理程序
   initializeIpcHandlers();
+
+  // 初始化欢迎按钮处理程序
+  console.log('[MAIN] Initializing welcome button handlers...');
+  const welcomeButtonResult = initializeWelcomeButtonHandlers();
+  if (welcomeButtonResult.success) {
+    console.log('[MAIN] Welcome button handlers initialized successfully');
+  } else {
+    console.error('[MAIN] Welcome button handlers initialization failed');
+  }
 
   // 初始化邮件系统
   const emailResult = await initializeEmailSystem();
@@ -284,6 +298,11 @@ function setupAppEventListeners() {
 
     // 清理 IPC 处理程序
     cleanupIpcHandlers();
+
+    // 清理欢迎按钮处理程序
+    console.log('[APP] Cleaning up welcome button handlers...');
+    cleanupWelcomeButtonHandlers();
+    console.log('[APP] Welcome button handlers cleaned up successfully');
 
     // Cleanup security components
     console.log('[APP] Cleaning up security components...');

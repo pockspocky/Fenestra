@@ -173,7 +173,8 @@ export function initializeIpcHandlers() {
     }
 
     console.debug(`[IPC] Starting window creation, ID: ${id}`);
-    const win = createWindow(id, { ...bounds, title });
+    // IPC-created windows explicitly use 'generic' fRole (can be overridden by specialized creation functions)
+    const win = createWindow(id, { ...bounds, title, fRole: 'generic' });
     const response = { ok: true, id, webContentsId: win.webContents.id };
 
     console.debug('[IPC] Window creation response:', response);
