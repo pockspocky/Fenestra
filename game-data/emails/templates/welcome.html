@@ -124,6 +124,18 @@
       transform: translateY(0);
     }
     
+    .cta-button.disabled {
+      background-color: #666;
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    
+    .cta-button.disabled:hover {
+      background-color: #666;
+      transform: none;
+      box-shadow: none;
+    }
+    
     .feature-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -250,6 +262,11 @@
         </div>
       </div>
       
+      <!-- Welcome Action Button -->
+      <div style="text-align: center; margin: 30px 0;">
+        <button id="welcomeActionButton" class="cta-button">Begin Your Journey</button>
+      </div>
+      
       <!-- Interactive Demo Section -->
       <div class="interactive-demo">
         <h3 style="margin-top: 0;">🎯 Interactive Demo</h3>
@@ -278,6 +295,8 @@
   
   <!-- Inline Scripts to demonstrate functionality -->
   <script>
+    console.log('[WELCOME_EMAIL] Script starting to execute');
+    
     // Counter functionality
     let counter = 0;
     const counterDisplay = document.getElementById('counter');
@@ -351,7 +370,136 @@
         width: document.querySelector('.email-container').offsetWidth,
         height: document.querySelector('.email-container').offsetHeight
       });
+      
+      // Initialize welcome button state
+      initializeWelcomeButton();
     });
+    
+    // Local flag to prevent double-clicks
+    let buttonClicked = false;
+    
+    // Function to disable the welcome button
+    function disableButton() {
+      const button = document.getElementById('welcomeActionButton');
+      if (button) {
+        button.disabled = true;
+        button.textContent = 'Journey Started';
+        button.classList.add('disabled');
+        console.log('[WELCOME_BUTTON] Button disabled');
+      }
+    }
+    
+    // Function to enable the welcome button (for error recovery)
+    function enableButton() {
+      const button = document.getElementById('welcomeActionButton');
+      if (button) {
+        button.disabled = false;
+        button.textContent = 'Begin Your Journey';
+        button.classList.remove('disabled');
+        console.log('[WELCOME_BUTTON] Button enabled');
+      }
+    }
+    
+    // Function to show error message to user
+    function showError(message) {
+      console.error('[WELCOME_BUTTON] Error:', message);
+      // Display error to user (simple alert for now)
+      alert(message || 'An error occurred. Please try again.');
+    }
+    
+    // Handle button click
+    async function handleButtonClick() {
+      // Prevent double-clicks with local flag
+      if (buttonClicked) {
+        console.log('[WELCOME_BUTTON] Click ignored - button already clicked');
+        return;
+      }
+      
+      console.log('[WELCOME_BUTTON] Button clicked');
+      
+      // Set flag and disable button immediately (optimistic UI)
+      buttonClicked = true;
+      disableButton();
+      
+      try {
+        // Send message to parent window (email.html) to handle the click
+        // We're in an iframe, so we need to use postMessage to communicate with parent
+        console.log('[WELCOME_BUTTON] Sending click message to parent window');
+        window.parent.postMessage({
+          type: 'welcome-button-click'
+        }, '*');
+        
+        // Wait for response from parent window
+        // The response will come via message event listener
+      } catch (error) {
+        // Handle errors
+        console.error('[WELCOME_BUTTON] Error sending message:', error);
+        buttonClicked = false;
+        enableButton();
+        showError('Failed to communicate with game. Please try again.');
+      }
+    }
+    
+    // Listen for messages from parent window (responses to our requests)
+    window.addEventListener('message', (event) => {
+      console.log('[WELCOME_BUTTON] Received message from parent:', event.data);
+      
+      if (event.data.type === 'welcome-button-state') {
+        // Response to get-state request
+        const state = event.data.state;
+        console.log('[WELCOME_BUTTON] State loaded:', state);
+        
+        if (state.clicked === true) {
+          buttonClicked = true;
+          disableButton();
+        } else {
+          console.log('[WELCOME_BUTTON] Button remains enabled');
+        }
+      } else if (event.data.type === 'welcome-button-click-result') {
+        // Response to click request
+        const result = event.data.result;
+        console.log('[WELCOME_BUTTON] Click result:', result);
+        
+        if (result.success === false) {
+          // Revert button state on error
+          console.error('[WELCOME_BUTTON] Click failed:', result.message);
+          buttonClicked = false;
+          enableButton();
+          showError(result.userMessage || result.message);
+        } else {
+          // Success - keep button disabled
+          console.log('[WELCOME_BUTTON] Windows created successfully');
+        }
+      }
+    });
+    
+    // Initialize welcome button state on page load
+    async function initializeWelcomeButton() {
+      try {
+        console.log('[WELCOME_BUTTON] Initializing button state...');
+        
+        // Request current button state from parent window
+        console.log('[WELCOME_BUTTON] Sending get-state message to parent window');
+        window.parent.postMessage({
+          type: 'welcome-button-get-state'
+        }, '*');
+        
+        // Add click event listener to the button
+        const button = document.getElementById('welcomeActionButton');
+        if (button) {
+          button.addEventListener('click', handleButtonClick);
+          console.log('[WELCOME_BUTTON] Click handler attached');
+        }
+      } catch (error) {
+        console.error('[WELCOME_BUTTON] Failed to initialize button state:', error);
+        // On error, keep button enabled (fail-safe)
+        // Still attach click handler to allow retry
+        const button = document.getElementById('welcomeActionButton');
+        if (button) {
+          button.addEventListener('click', handleButtonClick);
+        }
+      }
+    }
   </script>
 </body>
 </html>

@@ -984,6 +984,51 @@
     window.addEventListener('DOMContentLoaded', () => {
       console.log('[EMAIL] DOM loaded, initializing...');
       initializeEmailSystem();
+      
+      // Listen for messages from email content iframes (e.g., welcome button)
+      window.addEventListener('message', async (event) => {
+        console.log('[EMAIL] Received message from iframe:', event.data);
+        
+        if (event.data.type === 'welcome-button-get-state') {
+          // Handle get-state request from iframe
+          try {
+            const state = await window.api.invoke('welcome-button:get-state');
+            console.log('[EMAIL] Sending state to iframe:', state);
+            
+            // Send response back to iframe
+            event.source.postMessage({
+              type: 'welcome-button-state',
+              state: state
+            }, '*');
+          } catch (error) {
+            console.error('[EMAIL] Error getting button state:', error);
+            // Send error response
+            event.source.postMessage({
+              type: 'welcome-button-state',
+              state: { clicked: false, error: error.message }
+            }, '*');
+          }
+        } else if (event.data.type === 'welcome-button-click') {
+          // Handle click request from iframe
+          try {
+            const result = await window.api.invoke('welcome-button:click');
+            console.log('[EMAIL] Sending click result to iframe:', result);
+            
+            // Send response back to iframe
+            event.source.postMessage({
+              type: 'welcome-button-click-result',
+              result: result
+            }, '*');
+          } catch (error) {
+            console.error('[EMAIL] Error handling button click:', error);
+            // Send error response
+            event.source.postMessage({
+              type: 'welcome-button-click-result',
+              result: { success: false, message: error.message }
+            }, '*');
+          }
+        }
+      });
     });
 
     console.log('[EMAIL] Email window script loaded');
