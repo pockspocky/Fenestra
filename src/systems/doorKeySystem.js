@@ -201,12 +201,6 @@ export function handleFailedOpen(doorId, keyId) {
       if (progress && progress.progress > 0) {
         resetMultiKeyProgress(doorId);
         
-        // Update door title to remove progress indicator
-        const currentTitle = doorWin.getTitle();
-        const baseTitle = currentTitle.replace(/\s*\([^)]*\)$/, ''); // Remove existing state
-        const resetTitle = `${baseTitle} (locked)`;
-        doorWin.setTitle(resetTitle);
-        
         // Update door visual state to closed and locked
         setDoorState(doorId, 'closed');
         setDoorLocked(doorId, true);
@@ -364,8 +358,9 @@ export function handleDoorToggle(doorId, keyId) {
   
   if (!doorWin) return;
   
-  const currentTitle = doorWin.getTitle();
-  const isCurrentlyOpen = currentTitle.includes('(opened)');
+  // Use proper door state management API instead of parsing title (Requirements 4.1, 2.7, 9.4)
+  const currentState = getDoorStateValue(doorId);
+  const isCurrentlyOpen = currentState === 'open';
 
   // 钥匙弹开
   if (keyWin) {
@@ -410,10 +405,7 @@ export function handleDoorToggle(doorId, keyId) {
           doorState.timeoutId = null;
         }
         
-        // 更新门标题
-        doorWin.setTitle(currentTitle.replace('(locked)', '(opened)').replace('(encrypted)', '(opened)'));
-        
-        // Update door visual state
+        // Update door visual state (Requirements 4.6, 4.7 - titles remain unchanged)
         setDoorState(doorId, 'open');
         setDoorLocked(doorId, false);
         
@@ -455,11 +447,7 @@ export function handleDoorToggle(doorId, keyId) {
         const progressMessage = getFormattedMessage('progress_update', progressVariables, 
           `Key ${keyId} accepted. Need ${nextProgress.nextKey} next. (${doorState.usedKeys.length}/${doorState.requiredKeys.length})`);
         
-        // 更新门标题显示进度
-        const baseTitle = currentTitle.replace(/\s*\([^)]*\)$/, ''); // 移除现有状态
-        const progressTitle = `${baseTitle} (${doorState.usedKeys.length}/${doorState.requiredKeys.length} keys)`;
-        doorWin.setTitle(progressTitle);
-        
+        // Display progress in dialog (Requirements 4.6, 4.7 - titles remain unchanged)
         dialog.showMessageBox(doorWin, {
           type: 'info',
           title: 'Multi-Key Progress',
@@ -495,8 +483,7 @@ export function handleDoorToggle(doorId, keyId) {
       return; // 多钥匙门处理完成
     }
     
-    // 普通门开门逻辑
-    doorWin.setTitle(currentTitle.replace('(locked)', '(opened)').replace('(encrypted)', '(opened)'));
+    // 普通门开门逻辑 (Requirements 4.6, 4.7 - titles remain unchanged)
     
     // 更新状态
     doorStates.set(doorId, { isOpen: true, lastKeyUsed: keyId });
@@ -568,9 +555,7 @@ export function handleDoorToggle(doorId, keyId) {
       console.log(`[MULTI_KEY] Door '${doorId}' closed, progress reset`);
     }
     
-    doorWin.setTitle(currentTitle.replace('(opened)', '(locked)').replace('(opened)', '(encrypted)'));
-    
-    // 更新状态
+    // 更新状态 (Requirements 4.6, 4.7 - titles remain unchanged)
     if (doorState) {
       doorState.isOpen = false;
       doorState.lastKeyUsed = keyId;

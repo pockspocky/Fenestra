@@ -6,7 +6,9 @@ import {
   createPicture,
   createContentWindow,
   createLensWindow,
-  createDoor
+  createDoor,
+  VALID_FROLES,
+  sanitizeFRole
 } from '../systems/windowManager.js';
 import { resolveKeyImagePath } from '../utils/assetPathResolver.js';
 import { getLensSystemInfo } from '../systems/lensSystem.js';
@@ -99,6 +101,9 @@ export function getWindowSerializationData(windowId) {
     const contentConfig = extractContentConfig(windowId, win, windowType);
     const specialConfig = extractSpecialConfig(windowId, win, windowType);
 
+    // Get fRole property (defaults to 'generic' if not set)
+    const fRole = win.fRole || 'generic';
+
     const serializationData = {
       windowConfig: {
         id: windowId,
@@ -121,10 +126,11 @@ export function getWindowSerializationData(windowId) {
       },
       contentConfig: contentConfig,
       specialConfig: specialConfig,
-      windowType: windowType
+      windowType: windowType,
+      fRole: fRole
     };
 
-    console.debug(`[STORAGE] Successfully extracted data for window ${windowId}, type: ${windowType}`);
+    console.debug(`[STORAGE] Successfully extracted data for window ${windowId}, type: ${windowType}, fRole: ${fRole}`);
     return serializationData;
 
   } catch (error) {
@@ -140,28 +146,13 @@ export function getWindowSerializationData(windowId) {
  * @returns {string} Window type
  */
 function determineWindowType(windowId, win) {
-  // Check for specific window types based on ID patterns
-  if (windowId.startsWith('door')) return 'door';
-  if (windowId.startsWith('key')) return 'key';
-  if (windowId.startsWith('picture')) return 'picture';
-  if (windowId.startsWith('content')) return 'content';
-  if (windowId.startsWith('lens')) return 'lens';
-  if (windowId === 'terminal') return 'terminal';
-  if (windowId === 'desktop') return 'desktop';
-  if (windowId === 'video') return 'video';
-
-  // Try to determine from URL
-  try {
-    const url = win.webContents.getURL();
-    if (url.includes('pictureViewer.html')) return 'picture';
-    if (url.includes('contentViewer.html')) return 'content';
-    if (url.includes('lensViewer.html')) return 'lens';
-    if (url.includes('terminal.html')) return 'terminal';
-  } catch (error) {
-    console.debug(`[STORAGE] Could not get URL for window ${windowId}:`, error.message);
-  }
-
-  return 'generic';
+  // Use fRole property directly
+  const fRole = win.fRole || 'generic';
+  
+  console.debug(`[WINDOW_STORAGE] Window ${windowId} has fRole: ${fRole}`);
+  
+  // Validate and sanitize fRole
+  return sanitizeFRole(fRole, `for window ${windowId}`);
 }
 
 /**
@@ -682,6 +673,31 @@ export function deserializeWindow(windowData, options = {}) {
       }
     }
 
+    // Extract and validate fRole from window data (Requirements 2.6, 8.4, 8.5)
+    let fRole = windowData.fRole;
+    
+    // Migration logic for legacy files without fRole
+    if (!fRole) {
+      console.warn(`[STORAGE] Window ${targetId} missing fRole (legacy save file)`);
+      
+      // Attempt to infer fRole from windowType or metadata
+      if (windowData.metadata && windowData.metadata.windowType) {
+        fRole = windowData.metadata.windowType;
+        console.warn(`[STORAGE] Inferred fRole '${fRole}' from windowType for legacy file`);
+      } else if (windowData.windowType) {
+        fRole = windowData.windowType;
+        console.warn(`[STORAGE] Inferred fRole '${fRole}' from windowType for legacy file`);
+      } else {
+        fRole = 'generic';
+        console.warn(`[STORAGE] No windowType available, defaulting to 'generic' for legacy file`);
+      }
+    }
+    
+    // Validate and sanitize fRole
+    fRole = sanitizeFRole(fRole, `in window data for ${targetId}`);
+    
+    console.debug(`[STORAGE] Window ${targetId} will be recreated with fRole: ${fRole}`);
+
     // Validate content files if needed
     if (!skipContentValidation) {
       const contentValidation = validateContentFiles(windowData);
@@ -691,8 +707,8 @@ export function deserializeWindow(windowData, options = {}) {
       }
     }
 
-    // Recreate window based on type
-    const result = recreateWindowByType(targetId, windowData);
+    // Recreate window based on type, passing fRole
+    const result = recreateWindowByType(targetId, windowData, fRole);
 
     if (result.success) {
       console.log(`[STORAGE] Successfully recreated window: ${targetId}`);
@@ -779,13 +795,14 @@ function validateContentFiles(windowData) {
  * Recreate window based on its type
  * @param {string} windowId - Target window ID
  * @param {Object} windowData - Window data
+ * @param {string} fRole - Validated fRole to assign to the recreated window
  * @returns {Object} Recreation result
  */
-function recreateWindowByType(windowId, windowData) {
+function recreateWindowByType(windowId, windowData, fRole) {
   const { metadata, windowConfig } = windowData;
   const windowType = metadata.windowType;
 
-  console.debug(`[STORAGE] Recreating ${windowType} window: ${windowId}`);
+  console.debug(`[STORAGE] Recreating ${windowType} window: ${windowId} with fRole: ${fRole}`);
 
   try {
     let createdWindow = null;
@@ -794,14 +811,14 @@ function recreateWindowByType(windowId, windowData) {
     switch (windowType) {
       case 'picture':
       case 'door':
-        createdWindow = recreatePictureWindow(windowId, windowData);
+        createdWindow = recreatePictureWindow(windowId, windowData, fRole);
         break;
 
       case 'key':
         // Key restoration has its own comprehensive error handling
         // Wrap in try-catch to ensure exceptions don't break the restoration process (Requirement 3.4)
         try {
-          createdWindow = recreateKeyWindow(windowId, windowData);
+          createdWindow = recreateKeyWindow(windowId, windowData, fRole);
           if (!createdWindow) {
             console.error(`[STORAGE] Key window ${windowId} restoration failed, but continuing with other windows`);
             return {
@@ -826,11 +843,11 @@ function recreateWindowByType(windowId, windowData) {
         break;
 
       case 'content':
-        createdWindow = recreateContentWindow(windowId, windowData);
+        createdWindow = recreateContentWindow(windowId, windowData, fRole);
         break;
 
       case 'lens':
-        const lensResult = recreateLensWindow(windowId, windowData);
+        const lensResult = recreateLensWindow(windowId, windowData, fRole);
         if (!lensResult.success) {
           return lensResult;
         }
@@ -843,7 +860,7 @@ function recreateWindowByType(windowId, windowData) {
       case 'video':
       case 'generic':
       default:
-        createdWindow = recreateGenericWindow(windowId, windowData);
+        createdWindow = recreateGenericWindow(windowId, windowData, fRole);
         break;
     }
 
@@ -896,10 +913,13 @@ function recreateWindowByType(windowId, windowData) {
  * Note: Keys are now handled separately by recreateKeyWindow()
  * @param {string} windowId - Window ID
  * @param {Object} windowData - Window data
+ * @param {string} fRole - Validated fRole for the window
  * @returns {BrowserWindow|null} Created window
  */
-function recreatePictureWindow(windowId, windowData) {
+function recreatePictureWindow(windowId, windowData, fRole) {
   const { windowConfig, specialConfig, contentConfig, metadata } = windowData;
+
+  console.debug(`[STORAGE] Recreating picture/door window with fRole: ${fRole}`);
 
   // Check if this is a door window
   const isDoor = metadata.windowType === 'door' || windowId.startsWith('door');
@@ -920,25 +940,16 @@ function recreatePictureWindow(windowId, windowData) {
     let closedImagePath = null;
     let openedImagePath = null;
     
-    // Priority 1: Use restored door state from doorKeySystem (if available)
+    // Use restored door state from doorKeySystem (if available)
     if (doorState) {
       state = doorState.state || (doorState.isOpen ? 'open' : 'closed');
       isLocked = doorState.isLocked !== undefined ? doorState.isLocked : true;
       closedImagePath = doorState.closedImagePath;
       openedImagePath = doorState.openedImagePath;
       console.debug(`[STORAGE] Using restored door state from doorKeySystem:`, { state, isLocked, isEncrypted });
-    } else {
-      // Priority 2: Extract from saved window data
-      // Check if title indicates door was open
-      if (windowConfig.title && windowConfig.title.includes('(opened)')) {
-        state = 'open';
-        isLocked = false;
-      } else if (windowConfig.title && (windowConfig.title.includes('(locked)') || windowConfig.title.includes('(encrypted)'))) {
-        state = 'closed';
-        isLocked = true;
-      }
-      console.debug(`[STORAGE] Extracted door state from window data:`, { state, isLocked, isEncrypted });
     }
+    // Note: Title-based state extraction removed as part of fRole migration (Requirements 2.7, 9.4)
+    // Door state should only come from the proper door state management API
     
     // Extract image paths if not already set
     if (!closedImagePath && specialConfig?.pictureSettings?.imagePath) {
@@ -1143,8 +1154,8 @@ function extractKeyParameters(windowData) {
  * @param {Object} windowData - Window data
  * @returns {BrowserWindow|null} Created window
  */
-function recreateKeyWindow(windowId, windowData) {
-  console.debug(`[STORAGE] Recreating key window: ${windowId}`);
+function recreateKeyWindow(windowId, windowData, fRole) {
+  console.debug(`[STORAGE] Recreating key window: ${windowId} with fRole: ${fRole}`);
   
   try {
     // Extract key-specific parameters from saved window data
@@ -1182,7 +1193,8 @@ function recreateKeyWindow(windowId, windowData) {
       x: bounds.x,
       y: bounds.y,
       title: title,
-      otherContents: htmlContent
+      otherContents: htmlContent,
+      fRole: fRole  // Pass fRole to preserve window type identification
     });
     
     // Verify window was created successfully
@@ -1224,7 +1236,8 @@ function recreateKeyWindow(windowId, windowData) {
         x: bounds.x,
         y: bounds.y,
         title: title,
-        otherContents: fallbackHtmlContent
+        otherContents: fallbackHtmlContent,
+        fRole: fRole  // Pass fRole to preserve window type identification
       });
       
       if (fallbackWindow) {
@@ -1247,7 +1260,8 @@ function recreateKeyWindow(windowId, windowData) {
  * @param {Object} windowData - Window data
  * @returns {BrowserWindow|null} Created window
  */
-function recreateContentWindow(windowId, windowData) {
+function recreateContentWindow(windowId, windowData, fRole) {
+  console.debug(`[STORAGE] Recreating content window with fRole: ${fRole}`);
   const { windowConfig, contentConfig } = windowData;
   const { bounds } = windowConfig;
 
@@ -1278,7 +1292,8 @@ function recreateContentWindow(windowId, windowData) {
  * @param {Object} windowData - Window data
  * @returns {Object} Recreation result with window and warnings
  */
-function recreateLensWindow(windowId, windowData) {
+function recreateLensWindow(windowId, windowData, fRole) {
+  console.debug(`[STORAGE] Recreating lens window with fRole: ${fRole}`);
   const { windowConfig, contentConfig, specialConfig } = windowData;
   const { bounds } = windowConfig;
   const warnings = [];
@@ -1335,7 +1350,8 @@ function recreateLensWindow(windowId, windowData) {
  * @param {Object} windowData - Window data
  * @returns {BrowserWindow|null} Created window
  */
-function recreateGenericWindow(windowId, windowData) {
+function recreateGenericWindow(windowId, windowData, fRole) {
+  console.debug(`[STORAGE] Recreating generic window with fRole: ${fRole}`);
   const { windowConfig, contentConfig } = windowData;
   const { bounds } = windowConfig;
 
@@ -1361,6 +1377,9 @@ function recreateGenericWindow(windowId, windowData) {
       };
     }
   }
+
+  // Pass fRole to preserve window type identification
+  options.fRole = fRole;
 
   return createWindow(windowId, options);
 }
