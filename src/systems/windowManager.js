@@ -33,6 +33,48 @@ const WINDOW_OFFSET = {
   y: 30  // Vertical offset
 };
 
+/**
+ * Valid fRole values for window type identification
+ * fRole (Fenestra Role) is a custom property stored on BrowserWindow instances
+ * to identify their functional role in the system.
+ * @constant {string[]}
+ */
+export const VALID_FROLES = [
+  'door',      // Door windows (door-key system)
+  'key',       // Key windows (door-key system)
+  'picture',   // Picture/image windows
+  'content',   // Content display windows
+  'lens',      // Lens/magnification windows
+  'terminal',  // Terminal windows
+  'desktop',   // Desktop windows
+  'video',     // Video player windows
+  'generic'    // Default/fallback for all other windows
+];
+
+/**
+ * Validate an fRole value
+ * @param {string} fRole - The fRole to validate
+ * @returns {boolean} True if valid, false otherwise
+ */
+export function isValidFRole(fRole) {
+  return VALID_FROLES.includes(fRole);
+}
+
+/**
+ * Sanitize an fRole value, returning 'generic' if invalid
+ * @param {string} fRole - The fRole to sanitize
+ * @param {string} context - Context for logging (e.g., window ID)
+ * @returns {string} Valid fRole value
+ */
+export function sanitizeFRole(fRole, context = '') {
+  if (!isValidFRole(fRole)) {
+    const contextMsg = context ? ` ${context}` : '';
+    console.warn(`[FROLE] Invalid fRole '${fRole}'${contextMsg}, using 'generic'`);
+    return 'generic';
+  }
+  return fRole;
+}
+
 // Calculate overlap ratio between two rectangles
 function calculateOverlapRatio(rect1, rect2) {
   const x1 = Math.max(rect1.x, rect2.x);
@@ -77,8 +119,8 @@ function checkOverlapWithWindows(newBounds, windowId, maxOverlapRatio = 0.4) {
 function findSuitablePositionForKey(keyId, width, height, maxOverlapRatio = 0.4) {
   console.debug(`[KEY_POSITION] Finding suitable position for key ${keyId}, avoiding door overlap exceeding ${(maxOverlapRatio * 100)}%`);
   
-  // Get all door windows
-  const doorWindows = Array.from(windows.entries()).filter(([id, win]) => id.startsWith('door'));
+  // Get all door windows using fRole property
+  const doorWindows = Array.from(windows.entries()).filter(([id, win]) => win && win.fRole === 'door');
   
   if (doorWindows.length === 0) {
     // No door windows, use default offset logic
@@ -158,6 +200,19 @@ function getNextWindowPosition(defaultX, defaultY) {
  * Create window
  * @param {string} id - Window ID
  * @param {Object} opts - Window options
+ * @param {number} [opts.width=800] - Window width
+ * @param {number} [opts.height=500] - Window height
+ * @param {number} [opts.x] - Window x position (auto-calculated if not provided)
+ * @param {number} [opts.y] - Window y position (auto-calculated if not provided)
+ * @param {string} [opts.title] - Window title (defaults to window ID)
+ * @param {boolean} [opts.resizable=true] - Whether window is resizable
+ * @param {boolean} [opts.transparent=false] - Whether window has transparent background
+ * @param {string|Object} [opts.otherContents='index.html'] - HTML file or query parameters
+ * @param {string} [opts.htmlName] - HTML file name (used with otherContents object)
+ * @param {string} [opts.fRole='generic'] - Fenestra Role for window type identification.
+ *   Valid values: 'door', 'key', 'picture', 'content', 'lens', 'terminal', 'desktop', 'video', 'generic'.
+ *   This property is automatically assigned by specialized creation functions (createDoor, createKey, etc.).
+ *   Invalid values will be sanitized to 'generic' with a warning.
  * @returns {BrowserWindow} Created window
  */
 export function createWindow(id, opts = {}) {
@@ -205,6 +260,11 @@ export function createWindow(id, opts = {}) {
   });
   
   console.debug(`[WINDOW] BrowserWindow created, ID: ${id}, webContentsId: ${win.webContents.id}`);
+  
+  // Assign and validate fRole using helper function
+  const fRole = opts.fRole || 'generic';
+  win.fRole = sanitizeFRole(fRole, `for window ${id}`);
+  console.debug(`[WINDOW_MANAGER] Assigned fRole '${win.fRole}' to window ${id}`);
   
   // Parse filename and query parameters from otherContents
   const otherContents = opts.otherContents;
@@ -484,7 +544,7 @@ export function setBounds(id, b) {
  */
 export function createDesktop() {
   console.debug('[WINDOW] 创建桌面窗口');
-  const win = createWindow('desktop', { width: 1200, height: 800, title: 'Desktop' });
+  const win = createWindow('desktop', { width: 1200, height: 800, title: 'Desktop', fRole: 'desktop' });
   console.debug('[WINDOW] 桌面窗口创建完成');
   return win;
 }
@@ -495,7 +555,7 @@ export function createDesktop() {
  */
 export function createVideo() {
   console.debug('[WINDOW] 创建视频窗口');
-  const win = createWindow('video', { width: 640, height: 360, x: 100, y: 120, title: 'Training Video' });
+  const win = createWindow('video', { width: 640, height: 360, x: 100, y: 120, title: 'Training Video', fRole: 'video' });
   console.debug('[WINDOW] 视频窗口创建完成');
   return win;
 }
@@ -511,6 +571,7 @@ export function createVideo() {
  * @param {string} optionsOrOtherContents.initialState - 初始状态 ('open' 或 'closed')
  * @param {boolean} optionsOrOtherContents.isLocked - 是否锁定
  * @returns {BrowserWindow} 门窗口
+ * @note This function automatically assigns fRole='door' to the created window for type identification
  */
 export function createDoor(doorId = 'door', title = null, encrypt = false, optionsOrOtherContents = null) {
   console.log(`[WINDOW] 创建门窗口（${encrypt ? '加密' : '普通'}状态）, ID: ${doorId}`);
@@ -604,6 +665,7 @@ export function createDoor(doorId = 'door', title = null, encrypt = false, optio
     title: doorTitle,
     resizable: true,
     otherContents: finalContent,
+    fRole: 'door',
   });
   
   console.log('[WINDOW] 门窗口创建完成, ID:', doorId);
@@ -645,6 +707,7 @@ export function createPicture(pictureId = 'picture', imagePath = 'renderer/asset
     title: pictureTitle,
     resizable: true,
     otherContents: `pictureViewer.html?${queryString}`,
+    fRole: 'picture',
   });
   
   if (win && !win.isDestroyed()) {
@@ -803,7 +866,8 @@ export function createKey(keyId = 'key', title = null, encrypt = false, relatedD
     x: suitablePosition.x,
     y: suitablePosition.y,
     title: keyTitle,
-    otherContents: finalContent
+    otherContents: finalContent,
+    fRole: 'key',
   });
   
   console.log('[WINDOW] 钥匙窗口创建完成');
@@ -825,6 +889,34 @@ export function getAllWindows() {
  */
 export function getWindow(id) {
   return windows.get(id);
+}
+
+/**
+ * Get all windows with the specified fRole
+ * @param {string} role - The fRole to filter by
+ * @returns {string[]} Array of window IDs with the specified role
+ */
+export function getWindowsByRole(role) {
+  const matchingWindows = [];
+  for (const [windowId, win] of windows) {
+    if (win && win.fRole === role) {
+      matchingWindows.push(windowId);
+    }
+  }
+  return matchingWindows;
+}
+
+/**
+ * Get the fRole of a specific window
+ * @param {string} windowId - The window ID to query
+ * @returns {string|null} The window's fRole, 'generic' if no fRole set, or null if window doesn't exist
+ */
+export function getWindowRole(windowId) {
+  const win = windows.get(windowId);
+  if (!win) {
+    return null;
+  }
+  return win.fRole || 'generic';
 }
 
 /**
@@ -853,6 +945,7 @@ export function createTerminal() {
     title: 'Fenestra Terminal',
     resizable: true,
     otherContents: "terminal.html",
+    fRole: 'terminal',
   });
   
   console.log('[WINDOW] 终端窗口创建完成');
@@ -1203,6 +1296,7 @@ export function createContentWindow(id, options = {}) {
     resizable: true,
     frame: true,
     transparent: false,
+    fRole: 'content',
   };
 
   const win = createWindow(id, windowOptions);
@@ -1350,6 +1444,7 @@ export function createLensWindow(lensId, targetWindowId, options = {}) {
     frame: false,           // 无边框
     transparent: true,      // 透明背景
     alwaysOnTop: true,      // 始终置顶
+    fRole: 'lens',
   };
 
   const lensWindow = createWindow(lensId, windowOptions);

@@ -204,7 +204,8 @@ async function handleCreateWindow(params) {
       width: params.width || 800,
       height: params.height || 600,
       title: params.title || params.id,
-      otherContents: params.otherContents || 'index.html'
+      otherContents: params.otherContents || 'index.html',
+      fRole: 'generic'  // Email action windows use generic role by default
     };
 
     const window = createWindow(params.id, windowOptions);

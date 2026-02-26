@@ -45,24 +45,26 @@ export function startOverlapLoop() {
     console.debug('[OVERLAP] Overlap detection loop already running, skipping start');
     return;
   }
-  
+
   console.debug('[OVERLAP] Setting up timer, checking every 1000ms');
   overlapTimer = setInterval(() => {
     // Check all doors and keys for overlap
     const windows = getAllWindows();
-    
+
     for (const [doorId, doorWin] of windows) {
-      if (typeof doorId !== 'string' || !doorId.startsWith('door')) continue;
-      
+      // Use fRole property instead of ID string matching
+      if (!doorWin || doorWin.fRole !== 'door') continue;
+
       for (const [keyId, keyWin] of windows) {
-        if (typeof keyId !== 'string' || !keyId.startsWith('key')) continue;
-        
+        // Use fRole property instead of ID string matching
+        if (!keyWin || keyWin.fRole !== 'key') continue;
+
         const doorBounds = doorWin.getBounds();
         const keyBounds = keyWin.getBounds();
-        
+
         // Send to Worker to calculate overlap
         if (worker) {
-          worker.postMessage({ 
+          worker.postMessage({
             type: 'calculateOverlap',
             doorBounds: doorBounds,
             keyBounds: keyBounds,
@@ -74,7 +76,7 @@ export function startOverlapLoop() {
       }
     }
   }, 1000);
-  
+
   console.debug('[OVERLAP] Overlap detection loop started');
 }
 

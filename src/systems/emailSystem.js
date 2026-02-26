@@ -214,7 +214,8 @@ export function createEmailWindow() {
       height: 700,
       title: 'Email',
       resizable: true,
-      otherContents: 'email.html'
+      otherContents: 'email.html',
+      fRole: 'generic'  // Email windows use generic role
     };
 
     emailWindow = createWindow('email-window', windowOptions);
