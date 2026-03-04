@@ -46,6 +46,16 @@ export const DOOR_KEY_EVENTS = {
 };
 
 /**
+ * Email scheduling system event constants
+ */
+export const EMAIL_SCHEDULING_EVENTS = {
+  EMAIL_SCHEDULED: 'email:scheduling:scheduled',
+  EMAIL_SENT: 'email:scheduling:sent',
+  EMAIL_SEND_FAILED: 'email:scheduling:send-failed',
+  EMAIL_CANCELLED: 'email:scheduling:cancelled'
+};
+
+/**
  * Singleton system events emitter instance
  */
 export const systemEvents = new EventEmitter();
