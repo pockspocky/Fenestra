@@ -309,6 +309,42 @@ async function runInitializationSequence() {
   try {
     console.log('[GAME_INIT] Starting initialization sequence');
     
+    // Initialize email scheduler and load persisted schedules
+    console.log('[GAME_INIT] Initializing email scheduler...');
+    try {
+      const { initialize: initializeEmailScheduler } = await import('../systems/emailScheduler.js');
+      await initializeEmailScheduler();
+      console.log('[GAME_INIT] Email scheduler initialized successfully');
+    } catch (error) {
+      console.error('[GAME_INIT] Failed to initialize email scheduler:', {
+        operation: 'initializeEmailScheduler',
+        error: error.message,
+        stack: error.stack,
+        impact: 'continuing without email scheduler initialization'
+      });
+      // Continue anyway - don't block game startup
+    }
+    
+    // Initialize Mara email read integration (Pakk Quin follow-up)
+    console.log('[GAME_INIT] Initializing Mara email read integration...');
+    try {
+      const { initializeMaraEmailReadIntegration } = await import('../integrations/maraEmailReadIntegration.js');
+      const result = initializeMaraEmailReadIntegration();
+      if (result.success) {
+        console.log('[GAME_INIT] Mara email read integration initialized successfully');
+      } else {
+        console.warn('[GAME_INIT] Mara email read integration failed:', result.error);
+      }
+    } catch (error) {
+      console.error('[GAME_INIT] Failed to initialize Mara email read integration:', {
+        operation: 'initializeMaraEmailReadIntegration',
+        error: error.message,
+        stack: error.stack,
+        impact: 'continuing without Mara email read integration'
+      });
+      // Continue anyway - don't block game startup
+    }
+    
     // Read configuration
     const config = readInitializationConfig();
     console.log('[GAME_INIT] Configuration loaded:', config);
