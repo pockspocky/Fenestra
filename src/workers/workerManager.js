@@ -2,6 +2,7 @@ import { Worker } from 'worker_threads';
 import { getBounds, getAllWindows } from '../systems/windowManager.js';
 import { canOpenDoor, handleFailedOpen, handleDoorToggle } from '../systems/doorKeySystem.js';
 import { isLevel1Completed } from '../systems/gameLogic.js';
+import { getGameMechanicsConfig } from '../core/config.js';
 import '../../logger.js'; // Import logging system
 
 let worker = null;
@@ -46,7 +47,11 @@ export function startOverlapLoop() {
     return;
   }
 
-  console.debug('[OVERLAP] Setting up timer, checking every 1000ms');
+  const gameMechanics = getGameMechanicsConfig();
+  const interval = gameMechanics.overlapDetectionInterval;
+  const threshold = gameMechanics.overlapThreshold;
+
+  console.debug(`[OVERLAP] Setting up timer, checking every ${interval}ms with threshold ${threshold}`);
   overlapTimer = setInterval(() => {
     // Check all doors and keys for overlap
     const windows = getAllWindows();
@@ -70,12 +75,12 @@ export function startOverlapLoop() {
             keyBounds: keyBounds,
             doorId: doorId,
             keyId: keyId,
-            threshold: 0.6
+            threshold: threshold
           });
         }
       }
     }
-  }, 1000);
+  }, interval);
 
   console.debug('[OVERLAP] Overlap detection loop started');
 }

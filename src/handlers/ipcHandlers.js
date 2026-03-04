@@ -4,7 +4,8 @@ import {
   getConfig,
   getGameDataDirectory,
   setGameDataDirectory,
-  resetConfigToDefaults
+  resetConfigToDefaults,
+  getWindowDimensionsConfig
 } from '../core/config.js';
 import {
   createWindow,
@@ -1764,9 +1765,13 @@ async function executeTerminalCommand(command, args) {
       
       // Execute command logic
       try {
+        // Get configured fallback dimensions
+        const windowDims = getWindowDimensionsConfig();
+        const fallback = windowDims.defaultFallback;
+        
         // Get image dimensions if content type is image
-        let width = 800;
-        let height = 600;
+        let width = fallback.width;
+        let height = fallback.height;
         
         if (contentType === 'image' && contentPath) {
           const dimensions = getImageDimensions(contentPath);
