@@ -13,6 +13,7 @@ import {
 } from './lensSystem.js';
 import { resolveAssetPath, resolveDoorImagePath, resolveKeyImagePath } from '../utils/assetPathResolver.js';
 import { initializeDoorState } from './doorKeySystem.js';
+import { getWindowDimensionsConfig } from '../core/config.js';
 import {
   triggerWindowCreated,
   triggerWindowClosed,
@@ -658,10 +659,14 @@ export function createDoor(doorId = 'door', title = null, encrypt = false, optio
     console.log('[WINDOW] Using door.html with parameters:', params.toString());
   }
   
+  // Get configured door dimensions
+  const windowDims = getWindowDimensionsConfig();
+  const doorDims = windowDims.doorWindow;
+  
   // Create window
   const win = createWindow(doorId, { 
-    width: 220, 
-    height: 320, 
+    width: doorDims.width, 
+    height: doorDims.height, 
     title: doorTitle,
     resizable: true,
     otherContents: finalContent,

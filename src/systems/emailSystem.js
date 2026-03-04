@@ -18,6 +18,7 @@ import { memoryManager } from '../utils/memoryManager.js';
 import { securityAuditSystem } from '../security/auditSystem.js';
 import { emailSandbox } from '../security/emailSandbox.js';
 import { emailSchemaValidator } from '../security/emailSchemaValidator.js';
+import { getWindowDimensionsConfig } from '../core/config.js';
 
 // Email window reference
 let emailWindow = null;
@@ -209,9 +210,12 @@ export function createEmailWindow() {
     }
 
     // Create new email window
+    const windowDims = getWindowDimensionsConfig();
+    const emailDims = windowDims.emailWindow;
+    
     const windowOptions = {
-      width: 1000,
-      height: 700,
+      width: emailDims.width,
+      height: emailDims.height,
       title: 'Email',
       resizable: true,
       otherContents: 'email.html',
