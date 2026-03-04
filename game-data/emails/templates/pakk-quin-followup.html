@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to SecOps!</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Consolas', 'Courier New', monospace;
+      background-color: #0a0a0a;
+      color: #c0c0c0;
+    }
+    
+    .email-container {
+      max-width: 700px;
+      margin: 0 auto;
+      background-color: #121212;
+      border: 1px solid #2a2a2a;
+    }
+    
+    .email-header {
+      background-color: #1a1a1a;
+      padding: 20px 30px;
+      border-bottom: 1px solid #2a2a2a;
+    }
+    
+    .email-meta {
+      font-size: 12px;
+      color: #707070;
+      margin-bottom: 15px;
+    }
+    
+    .email-meta-line {
+      margin: 4px 0;
+    }
+    
+    .email-subject {
+      font-size: 18px;
+      font-weight: 600;
+      color: #e0e0e0;
+      margin: 0;
+    }
+    
+    .email-body {
+      padding: 30px;
+      line-height: 1.7;
+      font-size: 14px;
+    }
+    
+    .email-body p {
+      margin: 0 0 18px 0;
+      color: #c0c0c0;
+    }
+    
+    .info-box {
+      background-color: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      padding: 20px;
+      margin: 25px 0;
+      font-family: 'Consolas', 'Courier New', monospace;
+    }
+    
+    .info-box-title {
+      color: #909090;
+      font-size: 13px;
+      margin-bottom: 15px;
+      font-weight: 600;
+    }
+    
+    .team-list {
+      list-style: none;
+      padding-left: 0;
+      margin: 15px 0;
+    }
+    
+    .team-list li {
+      padding: 8px 0 8px 20px;
+      position: relative;
+      color: #b0b0b0;
+      font-size: 13px;
+    }
+    
+    .team-list li:before {
+      content: "▸";
+      position: absolute;
+      left: 0;
+      color: #606060;
+    }
+    
+    .team-member-name {
+      color: #d0d0d0;
+      font-weight: 500;
+    }
+    
+    .signature {
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 1px solid #2a2a2a;
+      color: #909090;
+      font-size: 13px;
+    }
+    
+    .footer {
+      padding: 15px 30px;
+      background-color: #0d0d0d;
+      color: #505050;
+      font-size: 11px;
+      border-top: 1px solid #1a1a1a;
+    }
+    
+    .highlight {
+      color: #e0e0e0;
+    }
+  </style>
+</head>
+<body>
+  <div class="email-container">
+    <!-- Email Body -->
+    <div class="email-body">
+      <p>Welcome to the team!</p>
+      
+      <p>I wanted to reach out personally and say how glad we are to have you here at Halcon SecOps. I know Mara's email might have felt a bit... direct. That's just her style — she's brilliant at what she does, and you'll learn a lot from her.</p>
+      
+      <p>Let me introduce myself and give you a bit more context about the team you're joining.</p>
+      
+      <div class="info-box">
+        <div class="info-box-title">YOUR TEAM</div>
+        
+        <ul class="team-list">
+          <li><span class="team-member-name">Mara Smith</span> — Lead Security Analyst. She's your direct supervisor and handles all critical alert triage. Her instincts are sharp, trust her judgment.</li>
+          <li><span class="team-member-name">Pakk Quin</span> — That's me! Senior Security Engineer. I handle infrastructure, tooling, and I'm here if you need help navigating the systems or have questions Mara doesn't have time for.</li>
+          <li><span class="team-member-name">Another team member</span> — You'll meet them soon. They bring a different perspective to our work here.</li>
+        </ul>
+      </div>
+      
+      <p>Mara assigned you that first ticket to get you started. It's straightforward, but it's a good way to learn our workflow. Don't hesitate to ask questions — we'd rather you ask than make assumptions.</p>
+      
+      <p>The Cerberus system can be overwhelming at first, but you'll get the hang of it. If you run into any technical issues or need access to something, ping me directly.</p>
+      
+      <p class="highlight">Looking forward to working with you.</p>
+      
+      <div class="signature">
+        — Pakk Quin<br>
+        Senior Security Engineer
+      </div>
+    </div>
+    
+    <!-- Footer -->
+    <div class="footer">
+      <p>HALCON SECURITY OPERATIONS | INTERNAL USE ONLY</p>
+      <p>This message is part of the Cerberus Alert Management System</p>
+    </div>
+  </div>
+  
+  <script>
+    console.log('[PAKK_QUIN_EMAIL] Follow-up email loaded');
+  </script>
+</body>
+</html>
