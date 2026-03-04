@@ -1,8 +1,8 @@
 {
   "id": "email-001",
-  "senderName": "System Administrator",
-  "senderEmail": "admin@fenestra.game",
-  "subject": "Welcome to Fenestra",
+  "senderName": "Mara Smith",
+  "senderEmail": "m.smith@halcon-secops.internal",
+  "subject": "Welcome to SecOps — First Assignment",
   "bodyType": "html-file",
   "bodyFile": "welcome.html",
   "timestamp": "2025-02-14T20:00:00.000Z",

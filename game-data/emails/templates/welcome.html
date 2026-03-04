@@ -3,398 +3,214 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Welcome to Fenestra</title>
+  <title>Welcome to SecOps — First Assignment</title>
   <style>
     body {
       margin: 0;
       padding: 0;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background-color: #1e1e1e;
-      color: #e0e0e0;
+      font-family: 'Consolas', 'Courier New', monospace;
+      background-color: #0a0a0a;
+      color: #c0c0c0;
     }
     
     .email-container {
-      max-width: 600px;
+      max-width: 700px;
       margin: 0 auto;
-      background-color: #1e1e1e;
+      background-color: #121212;
+      border: 1px solid #2a2a2a;
     }
     
-    .welcome-banner {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      padding: 40px 20px;
-      text-align: center;
-      color: white;
-      border-radius: 8px 8px 0 0;
+    .email-header {
+      background-color: #1a1a1a;
+      padding: 20px 30px;
+      border-bottom: 1px solid #2a2a2a;
     }
     
-    .logo-container {
-      margin-bottom: 20px;
+    .email-meta {
+      font-size: 12px;
+      color: #707070;
+      margin-bottom: 15px;
     }
     
-    .logo-placeholder {
-      width: 120px;
-      height: 120px;
-      background-color: rgba(255, 255, 255, 0.2);
-      border-radius: 50%;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 48px;
-      font-weight: bold;
+    .email-meta-line {
+      margin: 4px 0;
     }
     
-    .welcome-banner h1 {
-      margin: 0 0 10px 0;
-      font-size: 32px;
+    .email-subject {
+      font-size: 18px;
       font-weight: 600;
-    }
-    
-    .welcome-banner p {
+      color: #e0e0e0;
       margin: 0;
-      font-size: 18px;
-      opacity: 0.9;
     }
     
-    .welcome-content {
-      padding: 30px 20px;
-      line-height: 1.6;
+    .email-body {
+      padding: 30px;
+      line-height: 1.7;
+      font-size: 14px;
     }
     
-    .welcome-content h2 {
-      color: #667eea;
-      margin-top: 0;
-      margin-bottom: 15px;
-      font-size: 24px;
-    }
-    
-    .welcome-content h3 {
-      color: #8b9dc3;
-      margin-top: 25px;
-      margin-bottom: 12px;
-      font-size: 18px;
-    }
-    
-    .welcome-content p {
-      margin-bottom: 15px;
+    .email-body p {
+      margin: 0 0 18px 0;
       color: #c0c0c0;
     }
     
-    .welcome-content ul {
+    .ticket-box {
+      background-color: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      padding: 20px;
+      margin: 25px 0;
+      font-family: 'Consolas', 'Courier New', monospace;
+    }
+    
+    .ticket-id {
+      color: #909090;
+      font-size: 13px;
+      margin-bottom: 15px;
+    }
+    
+    .protocol-list {
       list-style: none;
       padding-left: 0;
+      margin: 15px 0;
     }
     
-    .welcome-content li {
-      padding: 8px 0 8px 30px;
+    .protocol-list li {
+      padding: 6px 0 6px 20px;
       position: relative;
-      color: #c0c0c0;
+      color: #b0b0b0;
+      font-size: 13px;
     }
     
-    .welcome-content li:before {
-      content: "✓";
+    .protocol-list li:before {
+      content: "—";
       position: absolute;
       left: 0;
-      color: #667eea;
-      font-weight: bold;
-      font-size: 18px;
+      color: #606060;
     }
     
     .cta-button {
       display: inline-block;
-      padding: 14px 32px;
-      background-color: #4a9eff;
-      color: white;
+      padding: 12px 24px;
+      background-color: #2a2a2a;
+      color: #d0d0d0;
       text-decoration: none;
-      border-radius: 6px;
+      border: 1px solid #3a3a3a;
       margin-top: 20px;
-      font-weight: 600;
-      transition: all 0.3s ease;
-      cursor: pointer;
-      border: none;
-      font-size: 16px;
-    }
-    
-    .cta-button:hover {
-      background-color: #3a8eef;
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(74, 158, 255, 0.4);
-    }
-    
-    .cta-button:active {
-      transform: translateY(0);
-    }
-    
-    .cta-button.disabled {
-      background-color: #666;
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-    
-    .cta-button.disabled:hover {
-      background-color: #666;
-      transform: none;
-      box-shadow: none;
-    }
-    
-    .feature-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 15px;
-      margin: 25px 0;
-    }
-    
-    .feature-card {
-      background-color: #3a3a3a;
-      padding: 20px;
-      border-radius: 8px;
-      text-align: center;
-      transition: transform 0.2s ease;
-    }
-    
-    .feature-card:hover {
-      transform: scale(1.05);
-      background-color: #424242;
-    }
-    
-    .feature-icon {
-      font-size: 36px;
-      margin-bottom: 10px;
-    }
-    
-    .feature-title {
-      font-weight: 600;
-      color: #e0e0e0;
-      margin-bottom: 5px;
-    }
-    
-    .feature-desc {
-      font-size: 13px;
-      color: #a0a0a0;
-    }
-    
-    .footer {
-      padding: 20px;
-      text-align: center;
-      background-color: #1a1a1a;
-      color: #808080;
-      font-size: 12px;
-      border-radius: 0 0 8px 8px;
-    }
-    
-    .interactive-demo {
-      background-color: #3a3a3a;
-      padding: 20px;
-      border-radius: 8px;
-      margin: 20px 0;
-      border-left: 4px solid #667eea;
-    }
-    
-    .counter-display {
-      font-size: 24px;
-      font-weight: bold;
-      color: #667eea;
-      margin: 15px 0;
-    }
-    
-    .demo-buttons {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-    
-    .demo-button {
-      padding: 8px 16px;
-      background-color: #667eea;
-      color: white;
-      border: none;
-      border-radius: 4px;
+      font-weight: 500;
       cursor: pointer;
       font-size: 14px;
+      font-family: 'Consolas', 'Courier New', monospace;
       transition: background-color 0.2s ease;
     }
     
-    .demo-button:hover {
-      background-color: #5568d3;
+    .cta-button:hover {
+      background-color: #333333;
+    }
+    
+    .cta-button.disabled {
+      background-color: #1a1a1a;
+      color: #505050;
+      cursor: not-allowed;
+      border-color: #252525;
+    }
+    
+    .cta-button.disabled:hover {
+      background-color: #1a1a1a;
+    }
+    
+    .signature {
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 1px solid #2a2a2a;
+      color: #909090;
+      font-size: 13px;
+    }
+    
+    .footer {
+      padding: 15px 30px;
+      background-color: #0d0d0d;
+      color: #505050;
+      font-size: 11px;
+      border-top: 1px solid #1a1a1a;
+    }
+    
+    .confidence-badge {
+      display: inline-block;
+      background-color: #1a1a1a;
+      padding: 4px 10px;
+      border-radius: 3px;
+      font-size: 12px;
+      color: #808080;
+      margin-left: 10px;
     }
   </style>
 </head>
 <body>
   <div class="email-container">
-    <!-- Banner Section -->
-    <div class="welcome-banner">
-      <div class="logo-container">
-        <!-- Placeholder for logo image - can be replaced with: <img src="images/logo.png" alt="Fenestra Logo"> -->
-        <div class="logo-placeholder">F</div>
-      </div>
-      <h1>Welcome to Fenestra!</h1>
-      <p>Your journey through windows begins now</p>
-    </div>
-    
-    <!-- Main Content -->
-    <div class="welcome-content">
-      <h2>🎮 Getting Started</h2>
-      <p>Fenestra is a unique puzzle game where you'll explore mysteries through windows, doors, and keys. Navigate through an intricate world of interconnected spaces and uncover secrets hidden in plain sight.</p>
+    <!-- Email Body -->
+    <div class="email-body">
+      <p>Welcome to Halcon SecOps.</p>
       
-      <h3>What to Expect:</h3>
-      <ul>
-        <li>Challenging puzzles that test your observation skills</li>
-        <li>A rich story told through emails and discoveries</li>
-        <li>Hidden secrets waiting to be uncovered</li>
-        <li>Immersive environments with interactive elements</li>
-      </ul>
+      <p>I saw IT finally finished provisioning your access. We don't do long ramp-up periods here — you'll learn faster by doing.</p>
       
-      <!-- Feature Grid -->
-      <div class="feature-grid">
-        <div class="feature-card">
-          <div class="feature-icon">🔍</div>
-          <div class="feature-title">Explore</div>
-          <div class="feature-desc">Discover hidden clues</div>
+      <p>Your primary responsibility is alert triage. Cerberus flags anomalies, we verify and classify. Most of what you'll see is noise — false positives, misconfigurations, legacy systems acting strange. Your job is to separate signal from static.</p>
+      
+      <div class="ticket-box">
+        <div class="ticket-id">
+          <strong>TICKET ID:</strong> ROOT-GLITCH/Δ9
+          <span class="confidence-badge">CONFIDENCE: 92%</span>
         </div>
-        <div class="feature-card">
-          <div class="feature-icon">🧩</div>
-          <div class="feature-title">Solve</div>
-          <div class="feature-desc">Crack complex puzzles</div>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon">📧</div>
-          <div class="feature-title">Connect</div>
-          <div class="feature-desc">Follow the story</div>
-        </div>
+        
+        <p style="margin-bottom: 15px;">I've assigned you a low-severity alert to start. Walk through the standard protocol:</p>
+        
+        <ul class="protocol-list">
+          <li>Review alert confidence score</li>
+          <li>Check affected hosts</li>
+          <li>Scan logs for behavioral patterns</li>
+          <li>Document your reasoning before closing</li>
+        </ul>
       </div>
       
-      <!-- Welcome Action Button -->
-      <div style="text-align: center; margin: 30px 0;">
-        <button id="welcomeActionButton" class="cta-button">Begin Your Journey</button>
-      </div>
+      <p>Don't overanalyze it. New engineers tend to look for complexity where there isn't any. If Cerberus says 92% confidence, it's usually right. Move decisively, but write clean notes.</p>
       
-      <!-- Interactive Demo Section -->
-      <div class="interactive-demo">
-        <h3 style="margin-top: 0;">🎯 Interactive Demo</h3>
-        <p>This email demonstrates inline JavaScript functionality. Try clicking the buttons below:</p>
-        <div class="counter-display" id="counter">Counter: 0</div>
-        <div class="demo-buttons">
-          <button class="demo-button" id="incrementBtn">Increment</button>
-          <button class="demo-button" id="decrementBtn">Decrement</button>
-          <button class="demo-button" id="resetBtn">Reset</button>
-        </div>
-      </div>
-      
-      <p>Check your inbox regularly for hints, quests, and new challenges. Each email may contain important information about your next steps.</p>
-      
-      <div style="text-align: center;">
-        <button class="cta-button" id="startBtn">Start Your Adventure</button>
+      <div style="margin: 30px 0;">
+        <button id="welcomeActionButton" class="cta-button">ACCESS TICKET SYSTEM</button>
+      </div>      
+      <div class="signature">
+        — Mara
       </div>
     </div>
     
     <!-- Footer -->
     <div class="footer">
-      <p>This is an automated message from the Fenestra System</p>
-      <p>© 2025 Fenestra Game | All rights reserved</p>
+      <p>HALCON SECURITY OPERATIONS | INTERNAL USE ONLY</p>
+      <p>This message is part of the Cerberus Alert Management System</p>
     </div>
   </div>
   
-  <!-- Inline Scripts to demonstrate functionality -->
   <script>
-    console.log('[WELCOME_EMAIL] Script starting to execute');
-    
-    // Counter functionality
-    let counter = 0;
-    const counterDisplay = document.getElementById('counter');
-    const incrementBtn = document.getElementById('incrementBtn');
-    const decrementBtn = document.getElementById('decrementBtn');
-    const resetBtn = document.getElementById('resetBtn');
-    
-    function updateCounter() {
-      counterDisplay.textContent = `Counter: ${counter}`;
-      console.log('Counter updated:', counter);
-    }
-    
-    incrementBtn.addEventListener('click', () => {
-      counter++;
-      updateCounter();
-    });
-    
-    decrementBtn.addEventListener('click', () => {
-      counter--;
-      updateCounter();
-    });
-    
-    resetBtn.addEventListener('click', () => {
-      counter = 0;
-      updateCounter();
-      console.log('Counter reset');
-    });
-    
-    // Start adventure button
-    const startBtn = document.getElementById('startBtn');
-    startBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      console.log('Adventure started! This could trigger game events.');
-      
-      // Visual feedback
-      startBtn.textContent = '✓ Adventure Started!';
-      startBtn.style.backgroundColor = '#4caf50';
-      
-      setTimeout(() => {
-        startBtn.textContent = 'Start Your Adventure';
-        startBtn.style.backgroundColor = '#4a9eff';
-      }, 2000);
-      
-      // In a real implementation, this could trigger IPC calls to the main process
-      // Example: window.electronAPI?.startAdventure();
-    });
-    
-    // Feature card hover effects with console logging
-    const featureCards = document.querySelectorAll('.feature-card');
-    featureCards.forEach((card, index) => {
-      card.addEventListener('click', () => {
-        const title = card.querySelector('.feature-title').textContent;
-        console.log(`Feature card clicked: ${title}`);
-        
-        // Add a temporary highlight effect
-        card.style.backgroundColor = '#667eea';
-        setTimeout(() => {
-          card.style.backgroundColor = '#3a3a3a';
-        }, 300);
-      });
-    });
-    
-    // Log when the email is loaded
-    console.log('Welcome email template loaded successfully');
-    console.log('Template features: Interactive buttons, styled content, and event handlers');
-    
-    // Demonstrate that scripts can access and modify the DOM
-    document.addEventListener('DOMContentLoaded', () => {
-      console.log('DOM fully loaded and parsed');
-      console.log('Email container dimensions:', {
-        width: document.querySelector('.email-container').offsetWidth,
-        height: document.querySelector('.email-container').offsetHeight
-      });
-      
-      // Initialize welcome button state
-      initializeWelcomeButton();
-    });
+    console.log('[WELCOME_EMAIL] SecOps email loaded');
     
     // Local flag to prevent double-clicks
     let buttonClicked = false;
     
-    // Function to disable the welcome button
+    // Function to disable the button
     function disableButton() {
       const button = document.getElementById('welcomeActionButton');
       if (button) {
         button.disabled = true;
-        button.textContent = 'Journey Started';
+        button.textContent = 'SYSTEM ACCESSED';
         button.classList.add('disabled');
         console.log('[WELCOME_BUTTON] Button disabled');
       }
     }
     
-    // Function to enable the welcome button (for error recovery)
+    // Function to enable the button (for error recovery)
     function enableButton() {
       const button = document.getElementById('welcomeActionButton');
       if (button) {
         button.disabled = false;
-        button.textContent = 'Begin Your Journey';
+        button.textContent = 'ACCESS TICKET SYSTEM';
         button.classList.remove('disabled');
         console.log('[WELCOME_BUTTON] Button enabled');
       }
@@ -403,7 +219,6 @@
     // Function to show error message to user
     function showError(message) {
       console.error('[WELCOME_BUTTON] Error:', message);
-      // Display error to user (simple alert for now)
       alert(message || 'An error occurred. Please try again.');
     }
     
@@ -423,16 +238,11 @@
       
       try {
         // Send message to parent window (email.html) to handle the click
-        // We're in an iframe, so we need to use postMessage to communicate with parent
         console.log('[WELCOME_BUTTON] Sending click message to parent window');
         window.parent.postMessage({
           type: 'welcome-button-click'
         }, '*');
-        
-        // Wait for response from parent window
-        // The response will come via message event listener
       } catch (error) {
-        // Handle errors
         console.error('[WELCOME_BUTTON] Error sending message:', error);
         buttonClicked = false;
         enableButton();
@@ -440,12 +250,11 @@
       }
     }
     
-    // Listen for messages from parent window (responses to our requests)
+    // Listen for messages from parent window
     window.addEventListener('message', (event) => {
       console.log('[WELCOME_BUTTON] Received message from parent:', event.data);
       
       if (event.data.type === 'welcome-button-state') {
-        // Response to get-state request
         const state = event.data.state;
         console.log('[WELCOME_BUTTON] State loaded:', state);
         
@@ -456,19 +265,16 @@
           console.log('[WELCOME_BUTTON] Button remains enabled');
         }
       } else if (event.data.type === 'welcome-button-click-result') {
-        // Response to click request
         const result = event.data.result;
         console.log('[WELCOME_BUTTON] Click result:', result);
         
         if (result.success === false) {
-          // Revert button state on error
           console.error('[WELCOME_BUTTON] Click failed:', result.message);
           buttonClicked = false;
           enableButton();
           showError(result.userMessage || result.message);
         } else {
-          // Success - keep button disabled
-          console.log('[WELCOME_BUTTON] Windows created successfully');
+          console.log('[WELCOME_BUTTON] Ticket system accessed successfully');
         }
       }
     });
@@ -479,7 +285,6 @@
         console.log('[WELCOME_BUTTON] Initializing button state...');
         
         // Request current button state from parent window
-        console.log('[WELCOME_BUTTON] Sending get-state message to parent window');
         window.parent.postMessage({
           type: 'welcome-button-get-state'
         }, '*');
@@ -492,14 +297,18 @@
         }
       } catch (error) {
         console.error('[WELCOME_BUTTON] Failed to initialize button state:', error);
-        // On error, keep button enabled (fail-safe)
-        // Still attach click handler to allow retry
         const button = document.getElementById('welcomeActionButton');
         if (button) {
           button.addEventListener('click', handleButtonClick);
         }
       }
     }
+    
+    // Initialize on DOM load
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('[WELCOME_EMAIL] DOM loaded');
+      initializeWelcomeButton();
+    });
   </script>
 </body>
 </html>
