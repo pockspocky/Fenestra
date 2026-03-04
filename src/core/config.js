@@ -210,49 +210,216 @@ function validateGameDataDirectoryPath(inputPath) {
 }
 
 /**
+ * Validate game mechanics configuration
+ * @param {Object} gameMechanics - Game mechanics config object
+ * @returns {Object} Validated config with defaults for invalid values
+ */
+function validateGameMechanics(gameMechanics) {
+  const defaults = {
+    overlapDetectionInterval: 1000,
+    overlapThreshold: 0.6,
+    doorAnimationFrameRate: 16
+  };
+  
+  if (!gameMechanics || typeof gameMechanics !== 'object') {
+    return defaults;
+  }
+  
+  const validated = {};
+  
+  // Validate overlapDetectionInterval (positive number)
+  if (typeof gameMechanics.overlapDetectionInterval === 'number' && 
+      gameMechanics.overlapDetectionInterval > 0) {
+    validated.overlapDetectionInterval = gameMechanics.overlapDetectionInterval;
+  } else {
+    validated.overlapDetectionInterval = defaults.overlapDetectionInterval;
+    if (gameMechanics.overlapDetectionInterval !== undefined) {
+      console.warn(`[CONFIG] Invalid overlapDetectionInterval: ${gameMechanics.overlapDetectionInterval}, using default: ${defaults.overlapDetectionInterval}ms`);
+    }
+  }
+  
+  // Validate overlapThreshold (0.0 to 1.0)
+  if (typeof gameMechanics.overlapThreshold === 'number' && 
+      gameMechanics.overlapThreshold >= 0.0 && 
+      gameMechanics.overlapThreshold <= 1.0) {
+    validated.overlapThreshold = gameMechanics.overlapThreshold;
+  } else {
+    validated.overlapThreshold = defaults.overlapThreshold;
+    if (gameMechanics.overlapThreshold !== undefined) {
+      console.warn(`[CONFIG] Invalid overlapThreshold: ${gameMechanics.overlapThreshold}, using default: ${defaults.overlapThreshold}`);
+    }
+  }
+  
+  // Validate doorAnimationFrameRate (positive number)
+  if (typeof gameMechanics.doorAnimationFrameRate === 'number' && 
+      gameMechanics.doorAnimationFrameRate > 0) {
+    validated.doorAnimationFrameRate = gameMechanics.doorAnimationFrameRate;
+  } else {
+    validated.doorAnimationFrameRate = defaults.doorAnimationFrameRate;
+    if (gameMechanics.doorAnimationFrameRate !== undefined) {
+      console.warn(`[CONFIG] Invalid doorAnimationFrameRate: ${gameMechanics.doorAnimationFrameRate}, using default: ${defaults.doorAnimationFrameRate}ms`);
+    }
+  }
+  
+  return validated;
+}
+/**
+ * Validate email system configuration
+ * @param {Object} emailSystem - Email system config object
+ * @returns {Object} Validated config with defaults for invalid values
+ */
+function validateEmailSystem(emailSystem) {
+  const defaults = {
+    welcomeButtonDelay: 10000,
+    fileWatcherStabilityThreshold: 100
+  };
+
+  if (!emailSystem || typeof emailSystem !== 'object') {
+    return defaults;
+  }
+
+  const validated = {};
+
+  // Validate welcomeButtonDelay (non-negative number)
+  if (typeof emailSystem.welcomeButtonDelay === 'number' &&
+      emailSystem.welcomeButtonDelay >= 0) {
+    validated.welcomeButtonDelay = emailSystem.welcomeButtonDelay;
+  } else {
+    validated.welcomeButtonDelay = defaults.welcomeButtonDelay;
+    if (emailSystem.welcomeButtonDelay !== undefined) {
+      console.warn(`[CONFIG] Invalid welcomeButtonDelay: ${emailSystem.welcomeButtonDelay}, using default: ${defaults.welcomeButtonDelay}ms`);
+    }
+  }
+
+  // Validate fileWatcherStabilityThreshold (positive number)
+  if (typeof emailSystem.fileWatcherStabilityThreshold === 'number' &&
+      emailSystem.fileWatcherStabilityThreshold > 0) {
+    validated.fileWatcherStabilityThreshold = emailSystem.fileWatcherStabilityThreshold;
+  } else {
+    validated.fileWatcherStabilityThreshold = defaults.fileWatcherStabilityThreshold;
+    if (emailSystem.fileWatcherStabilityThreshold !== undefined) {
+      console.warn(`[CONFIG] Invalid fileWatcherStabilityThreshold: ${emailSystem.fileWatcherStabilityThreshold}, using default: ${defaults.fileWatcherStabilityThreshold}ms`);
+    }
+  }
+
+  return validated;
+}
+
+/**
+ * Validate window dimensions configuration
+ * @param {Object} windowDimensions - Window dimensions config object
+ * @returns {Object} Validated config with defaults for invalid values
+ */
+function validateWindowDimensions(windowDimensions) {
+  const defaults = {
+    startMenu: { width: 600, height: 800 },
+    emailWindow: { width: 1000, height: 700 },
+    doorWindow: { width: 220, height: 320 },
+    defaultFallback: { width: 800, height: 600 }
+  };
+
+  if (!windowDimensions || typeof windowDimensions !== 'object') {
+    return defaults;
+  }
+
+  const validated = {};
+
+  // Validate each window type
+  for (const [windowType, defaultDims] of Object.entries(defaults)) {
+    const dims = windowDimensions[windowType];
+
+    if (!dims || typeof dims !== 'object') {
+      validated[windowType] = defaultDims;
+      continue;
+    }
+
+    validated[windowType] = {};
+
+    // Validate width (>= 100)
+    if (typeof dims.width === 'number' && dims.width >= 100) {
+      validated[windowType].width = dims.width;
+    } else {
+      validated[windowType].width = defaultDims.width;
+      if (dims.width !== undefined) {
+        console.warn(`[CONFIG] Invalid ${windowType}.width: ${dims.width}, using default: ${defaultDims.width}px`);
+      }
+    }
+
+    // Validate height (>= 100)
+    if (typeof dims.height === 'number' && dims.height >= 100) {
+      validated[windowType].height = dims.height;
+    } else {
+      validated[windowType].height = defaultDims.height;
+      if (dims.height !== undefined) {
+        console.warn(`[CONFIG] Invalid ${windowType}.height: ${dims.height}, using default: ${defaultDims.height}px`);
+      }
+    }
+  }
+
+  return validated;
+}
+
+/**
  * Loads configuration from file or returns default configuration
  * @returns {Object} Configuration object
  */
 function loadConfig() {
   const projectRoot = process.cwd();
   const configFilePath = path.join(projectRoot, CONFIG_FILE_PATH);
-  
+
   try {
     if (fs.existsSync(configFilePath)) {
       console.debug(`[CONFIG] Loading configuration from: "${configFilePath}"`);
-      
+
       const configData = fs.readFileSync(configFilePath, 'utf8');
       const parsedConfig = JSON.parse(configData);
-      
+
       // Convert backslashes to forward slashes in gameDataDirectory path on load
       if (parsedConfig.gameDataDirectory && typeof parsedConfig.gameDataDirectory === 'string') {
         parsedConfig.gameDataDirectory = toForwardSlashes(parsedConfig.gameDataDirectory);
         console.debug(`[CONFIG] Normalized gameDataDirectory path: "${parsedConfig.gameDataDirectory}"`);
       }
-      
+
       // Merge with defaults to ensure all required properties exist
       const config = { ...DEFAULT_CONFIG, ...parsedConfig };
-      
+
+      // Validate new configuration sections
+      config.gameMechanics = validateGameMechanics(config.gameMechanics);
+      config.emailSystem = validateEmailSystem(config.emailSystem);
+      config.windowDimensions = validateWindowDimensions(config.windowDimensions);
+
       // Validate the loaded configuration
       const validation = validateConfiguration(config);
-      
+
       if (validation.isValid) {
         console.log(`[CONFIG] Configuration loaded successfully`);
         return config;
       } else {
         console.warn(`[CONFIG] Invalid configuration file, using defaults: ${validation.error}`);
-        return { ...DEFAULT_CONFIG };
+        const defaultConfig = { ...DEFAULT_CONFIG };
+        defaultConfig.gameMechanics = validateGameMechanics(null);
+        defaultConfig.emailSystem = validateEmailSystem(null);
+        defaultConfig.windowDimensions = validateWindowDimensions(null);
+        return defaultConfig;
       }
-      
+
     } else {
       console.debug(`[CONFIG] No configuration file found, using defaults`);
-      return { ...DEFAULT_CONFIG };
+      const defaultConfig = { ...DEFAULT_CONFIG };
+      defaultConfig.gameMechanics = validateGameMechanics(null);
+      defaultConfig.emailSystem = validateEmailSystem(null);
+      defaultConfig.windowDimensions = validateWindowDimensions(null);
+      return defaultConfig;
     }
-    
+
   } catch (error) {
     console.error(`[CONFIG] Failed to load configuration:`, error);
     console.warn(`[CONFIG] Using default configuration`);
-    return { ...DEFAULT_CONFIG };
+    const defaultConfig = { ...DEFAULT_CONFIG };
+    defaultConfig.gameMechanics = validateGameMechanics(null);
+    defaultConfig.emailSystem = validateEmailSystem(null);
+    defaultConfig.windowDimensions = validateWindowDimensions(null);
+    return defaultConfig;
   }
 }
 
@@ -426,6 +593,32 @@ export function resetConfigToDefaults() {
 export function getConfigValue(key, defaultValue = null) {
   const config = getConfig();
   return config.hasOwnProperty(key) ? config[key] : defaultValue;
+}
+
+/**
+ * Get game mechanics configuration
+ * @returns {Object} Game mechanics config with validated values
+ */
+export function getGameMechanicsConfig() {
+  const config = getConfig();
+  return config.gameMechanics || validateGameMechanics(null);
+}
+/**
+ * Get email system configuration
+ * @returns {Object} Email system config with validated values
+ */
+export function getEmailSystemConfig() {
+  const config = getConfig();
+  return config.emailSystem || validateEmailSystem(null);
+}
+
+/**
+ * Get window dimensions configuration
+ * @returns {Object} Window dimensions config with validated values
+ */
+export function getWindowDimensionsConfig() {
+  const config = getConfig();
+  return config.windowDimensions || validateWindowDimensions(null);
 }
 
 /**
