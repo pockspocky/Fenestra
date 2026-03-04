@@ -17,7 +17,7 @@ import {
   triggerEmailValidationFailed 
 } from '../core/callbacks/emailCallbacks.js';
 import { emailSchemaValidator } from '../security/emailSchemaValidator.js';
-import { getGameDataDirectory } from '../core/config.js';
+import { getGameDataDirectory, getEmailSystemConfig } from '../core/config.js';
 import { loadHtmlFile, ensureTemplatesDirectory } from './htmlFileLoader.js';
 
 // Error codes for email storage operations
@@ -870,6 +870,10 @@ export function watchInboxDirectory(callback) {
     // Store callback
     watcherCallback = callback;
 
+    // Get configured file watcher stability threshold
+    const emailConfig = getEmailSystemConfig();
+    const stabilityThreshold = emailConfig.fileWatcherStabilityThreshold;
+
     // Create a promise that resolves when watcher is ready
     watcherReadyPromise = new Promise((resolve) => {
       // Initialize chokidar watcher with cross-platform configuration
@@ -880,7 +884,7 @@ export function watchInboxDirectory(callback) {
           ignoreInitial: true, // Don't trigger for existing files
           ignored: /(^|[\/\\])\../, // Ignore dotfiles
           awaitWriteFinish: {
-            stabilityThreshold: 100, // Wait 100ms for file to stabilize
+            stabilityThreshold: stabilityThreshold, // Use configured threshold
             pollInterval: 50 // Poll every 50ms
           },
           depth: 0, // Don't watch subdirectories
@@ -896,6 +900,7 @@ export function watchInboxDirectory(callback) {
           watcherReady = true;
           console.log('[EMAIL] Inbox directory watcher ready and monitoring', { 
             inboxPath,
+            stabilityThreshold: stabilityThreshold,
             watchedPaths: watcher.getWatched()
           });
           resolve();
