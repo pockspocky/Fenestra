@@ -14,6 +14,7 @@ import {
   triggerAccessDenied,
   triggerDoorStateChanged
 } from '../core/callbacks/doorKeyCallbacks.js';
+import { getGameMechanicsConfig } from '../core/config.js';
 
 // TODO: Future integration with pathValidator singleton
 // When implementing directory unlocking via door/key system:
@@ -312,13 +313,16 @@ function bounceKeyAway(keyWin, doorWin, keyId, doorId) {
  * @param {number} targetY - 目标Y坐标
  */
 function animateKeyMovement(keyWin, targetX, targetY) {
+  const gameMechanics = getGameMechanicsConfig();
+  const frameRate = gameMechanics.doorAnimationFrameRate;
+  
   const startBounds = keyWin.getBounds();
   const startX = startBounds.x;
   const startY = startBounds.y;
   
   const distance = Math.sqrt(Math.pow(targetX - startX, 2) + Math.pow(targetY - startY, 2));
   const duration = Math.min(distance / 5, 1000); // 最大300ms
-  const steps = Math.ceil(duration / 1); // 60fps
+  const steps = Math.ceil(duration / frameRate); // Use configured frame rate
   
   let currentStep = 0;
   
@@ -340,7 +344,7 @@ function animateKeyMovement(keyWin, targetX, targetY) {
     });
     
     if (currentStep < steps) {
-      setTimeout(animate, 16);
+      setTimeout(animate, frameRate);
     }
   };
   
