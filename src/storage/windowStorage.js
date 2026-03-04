@@ -18,7 +18,7 @@ import {
   isItemEncrypted,
   getDoorState
 } from '../systems/doorKeySystem.js';
-import { getGameDataDirectory } from '../core/config.js';
+import { getGameDataDirectory, getWindowDimensionsConfig } from '../core/config.js';
 import {
   joinPaths,
   resolvePath,
@@ -33,6 +33,15 @@ import '../../logger.js';
 const STORAGE_DIR = '.fenestra-storage';
 const FILE_EXTENSION = '.fenestra';
 const STORAGE_VERSION = '1.0';
+
+/**
+ * Get default fallback dimensions from configuration
+ * @returns {Object} Default fallback dimensions {width, height}
+ */
+function getDefaultFallbackDimensions() {
+  const windowDims = getWindowDimensionsConfig();
+  return windowDims.defaultFallback;
+}
 
 /**
  * Ensure storage directory exists
@@ -1042,19 +1051,22 @@ function extractKeyParameters(windowData) {
       throw new Error('Window configuration is required');
     }
     
+    // Get configured fallback dimensions
+    const fallback = getDefaultFallbackDimensions();
+    
     // Initialize default parameters with validation
     const parameters = {
       imagePath: null,
       encrypt: false,
       relatedDoors: [],
-      bounds: windowConfig.bounds || { x: 100, y: 100, width: 200, height: 200 },
+      bounds: windowConfig.bounds || { x: 100, y: 100, width: fallback.width, height: fallback.height },
       title: windowConfig.title || 'Key'
     };
     
     // Validate bounds structure
     if (!parameters.bounds.width || !parameters.bounds.height) {
       console.warn(`[STORAGE] Invalid bounds in window data, using defaults:`, parameters.bounds);
-      parameters.bounds = { x: 100, y: 100, width: 200, height: 200 };
+      parameters.bounds = { x: 100, y: 100, width: fallback.width, height: fallback.height };
     }
     
     // Extract image path - try multiple locations with priority order
@@ -1136,13 +1148,16 @@ function extractKeyParameters(windowData) {
       hasSpecialConfig: !!(windowData && windowData.specialConfig)
     });
     
+    // Get configured fallback dimensions
+    const fallback = getDefaultFallbackDimensions();
+    
     // Return safe defaults to allow graceful degradation (Requirement 3.2)
     console.warn(`[STORAGE] Returning default key parameters due to extraction error`);
     return {
       imagePath: null,
       encrypt: false,
       relatedDoors: [],
-      bounds: { x: 100, y: 100, width: 200, height: 200 },
+      bounds: { x: 100, y: 100, width: fallback.width, height: fallback.height },
       title: 'Key'
     };
   }
@@ -1227,7 +1242,8 @@ function recreateKeyWindow(windowId, windowData, fRole) {
       const fallbackImagePath = resolveKeyImagePath(null); // Get default image
       const fallbackHtmlContent = `pictureViewer.html?imagePath=${encodeURIComponent(fallbackImagePath)}&fitMode=cover`;
       
-      const bounds = windowData.windowConfig?.bounds || { x: 100, y: 100, width: 200, height: 200 };
+      const fallback = getDefaultFallbackDimensions();
+      const bounds = windowData.windowConfig?.bounds || { x: 100, y: 100, width: fallback.width, height: fallback.height };
       const title = windowData.windowConfig?.title || 'Key';
       
       const fallbackWindow = createWindow(windowId, {
