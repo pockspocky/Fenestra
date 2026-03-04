@@ -7,7 +7,7 @@ import { createDemoDoorsAndKeys } from '../systems/gameLogic.js';
 import { deserializeWindow } from '../storage/windowStorage.js';
 import { importRelationshipState } from '../systems/doorKeySystem.js';
 import { importGameLogicState } from '../systems/gameLogic.js';
-import { getGameDataDirectory } from '../core/config.js';
+import { getGameDataDirectory, getWindowDimensionsConfig } from '../core/config.js';
 import { runInitializationSequence } from '../sequences/gameInitialization.js';
 
 // Start menu state
@@ -30,6 +30,16 @@ export async function clearStorageDirectory() {
   };
   
   try {
+    // Clear scheduled emails first (before clearing directories)
+    try {
+      const { clearAllScheduledEmails } = await import('../systems/emailScheduler.js');
+      const clearResult = await clearAllScheduledEmails();
+      console.log(`[START_MENU] Cleared ${clearResult.cancelledCount} scheduled emails`);
+    } catch (error) {
+      console.error('[START_MENU] Failed to clear scheduled emails:', error);
+      result.errors.push(`Failed to clear scheduled emails: ${error.message}`);
+    }
+    
     const gameDataDir = getGameDataDirectory();
     
     // Define directories to clear
@@ -120,10 +130,14 @@ export async function createStartMenu() {
     });
   }
   
+  // Get configured start menu dimensions
+  const windowDims = getWindowDimensionsConfig();
+  const startMenuDims = windowDims.startMenu;
+  
   // Create start menu window
   startMenuWindow = new BrowserWindow({
-    width: 600,
-    height: 800,
+    width: startMenuDims.width,
+    height: startMenuDims.height,
     center: true,
     resizable: false,
     frame: true,
