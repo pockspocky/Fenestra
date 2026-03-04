@@ -13,6 +13,7 @@ import {
   initializeDoorRelation,
   initializeKeyRelation
 } from '../systems/doorKeySystem.js';
+import { systemEvents } from '../events/systemEvents.js';
 import '../../logger.js';
 
 /**
@@ -188,6 +189,14 @@ export function initializeWelcomeButtonHandlers() {
       }
 
       console.log('[WELCOME_BUTTON] Click handled successfully');
+
+      // Emit event for email scheduling integration
+      systemEvents.emit('welcome:button:clicked', {
+        entityId: 'welcome-button',
+        timestamp: Date.now(),
+        source: 'welcomeButton'
+      });
+      console.log('[WELCOME_BUTTON] Emitted welcome:button:clicked event');
 
       // Return success response with window IDs
       return {
