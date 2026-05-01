@@ -1,4 +1,4 @@
-# Fenestra
+# Fenestra (Discontinued..?)
 
 An Electron-based window puzzle game featuring dynamic window management, lens systems, and interactive door-key mechanics.
 
